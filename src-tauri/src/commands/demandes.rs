@@ -1,0 +1,199 @@
+use crate::db::Db;
+use crate::models::{Demande, NewDemande};
+use tauri::State;
+
+fn map_row(row: &rusqlite::Row) -> rusqlite::Result<Demande> {
+    Ok(Demande {
+        id: row.get(0)?,
+        ok_pour_passer_cde: row.get(1)?,
+        affaire: row.get(2)?,
+        type_envoi_caisse: row.get(3)?,
+        type_ouverture: row.get(4)?,
+        stock: row.get(5)?,
+        longueur_mm: row.get(6)?,
+        largeur_mm: row.get(7)?,
+        hauteur_mm: row.get(8)?,
+        quantite: row.get(9)?,
+        date_picking: row.get(10)?,
+        date_demandee_s2c: row.get(11)?,
+        moteurs: row.get(12)?,
+        module_lineaire: row.get(13)?,
+        terminaux: row.get(14)?,
+        traitement: row.get(15)?,
+        informations_supp: row.get(16)?,
+        cde_passee_affaire: row.get(17)?,
+        cde_passee_achat_stock: row.get(18)?,
+        observations: row.get(19)?,
+        validee: row.get(20)?,
+        ordre: row.get(21)?,
+    })
+}
+
+const SELECT_COLS: &str = "id, ok_pour_passer_cde, affaire, type_envoi_caisse, type_ouverture, stock,
+    longueur_mm, largeur_mm, hauteur_mm, quantite, date_picking, date_demandee_s2c,
+    moteurs, module_lineaire, terminaux, traitement, informations_supp,
+    cde_passee_affaire, cde_passee_achat_stock, observations, validee, ordre";
+
+#[tauri::command]
+pub fn list_demandes(db: State<Db>) -> Result<Vec<Demande>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let sql = format!("SELECT {} FROM demande ORDER BY ordre, id", SELECT_COLS);
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], map_row).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+fn insert_demande(conn: &rusqlite::Connection, d: &NewDemande, ordre: i64) -> Result<i64, String> {
+    conn.execute(
+        "INSERT INTO demande (
+            ok_pour_passer_cde, affaire, type_envoi_caisse, type_ouverture, stock,
+            longueur_mm, largeur_mm, hauteur_mm, quantite, date_picking, date_demandee_s2c,
+            moteurs, module_lineaire, terminaux, traitement, informations_supp,
+            cde_passee_affaire, cde_passee_achat_stock, observations, ordre
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+        rusqlite::params![
+            d.ok_pour_passer_cde,
+            d.affaire,
+            d.type_envoi_caisse,
+            d.type_ouverture,
+            d.stock,
+            d.longueur_mm,
+            d.largeur_mm,
+            d.hauteur_mm,
+            d.quantite,
+            d.date_picking,
+            d.date_demandee_s2c,
+            d.moteurs,
+            d.module_lineaire,
+            d.terminaux,
+            d.traitement,
+            d.informations_supp,
+            d.cde_passee_affaire,
+            d.cde_passee_achat_stock,
+            d.observations,
+            ordre,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(conn.last_insert_rowid())
+}
+
+#[tauri::command]
+pub fn create_demande(db: State<Db>, demande: NewDemande) -> Result<Demande, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let ordre: i64 = conn
+        .query_row("SELECT COALESCE(MAX(ordre), -1) + 1 FROM demande", [], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    let id = insert_demande(&conn, &demande, ordre)?;
+    let sql = format!("SELECT {} FROM demande WHERE id = ?1", SELECT_COLS);
+    conn.query_row(&sql, [id], map_row).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn bulk_create_demandes(db: State<Db>, demandes: Vec<NewDemande>) -> Result<Vec<Demande>, String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let mut ids = Vec::with_capacity(demandes.len());
+    {
+        let mut ordre: i64 = tx
+            .query_row("SELECT COALESCE(MAX(ordre), -1) + 1 FROM demande", [], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
+        for d in &demandes {
+            tx.execute(
+                "INSERT INTO demande (
+                    ok_pour_passer_cde, affaire, type_envoi_caisse, type_ouverture, stock,
+                    longueur_mm, largeur_mm, hauteur_mm, quantite, date_picking, date_demandee_s2c,
+                    moteurs, module_lineaire, terminaux, traitement, informations_supp,
+                    cde_passee_affaire, cde_passee_achat_stock, observations, ordre
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+                rusqlite::params![
+                    d.ok_pour_passer_cde,
+                    d.affaire,
+                    d.type_envoi_caisse,
+                    d.type_ouverture,
+                    d.stock,
+                    d.longueur_mm,
+                    d.largeur_mm,
+                    d.hauteur_mm,
+                    d.quantite,
+                    d.date_picking,
+                    d.date_demandee_s2c,
+                    d.moteurs,
+                    d.module_lineaire,
+                    d.terminaux,
+                    d.traitement,
+                    d.informations_supp,
+                    d.cde_passee_affaire,
+                    d.cde_passee_achat_stock,
+                    d.observations,
+                    ordre,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+            ids.push(tx.last_insert_rowid());
+            ordre += 1;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+
+    let sql = format!("SELECT {} FROM demande WHERE id = ?1", SELECT_COLS);
+    let mut result = Vec::with_capacity(ids.len());
+    for id in ids {
+        result.push(conn.query_row(&sql, [id], map_row).map_err(|e| e.to_string())?);
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn update_demande(db: State<Db>, id: i64, demande: NewDemande) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE demande SET
+            ok_pour_passer_cde = ?1, affaire = ?2, type_envoi_caisse = ?3, type_ouverture = ?4, stock = ?5,
+            longueur_mm = ?6, largeur_mm = ?7, hauteur_mm = ?8, quantite = ?9, date_picking = ?10,
+            date_demandee_s2c = ?11, moteurs = ?12, module_lineaire = ?13, terminaux = ?14, traitement = ?15,
+            informations_supp = ?16, cde_passee_affaire = ?17, cde_passee_achat_stock = ?18, observations = ?19
+        WHERE id = ?20",
+        rusqlite::params![
+            demande.ok_pour_passer_cde,
+            demande.affaire,
+            demande.type_envoi_caisse,
+            demande.type_ouverture,
+            demande.stock,
+            demande.longueur_mm,
+            demande.largeur_mm,
+            demande.hauteur_mm,
+            demande.quantite,
+            demande.date_picking,
+            demande.date_demandee_s2c,
+            demande.moteurs,
+            demande.module_lineaire,
+            demande.terminaux,
+            demande.traitement,
+            demande.informations_supp,
+            demande.cde_passee_affaire,
+            demande.cde_passee_achat_stock,
+            demande.observations,
+            id,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_demande(db: State<Db>, id: i64) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM demande WHERE id = ?1", [id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_demande_validee(db: State<Db>, id: i64, validee: bool) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("UPDATE demande SET validee = ?1 WHERE id = ?2", rusqlite::params![validee, id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}

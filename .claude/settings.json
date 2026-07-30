@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(rustc --version)",
+      "PowerShell(cargo --version)",
+      "PowerShell(winget install --id Rustlang.Rustup -e --accept-source-agreements --accept-package-agreements)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); rustc --version; cargo --version)",
+      "Read(//c/Program Files \\\\\\(x86\\\\\\)/Microsoft Visual Studio/Installer/**)",
+      "Bash(powershell.exe -NoProfile -Command \"winget install --id Microsoft.VisualStudio.2022.BuildTools -e --accept-source-agreements --accept-package-agreements --override '--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'\")",
+      "Bash(npm create *)",
+      "Bash(rm -rf /tmp/caisses-scaffold)",
+      "Read(//c/Program Files \\\\\\(x86\\\\\\)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/**)",
+      "Bash(npx tsc *)",
+      "Bash(\"/g/Projets/Code/caisses/src-tauri/target/debug/caisses.exe\")",
+      "Bash(tasklist)",
+      "Bash(powershell.exe -NoProfile -Command \"Get-Process caisses -ErrorAction SilentlyContinue\")",
+      "PowerShell(Get-ChildItem \"$env:APPDATA\\\\com.xan.caisses\" -Recurse)"
+    ]
+  }
+}

@@ -1,0 +1,1 @@
+ALTER TABLE caisse ADD COLUMN couleur TEXT NOT NULL DEFAULT '#dbeafe';
