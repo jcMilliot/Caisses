@@ -112,6 +112,17 @@ export interface NewCaisseStock {
   affaire_id: number | null;
 }
 
+export interface SectionLock {
+  section_key: string;
+  titulaire: string;
+  acquis_le: string;
+  dernier_battement: string;
+  demandeur: string | null;
+  demande_le: string | null;
+  demande_statut: "aucune" | "en_attente" | "refusee";
+  expire: boolean;
+}
+
 export interface CaisseCalculee extends Caisse {
   seuilEffectif: number;
   volumeInterneM3: number;

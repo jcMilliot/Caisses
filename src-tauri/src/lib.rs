@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod db;
 mod models;
+mod user_config;
 
 use commands::affaires::{create_affaire, delete_affaire, list_affaires, update_affaire};
 use commands::articles::{
@@ -16,7 +17,9 @@ use commands::demandes::{
     bulk_create_demandes, create_demande, delete_demande, list_demandes, set_demande_validee,
     update_demande,
 };
+use commands::locks::{acquire_lock, heartbeat, list_locks, release_lock, request_pen, respond_pen_request};
 use commands::setup::{choose_db_folder, get_db_status, init_db, set_db_folder};
+use commands::user::{get_user_status, set_trigramme};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -59,6 +62,14 @@ pub fn run() {
             create_caisse_stock,
             update_caisse_stock,
             delete_caisse_stock,
+            acquire_lock,
+            release_lock,
+            heartbeat,
+            request_pen,
+            respond_pen_request,
+            list_locks,
+            get_user_status,
+            set_trigramme,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

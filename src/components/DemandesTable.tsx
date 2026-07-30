@@ -12,6 +12,7 @@ interface Props {
   onDelete: (id: number, affaire: string) => void;
   onValider: (id: number, validee: boolean) => void;
   onSimulerAffaire: (demande: Demande) => void;
+  readOnly?: boolean;
 }
 
 type Champ =
@@ -165,7 +166,7 @@ const COLONNES: { champ: Champ; label: string; align?: "left" | "right" }[] = [
 
 const TOUTES_LES_COLONNES = COLONNES.map((c) => c.champ);
 
-export default function DemandesTable({ demandes, onEdit, onDelete, onValider, onSimulerAffaire }: Props) {
+export default function DemandesTable({ demandes, onEdit, onDelete, onValider, onSimulerAffaire, readOnly }: Props) {
   const [cellEnEdition, setCellEnEdition] = useState<{ id: number; champ: Champ } | null>(null);
   const [tri, setTri] = useState<Tri | null>(() => chargerTri());
   const [filtres, setFiltres] = useState<Filtres>(() => chargerFiltres());
@@ -303,6 +304,7 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
           <input
             type="checkbox"
             checked={demande[champ] as boolean}
+            disabled={readOnly}
             onChange={() => toggleBool(demande, champ as "ok_pour_passer_cde" | "cde_passee_affaire" | "cde_passee_achat_stock")}
           />
         </td>
@@ -320,7 +322,7 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
         style={{
           ...td,
           textAlign: align,
-          cursor: "text",
+          cursor: readOnly ? "default" : "text",
           padding: enEdition ? 2 : td.padding,
           width: largeur,
           maxWidth: largeur,
@@ -330,7 +332,7 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
         }}
         className={estNombre ? "mono" : undefined}
         title={avertissementMousse}
-        onClick={() => !enEdition && setCellEnEdition({ id: demande.id, champ })}
+        onClick={() => !readOnly && !enEdition && setCellEnEdition({ id: demande.id, champ })}
       >
         {enEdition ? (
           <EditableCellInput
@@ -500,7 +502,7 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
                       <Fragment key={c.champ}>{cell(d, c.champ, c.align, td)}</Fragment>
                     ))}
                     <td style={td}>
-                      <button className="btn btn-sm btn-danger" onClick={() => onDelete(d.id, d.affaire)}>
+                      <button className="btn btn-sm btn-danger" onClick={() => onDelete(d.id, d.affaire)} disabled={readOnly}>
                         Suppr.
                       </button>
                     </td>

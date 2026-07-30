@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { caisseStockApi } from "../data/caisseStock";
 import { affairesApi } from "../data/affaires";
+import { useSectionLock } from "../hooks/useSectionLock";
+import LockBanner from "../components/LockBanner";
 import type { Affaire, CaisseStock, NewCaisseStock } from "../domain/types";
 
 const CAISSE_VIDE: NewCaisseStock = {
@@ -13,7 +15,13 @@ const CAISSE_VIDE: NewCaisseStock = {
   affaire_id: null,
 };
 
-export default function CaissesStockList() {
+interface Props {
+  trigramme: string;
+}
+
+export default function CaissesStockList({ trigramme }: Props) {
+  const lock = useSectionLock("stock", trigramme);
+  const readOnly = lock.status !== "held";
   const [caisses, setCaisses] = useState<CaisseStock[]>([]);
   const [affaires, setAffaires] = useState<Affaire[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,10 +72,21 @@ export default function CaissesStockList() {
           </div>
           <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Caisses en stock</h1>
         </div>
-        <button className="btn btn-primary" onClick={() => setCreating((v) => !v)}>
+        <button className="btn btn-primary" onClick={() => setCreating((v) => !v)} disabled={readOnly}>
           + Ajouter une caisse
         </button>
       </div>
+
+      {(readOnly || lock.incomingRequest) && (
+        <LockBanner
+          holderTrigramme={lock.holderTrigramme}
+          incomingRequest={lock.incomingRequest}
+          outgoingRequestStatus={lock.outgoingRequestStatus}
+          onRequestPen={lock.requestPen}
+          onApprove={lock.approveRequest}
+          onDeny={lock.denyRequest}
+        />
+      )}
 
       {creating && (
         <form
@@ -191,7 +210,7 @@ export default function CaissesStockList() {
                   <td style={tdStyle}>{c.observations}</td>
                   <td style={tdStyle}>{nomAffaire(c.affaire_id)}</td>
                   <td style={tdStyle}>
-                    <button className="btn btn-sm btn-danger" onClick={() => handleDelete(c.id, c.nom)}>
+                    <button className="btn btn-sm btn-danger" onClick={() => handleDelete(c.id, c.nom)} disabled={readOnly}>
                       Suppr.
                     </button>
                   </td>

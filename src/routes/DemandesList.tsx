@@ -3,6 +3,8 @@ import { demandesApi } from "../data/demandes";
 import DemandesTable from "../components/DemandesTable";
 import PasteImportZoneDemandes from "../components/PasteImportZoneDemandes";
 import AjouterDemandesDialog from "../components/AjouterDemandesDialog";
+import LockBanner from "../components/LockBanner";
+import { useSectionLock } from "../hooks/useSectionLock";
 import type { Demande, NewDemande } from "../domain/types";
 
 let prochainIdTemporaire = -1;
@@ -13,9 +15,12 @@ function versDemande(n: NewDemande, id: number): Demande {
 
 interface Props {
   onSimulerAffaire: (demande: Demande) => void;
+  trigramme: string;
 }
 
-export default function DemandesList({ onSimulerAffaire }: Props) {
+export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
+  const lock = useSectionLock("demandes", trigramme);
+  const readOnly = lock.status !== "held";
   const [demandes, setDemandes] = useState<Demande[]>([]);
   // Copie éditable localement : les modifications de champs/cases à cocher et les nouvelles
   // lignes n'atteignent le serveur qu'au clic sur "Enregistrer" (pas de sauvegarde auto par
@@ -134,17 +139,28 @@ export default function DemandesList({ onSimulerAffaire }: Props) {
               Annuler
             </button>
           )}
-          <button className="btn" onClick={() => setAjoutOuvert(true)}>
+          <button className="btn" onClick={() => setAjoutOuvert(true)} disabled={readOnly}>
             + Ajouter des demandes
           </button>
-          <button className="btn" onClick={() => setImportOuvert(true)}>
+          <button className="btn" onClick={() => setImportOuvert(true)} disabled={readOnly}>
             Coller depuis Excel
           </button>
-          <button className="btn btn-primary" disabled={!modifie || enregistrement} onClick={handleEnregistrer}>
+          <button className="btn btn-primary" disabled={!modifie || enregistrement || readOnly} onClick={handleEnregistrer}>
             {enregistrement ? "Enregistrement…" : "Enregistrer"}
           </button>
         </div>
       </div>
+
+      {(readOnly || lock.incomingRequest) && (
+        <LockBanner
+          holderTrigramme={lock.holderTrigramme}
+          incomingRequest={lock.incomingRequest}
+          outgoingRequestStatus={lock.outgoingRequestStatus}
+          onRequestPen={lock.requestPen}
+          onApprove={lock.approveRequest}
+          onDeny={lock.denyRequest}
+        />
+      )}
 
       {loading ? (
         <p style={{ color: "var(--text-muted)" }}>Chargement…</p>
@@ -156,6 +172,7 @@ export default function DemandesList({ onSimulerAffaire }: Props) {
             onDelete={handleDelete}
             onValider={handleValider}
             onSimulerAffaire={onSimulerAffaire}
+            readOnly={readOnly}
           />
         </div>
       )}

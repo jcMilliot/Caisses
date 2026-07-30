@@ -5,10 +5,12 @@ import DemandesList from "./routes/DemandesList";
 import CaissesStockList from "./routes/CaissesStockList";
 import CreerAffaireDialog from "./components/CreerAffaireDialog";
 import FirstLaunchSetup from "./components/FirstLaunchSetup";
+import TrigrammeSetup from "./components/TrigrammeSetup";
 import UpdateAvailableDialog from "./components/UpdateAvailableDialog";
 import { affairesApi } from "./data/affaires";
 import { caissesApi } from "./data/caisses";
 import { useDbSetup } from "./hooks/useDbSetup";
+import { useUserSetup } from "./hooks/useUserSetup";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
 import type { Demande } from "./domain/types";
 
@@ -23,6 +25,7 @@ const SECTIONS: { id: Section; label: string }[] = [
 
 export default function App() {
   const { status: dbStatus, chooseFolder } = useDbSetup();
+  const { status: userStatus, trigramme, setTrigramme } = useUserSetup();
   const { update, installing, confirmInstall, dismiss } = useUpdateCheck(dbStatus === "ready");
   const [section, setSection] = useState<Section>("demandes");
   const [affaireId, setAffaireId] = useState<number | null>(null);
@@ -70,6 +73,14 @@ export default function App() {
     return null;
   }
 
+  if (userStatus === "needs-setup") {
+    return <TrigrammeSetup onSubmit={setTrigramme} />;
+  }
+
+  if (userStatus !== "ready" || !trigramme) {
+    return null;
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       <nav
@@ -93,14 +104,14 @@ export default function App() {
       </nav>
 
       <div style={{ flex: 1 }}>
-        {section === "demandes" && <DemandesList onSimulerAffaire={handleSimulerAffaire} />}
+        {section === "demandes" && <DemandesList onSimulerAffaire={handleSimulerAffaire} trigramme={trigramme} />}
         {section === "simulations" &&
           (affaireId === null ? (
             <AffairesList onOpen={setAffaireId} />
           ) : (
-            <AffaireDetail affaireId={affaireId} onBack={() => setAffaireId(null)} />
+            <AffaireDetail affaireId={affaireId} onBack={() => setAffaireId(null)} trigramme={trigramme} />
           ))}
-        {section === "stock" && <CaissesStockList />}
+        {section === "stock" && <CaissesStockList trigramme={trigramme} />}
         {section === "achats" && <SectionAVenir titre="Demandes d'achats" />}
       </div>
 
