@@ -3,6 +3,8 @@ import { caisseStockApi } from "../data/caisseStock";
 import { affairesApi } from "../data/affaires";
 import { useSectionLock } from "../hooks/useSectionLock";
 import LockBanner from "../components/LockBanner";
+import EditableCellInput from "../components/EditableCellInput";
+import { confirmerSuppression } from "../data/confirm";
 import type { Affaire, CaisseStock, NewCaisseStock } from "../domain/types";
 
 const CAISSE_VIDE: NewCaisseStock = {
@@ -14,6 +16,20 @@ const CAISSE_VIDE: NewCaisseStock = {
   observations: "",
   affaire_id: null,
 };
+
+type Champ = "nom" | "longueur_mm" | "largeur_mm" | "hauteur_mm" | "observations";
+
+function toNewCaisseStock(c: CaisseStock): NewCaisseStock {
+  return {
+    nom: c.nom,
+    longueur_mm: c.longueur_mm,
+    largeur_mm: c.largeur_mm,
+    hauteur_mm: c.hauteur_mm,
+    quantite: c.quantite,
+    observations: c.observations,
+    affaire_id: c.affaire_id,
+  };
+}
 
 interface Props {
   trigramme: string;
@@ -27,6 +43,7 @@ export default function CaissesStockList({ trigramme }: Props) {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<NewCaisseStock>(CAISSE_VIDE);
+  const [cellEnEdition, setCellEnEdition] = useState<{ id: number; champ: Champ } | null>(null);
 
   async function reload() {
     setLoading(true);
@@ -53,14 +70,25 @@ export default function CaissesStockList({ trigramme }: Props) {
   }
 
   async function handleDelete(id: number, nom: string) {
-    if (!window.confirm(`Supprimer la caisse en stock « ${nom} » ?`)) return;
+    if (!(await confirmerSuppression(`Supprimer la caisse en stock « ${nom} » ?`))) return;
     await caisseStockApi.delete(id);
     await reload();
   }
 
-  function nomAffaire(id: number | null): string {
-    if (id === null) return "Non affectée";
-    return affaires.find((a) => a.id === id)?.nom ?? "?";
+  async function sauvegarderChamp(caisse: CaisseStock, champ: Champ, valeurBrute: string) {
+    setCellEnEdition(null);
+    const estDimension = champ === "longueur_mm" || champ === "largeur_mm" || champ === "hauteur_mm";
+    const valeur = estDimension ? (Number(valeurBrute.replace(",", ".")) || 0) * 1000 : valeurBrute;
+    const base = toNewCaisseStock(caisse);
+    const updated: NewCaisseStock = { ...base, [champ]: valeur };
+    if (JSON.stringify(updated) === JSON.stringify(base)) return;
+    await caisseStockApi.update(caisse.id, updated);
+    await reload();
+  }
+
+  async function handleAffectationChange(caisse: CaisseStock, affaireId: number | null) {
+    await caisseStockApi.update(caisse.id, { ...toNewCaisseStock(caisse), affaire_id: affaireId });
+    await reload();
   }
 
   return (
@@ -131,17 +159,6 @@ export default function CaissesStockList({ trigramme }: Props) {
           </div>
 
           <div>
-            <label style={labelStyle}>Qté</label>
-            <input
-              type="number"
-              min={1}
-              value={form.quantite}
-              onChange={(e) => setForm({ ...form, quantite: Math.round(Number(e.target.value)) || 1 })}
-              style={inputStyle}
-            />
-          </div>
-
-          <div>
             <label style={labelStyle}>Affectation</label>
             <select
               value={form.affaire_id ?? ""}
@@ -190,32 +207,69 @@ export default function CaissesStockList({ trigramme }: Props) {
             <thead>
               <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
                 <th style={thStyle}>Nom</th>
-                <th style={thStyle}>Dimensions (m)</th>
-                <th style={{ ...thStyle, textAlign: "right" }}>Qté</th>
+                <th style={thStyle}>Longueur (m)</th>
+                <th style={thStyle}>Largeur (m)</th>
+                <th style={thStyle}>Hauteur (m)</th>
                 <th style={thStyle}>Observations</th>
                 <th style={thStyle}>Affectation</th>
                 <th style={thStyle}></th>
               </tr>
             </thead>
             <tbody>
-              {caisses.map((c) => (
-                <tr key={c.id}>
-                  <td style={{ ...tdStyle, fontWeight: 700 }}>{c.nom}</td>
-                  <td className="mono" style={tdStyle}>
-                    {(c.longueur_mm / 1000).toFixed(2)} × {(c.largeur_mm / 1000).toFixed(2)} × {(c.hauteur_mm / 1000).toFixed(2)}
-                  </td>
-                  <td className="mono" style={{ ...tdStyle, textAlign: "right" }}>
-                    {c.quantite}
-                  </td>
-                  <td style={tdStyle}>{c.observations}</td>
-                  <td style={tdStyle}>{nomAffaire(c.affaire_id)}</td>
-                  <td style={tdStyle}>
-                    <button className="btn btn-sm btn-danger" onClick={() => handleDelete(c.id, c.nom)} disabled={readOnly}>
-                      Suppr.
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {caisses.map((c) => {
+                function cell(champ: Champ, valeurAffichee: React.ReactNode, mono = false) {
+                  const enEdition = cellEnEdition?.id === c.id && cellEnEdition.champ === champ;
+                  const estDimension = champ === "longueur_mm" || champ === "largeur_mm" || champ === "hauteur_mm";
+                  return (
+                    <td
+                      style={{ ...tdStyle, cursor: readOnly ? "default" : "text", padding: enEdition ? 2 : tdStyle.padding }}
+                      className={mono ? "mono" : undefined}
+                      onClick={() => !readOnly && !enEdition && setCellEnEdition({ id: c.id, champ })}
+                    >
+                      {enEdition ? (
+                        <EditableCellInput
+                          type={estDimension ? "number" : "text"}
+                          defaultValue={estDimension ? String((c[champ] as number) / 1000) : String(c[champ])}
+                          align="left"
+                          onCommit={(v) => sauvegarderChamp(c, champ, v)}
+                          onCancel={() => setCellEnEdition(null)}
+                        />
+                      ) : (
+                        valeurAffichee
+                      )}
+                    </td>
+                  );
+                }
+                return (
+                  <tr key={c.id}>
+                    {cell("nom", c.nom)}
+                    {cell("longueur_mm", (c.longueur_mm / 1000).toFixed(2), true)}
+                    {cell("largeur_mm", (c.largeur_mm / 1000).toFixed(2), true)}
+                    {cell("hauteur_mm", (c.hauteur_mm / 1000).toFixed(2), true)}
+                    {cell("observations", c.observations)}
+                    <td style={tdStyle}>
+                      <select
+                        value={c.affaire_id ?? ""}
+                        disabled={readOnly}
+                        onChange={(e) => handleAffectationChange(c, e.target.value === "" ? null : Number(e.target.value))}
+                        style={{ ...inputStyle, padding: "4px 6px" }}
+                      >
+                        <option value="">Non affectée</option>
+                        {affaires.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.nom}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td style={tdStyle}>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDelete(c.id, c.nom)} disabled={readOnly}>
+                        Suppr.
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
