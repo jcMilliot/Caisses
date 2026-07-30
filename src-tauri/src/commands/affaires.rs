@@ -4,7 +4,8 @@ use tauri::State;
 
 #[tauri::command]
 pub fn list_affaires(db: State<Db>) -> Result<Vec<Affaire>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     let mut stmt = conn
         .prepare("SELECT id, nom, date_creation, seuil_defaut FROM affaire ORDER BY date_creation DESC")
         .map_err(|e| e.to_string())?;
@@ -23,7 +24,8 @@ pub fn list_affaires(db: State<Db>) -> Result<Vec<Affaire>, String> {
 
 #[tauri::command]
 pub fn create_affaire(db: State<Db>, nom: String, seuil_defaut: f64) -> Result<Affaire, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     conn.execute(
         "INSERT INTO affaire (nom, seuil_defaut) VALUES (?1, ?2)",
         rusqlite::params![nom, seuil_defaut],
@@ -52,7 +54,8 @@ pub fn update_affaire(
     nom: String,
     seuil_defaut: f64,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     conn.execute(
         "UPDATE affaire SET nom = ?1, seuil_defaut = ?2 WHERE id = ?3",
         rusqlite::params![nom, seuil_defaut, id],
@@ -63,7 +66,8 @@ pub fn update_affaire(
 
 #[tauri::command]
 pub fn delete_affaire(db: State<Db>, id: i64) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     conn.execute("DELETE FROM affaire WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
     Ok(())

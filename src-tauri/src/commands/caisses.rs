@@ -26,7 +26,8 @@ const SELECT_COLS: &str =
 
 #[tauri::command]
 pub fn list_caisses(db: State<Db>, affaire_id: i64) -> Result<Vec<Caisse>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     let sql = format!(
         "SELECT {} FROM caisse WHERE affaire_id = ?1 ORDER BY ordre, id",
         SELECT_COLS
@@ -48,7 +49,8 @@ pub fn create_caisse(
     hauteur_mm: f64,
     seuil_pct: Option<f64>,
 ) -> Result<Caisse, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     let ordre: i64 = conn
         .query_row(
             "SELECT COALESCE(MAX(ordre), -1) + 1 FROM caisse WHERE affaire_id = ?1",
@@ -79,7 +81,8 @@ pub fn update_caisse(
     seuil_pct: Option<f64>,
     couleur: String,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     conn.execute(
         "UPDATE caisse SET nom = ?1, longueur_mm = ?2, largeur_mm = ?3, hauteur_mm = ?4, seuil_pct = ?5, couleur = ?6
          WHERE id = ?7",
@@ -91,7 +94,8 @@ pub fn update_caisse(
 
 #[tauri::command]
 pub fn delete_caisse(db: State<Db>, id: i64) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     conn.execute("DELETE FROM caisse WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
     Ok(())

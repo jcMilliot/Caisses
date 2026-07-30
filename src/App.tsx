@@ -4,8 +4,12 @@ import AffaireDetail from "./routes/AffaireDetail";
 import DemandesList from "./routes/DemandesList";
 import CaissesStockList from "./routes/CaissesStockList";
 import CreerAffaireDialog from "./components/CreerAffaireDialog";
+import FirstLaunchSetup from "./components/FirstLaunchSetup";
+import UpdateAvailableDialog from "./components/UpdateAvailableDialog";
 import { affairesApi } from "./data/affaires";
 import { caissesApi } from "./data/caisses";
+import { useDbSetup } from "./hooks/useDbSetup";
+import { useUpdateCheck } from "./hooks/useUpdateCheck";
 import type { Demande } from "./domain/types";
 
 type Section = "demandes" | "simulations" | "stock" | "achats";
@@ -18,6 +22,8 @@ const SECTIONS: { id: Section; label: string }[] = [
 ];
 
 export default function App() {
+  const { status: dbStatus, chooseFolder } = useDbSetup();
+  const { update, installing, confirmInstall, dismiss } = useUpdateCheck(dbStatus === "ready");
   const [section, setSection] = useState<Section>("demandes");
   const [affaireId, setAffaireId] = useState<number | null>(null);
   const [creationAffaire, setCreationAffaire] = useState<Demande | null>(null);
@@ -54,6 +60,14 @@ export default function App() {
     );
     setCreationAffaire(null);
     setAffaireId(affaire.id);
+  }
+
+  if (dbStatus === "needs-setup") {
+    return <FirstLaunchSetup onChooseFolder={chooseFolder} />;
+  }
+
+  if (dbStatus !== "ready") {
+    return null;
   }
 
   return (
@@ -98,6 +112,16 @@ export default function App() {
           hauteur_mm={creationAffaire.hauteur_mm}
           onConfirmer={handleConfirmerCreationAffaire}
           onClose={() => setCreationAffaire(null)}
+        />
+      )}
+
+      {update && (
+        <UpdateAvailableDialog
+          version={update.info.version}
+          body={update.info.body}
+          installing={installing}
+          onConfirm={confirmInstall}
+          onDismiss={dismiss}
         />
       )}
     </div>

@@ -21,7 +21,8 @@ const SELECT_COLS: &str =
 
 #[tauri::command]
 pub fn list_caisses_stock(db: State<Db>) -> Result<Vec<CaisseStock>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     let sql = format!("SELECT {} FROM caisse_stock ORDER BY ordre, id", SELECT_COLS);
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt.query_map([], map_row).map_err(|e| e.to_string())?;
@@ -30,7 +31,8 @@ pub fn list_caisses_stock(db: State<Db>) -> Result<Vec<CaisseStock>, String> {
 
 #[tauri::command]
 pub fn create_caisse_stock(db: State<Db>, caisse: NewCaisseStock) -> Result<CaisseStock, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     let ordre: i64 = conn
         .query_row("SELECT COALESCE(MAX(ordre), -1) + 1 FROM caisse_stock", [], |row| row.get(0))
         .map_err(|e| e.to_string())?;
@@ -56,7 +58,8 @@ pub fn create_caisse_stock(db: State<Db>, caisse: NewCaisseStock) -> Result<Cais
 
 #[tauri::command]
 pub fn update_caisse_stock(db: State<Db>, id: i64, caisse: NewCaisseStock) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     conn.execute(
         "UPDATE caisse_stock SET nom = ?1, longueur_mm = ?2, largeur_mm = ?3, hauteur_mm = ?4,
          quantite = ?5, observations = ?6, affaire_id = ?7 WHERE id = ?8",
@@ -77,7 +80,8 @@ pub fn update_caisse_stock(db: State<Db>, id: i64, caisse: NewCaisseStock) -> Re
 
 #[tauri::command]
 pub fn delete_caisse_stock(db: State<Db>, id: i64) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     conn.execute("DELETE FROM caisse_stock WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
     Ok(())

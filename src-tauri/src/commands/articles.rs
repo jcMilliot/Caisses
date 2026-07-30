@@ -23,7 +23,8 @@ const SELECT_COLS: &str = "id, affaire_id, caisse_id, ar, reference, designation
 
 #[tauri::command]
 pub fn list_articles(db: State<Db>, affaire_id: i64) -> Result<Vec<Article>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     let sql = format!(
         "SELECT {} FROM article WHERE affaire_id = ?1 ORDER BY ordre, id",
         SELECT_COLS
@@ -37,8 +38,9 @@ pub fn list_articles(db: State<Db>, affaire_id: i64) -> Result<Vec<Article>, Str
 
 #[tauri::command]
 pub fn create_article(db: State<Db>, affaire_id: i64, article: NewArticle) -> Result<Article, String> {
-    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
-    let id = insert_article(&mut conn, affaire_id, &article)?;
+    let mut guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_mut().ok_or("base de données non initialisée")?;
+    let id = insert_article(conn, affaire_id, &article)?;
     let sql = format!("SELECT {} FROM article WHERE id = ?1", SELECT_COLS);
     conn.query_row(&sql, [id], map_row).map_err(|e| e.to_string())
 }
@@ -49,7 +51,8 @@ pub fn bulk_create_articles(
     affaire_id: i64,
     articles: Vec<NewArticle>,
 ) -> Result<Vec<Article>, String> {
-    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_mut().ok_or("base de données non initialisée")?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut ids = Vec::with_capacity(articles.len());
     {
@@ -137,7 +140,8 @@ pub fn update_article(
     poids_unitaire_kg: f64,
     quantite: i64,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     conn.execute(
         "UPDATE article SET ar = ?1, reference = ?2, designation = ?3, dim1_mm = ?4, dim2_mm = ?5,
          dim3_mm = ?6, poids_unitaire_kg = ?7, quantite = ?8 WHERE id = ?9",
@@ -159,7 +163,8 @@ pub fn update_article(
 
 #[tauri::command]
 pub fn delete_article(db: State<Db>, id: i64) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     conn.execute("DELETE FROM article WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -168,7 +173,8 @@ pub fn delete_article(db: State<Db>, id: i64) -> Result<(), String> {
 /// Assigne une liste d'articles à une caisse (ou les désassigne si caisse_id est None).
 #[tauri::command]
 pub fn assign_articles(db: State<Db>, article_ids: Vec<i64>, caisse_id: Option<i64>) -> Result<(), String> {
-    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_mut().ok_or("base de données non initialisée")?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     for id in article_ids {
         tx.execute(

@@ -1,8 +1,14 @@
 use rusqlite::Connection;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Mutex;
 
-pub struct Db(pub Mutex<Connection>);
+pub struct Db(pub Mutex<Option<Connection>>);
+
+impl Db {
+    pub fn empty() -> Self {
+        Db(Mutex::new(None))
+    }
+}
 
 /// Migrations appliquées dans l'ordre, une seule fois chacune (suivies dans `_migrations`).
 /// Pour ajouter un changement de schéma : créer `migrations/000N_nom.sql` et l'ajouter ici.
@@ -30,9 +36,9 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ),
 ];
 
-pub fn init(app_data_dir: PathBuf) -> Db {
-    std::fs::create_dir_all(&app_data_dir).expect("impossible de créer le dossier de données");
-    let db_path = app_data_dir.join("caisses.sqlite3");
+pub fn open_at(db_folder: &Path) -> Connection {
+    std::fs::create_dir_all(db_folder).expect("impossible de créer le dossier de données");
+    let db_path = db_folder.join("caisses.sqlite3");
     let conn = Connection::open(db_path).expect("impossible d'ouvrir la base SQLite");
 
     conn.pragma_update(None, "foreign_keys", "ON")
@@ -63,5 +69,5 @@ pub fn init(app_data_dir: PathBuf) -> Db {
             .expect("impossible d'enregistrer la migration appliquée");
     }
 
-    Db(Mutex::new(conn))
+    conn
 }
