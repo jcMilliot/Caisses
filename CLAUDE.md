@@ -155,6 +155,21 @@ Calculs (dans `src/domain/calculs.ts`) :
 - Niveaux d'alerte caisse : `ok` / `attention` (taux ≥ seuil) / `alerte` (volume dépassé —
   affichage rouge explicite, pas juste un % > 100 silencieux)
 
+## Distribution et releases
+
+L'app est installée sur au moins deux postes (voir journal 2026-07-30, dossier BDD/auto-update).
+Les changements poussés sur `main` ne sont **pas** automatiquement visibles sur ces postes : il
+faut bump la version (`tauri.conf.json` + `package.json` + `Cargo.toml`, ensemble), pousser un
+tag `vX.Y.Z`, laisser le workflow GitHub Actions builder, puis **publier manuellement** la
+release en brouillon sur GitHub — c'est seulement à ce moment que l'auto-update des postes
+installés détecte la nouvelle version à leur prochain démarrage.
+
+**Convention de rythme** (actée avec l'utilisateur le 2026-07-30) : ne jamais tagger/publier de
+release de sa propre initiative en cours de session. À la fin d'un bloc de travail terminé et
+validé (`cargo check` + `npx tsc --noEmit` + build de test OK), **proposer** à l'utilisateur de
+créer une release — lui reste décisionnaire à chaque fois, mais c'est à l'assistant de penser à
+le proposer plutôt que d'attendre que l'utilisateur y pense.
+
 ## Commandes utiles
 
 ```bash
