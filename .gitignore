@@ -19,6 +19,11 @@ src-tauri/gen
 # Outillage local Claude Code
 .claude/scheduled_tasks.lock
 
+# Clé de signature updater (ne doit jamais être commitée)
+*.key
+*.key.pub
+/chemin/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
