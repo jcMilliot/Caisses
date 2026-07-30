@@ -17,6 +17,7 @@ interface Props {
   onDelete: () => Promise<void>;
   dragActif?: boolean;
   survolee?: boolean;
+  readOnly?: boolean;
 }
 
 const BORDER_BY_NIVEAU: Record<CaisseCalculee["niveauAlerte"], string> = {
@@ -57,8 +58,8 @@ function DimensionInput({
   );
 }
 
-export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragActif, survolee }: Props) {
-  const [editing, setEditing] = useState(!!autoEdit);
+export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragActif, survolee, readOnly }: Props) {
+  const [editing, setEditing] = useState(!!autoEdit && !readOnly);
   // Les dimensions sont saisies/affichées en mètres dans l'UI, mais stockées en mm partout
   // ailleurs (calculs, base de données) — conversion faite uniquement aux frontières de ce
   // composant.
@@ -203,14 +204,16 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
             <Row label="Seuil d'alerte" value={`${caisse.seuilEffectif}%${caisse.seuil_pct === null ? " (défaut)" : ""}`} />
           </div>
 
-          <div style={{ marginTop: 14, display: "flex", gap: 6 }}>
-            <button className="btn btn-sm" onClick={() => setEditing(true)}>
-              Modifier
-            </button>
-            <button className="btn btn-sm btn-danger" onClick={onDelete}>
-              Supprimer
-            </button>
-          </div>
+          {!readOnly && (
+            <div style={{ marginTop: 14, display: "flex", gap: 6 }}>
+              <button className="btn btn-sm" onClick={() => setEditing(true)}>
+                Modifier
+              </button>
+              <button className="btn btn-sm btn-danger" onClick={onDelete}>
+                Supprimer
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

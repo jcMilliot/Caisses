@@ -3,4 +3,6 @@ pub mod articles;
 pub mod caisse_stock;
 pub mod caisses;
 pub mod demandes;
+pub mod locks;
 pub mod setup;
+pub mod user;

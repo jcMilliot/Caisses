@@ -11,6 +11,7 @@ interface Props {
   onToggleSelectAll: () => void;
   onUpdate: (id: number, article: NewArticle) => Promise<void>;
   onStartDrag?: (articleId: number, e: React.PointerEvent) => void;
+  readOnly?: boolean;
 }
 
 type Champ = "ar" | "reference" | "designation" | "dim1_mm" | "dim2_mm" | "dim3_mm" | "poids_unitaire_kg" | "quantite";
@@ -56,6 +57,7 @@ export default function ArticlesTable({
   onToggleSelectAll,
   onUpdate,
   onStartDrag,
+  readOnly,
 }: Props) {
   const [cellEnEdition, setCellEnEdition] = useState<{ id: number; champ: Champ } | null>(null);
   const [tri, setTri] = useState<Tri | null>(() => chargerTri(affaireId));
@@ -120,9 +122,9 @@ export default function ArticlesTable({
     const estNombre = !CHAMPS_TEXTE.has(champ);
     return (
       <td
-        style={{ ...tdStyle, textAlign: align, cursor: "text", padding: enEdition ? 2 : tdStyle.padding }}
+        style={{ ...tdStyle, textAlign: align, cursor: readOnly ? "default" : "text", padding: enEdition ? 2 : tdStyle.padding }}
         className={estNombre ? "mono" : undefined}
-        onClick={() => !enEdition && setCellEnEdition({ id: article.id, champ })}
+        onClick={() => !readOnly && !enEdition && setCellEnEdition({ id: article.id, champ })}
       >
         {enEdition ? (
           <EditableCellInput
@@ -193,7 +195,7 @@ export default function ArticlesTable({
                     : undefined,
               }}
             >
-              {onStartDrag && (
+              {onStartDrag && !readOnly && (
                 <td
                   onPointerDown={(e) => {
                     e.preventDefault();

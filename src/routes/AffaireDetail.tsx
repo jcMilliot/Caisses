@@ -1,17 +1,22 @@
 import { useState } from "react";
 import { useAffaire } from "../hooks/useAffaire";
 import { usePointerDrag } from "../hooks/usePointerDrag";
+import { useSectionLock } from "../hooks/useSectionLock";
 import ArticlesTable from "../components/ArticlesTable";
 import PasteImportZone from "../components/PasteImportZone";
 import CaisseCard from "../components/CaisseCard";
 import AssignToDialog from "../components/AssignToDialog";
+import LockBanner from "../components/LockBanner";
 
 interface Props {
   affaireId: number;
   onBack: () => void;
+  trigramme: string;
 }
 
-export default function AffaireDetail({ affaireId, onBack }: Props) {
+export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
+  const lock = useSectionLock(`affaire:${affaireId}`, trigramme);
+  const readOnly = lock.status !== "held";
   const {
     affaire,
     articles,
@@ -71,6 +76,7 @@ export default function AffaireDetail({ affaireId, onBack }: Props) {
   }
 
   async function handleDropArticle(articleId: number, caisseCible: { id: number; nom: string }) {
+    if (readOnly) return;
     const article = articles.find((a) => a.id === articleId);
     if (!article || article.caisse_id === caisseCible.id) return;
     if (article.caisse_id !== null) {
@@ -135,6 +141,7 @@ export default function AffaireDetail({ affaireId, onBack }: Props) {
           </button>
           <button
             className="btn btn-sm"
+            disabled={readOnly}
             onClick={async () => {
               const caisse = await creerCaisse(`Caisse ${caissesCalculees.length + 1}`, 0, 0, 0, null);
               setCaisseRecenteId(caisse.id);
@@ -169,12 +176,14 @@ export default function AffaireDetail({ affaireId, onBack }: Props) {
                 return modifierCaisse(c.id, nom, l, w, h, seuil, couleur);
               }}
               onDelete={async () => {
+                if (readOnly) return;
                 if (window.confirm(`Supprimer la caisse « ${c.nom} » ? Ses articles repasseront en non-assigné.`)) {
                   await supprimerCaisse(c.id);
                 }
               }}
               dragActif={!!drag}
               survolee={survolCaisseId === c.id}
+              readOnly={readOnly}
             />
           ))}
         </div>
@@ -187,7 +196,7 @@ export default function AffaireDetail({ affaireId, onBack }: Props) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <h2 style={sectionTitleStyle}>Articles <span style={sectionCountStyle}>{articles.length}</span></h2>
         <div style={{ display: "flex", gap: 8 }}>
-          {selectedIds.size > 0 && (
+          {selectedIds.size > 0 && !readOnly && (
             <>
               <button className="btn btn-sm btn-primary" onClick={() => setShowAssign(true)}>
                 Assigner {selectedIds.size} article(s) →
@@ -199,7 +208,7 @@ export default function AffaireDetail({ affaireId, onBack }: Props) {
               )}
             </>
           )}
-          <button className="btn btn-sm" onClick={() => setShowPaste(true)}>
+          <button className="btn btn-sm" onClick={() => setShowPaste(true)} disabled={readOnly}>
             Coller depuis Excel
           </button>
         </div>
@@ -215,6 +224,7 @@ export default function AffaireDetail({ affaireId, onBack }: Props) {
           onToggleSelectAll={toggleSelectAll}
           onUpdate={modifierArticle}
           onStartDrag={startDrag}
+          readOnly={readOnly}
         />
       </div>
     </section>
@@ -241,6 +251,17 @@ export default function AffaireDetail({ affaireId, onBack }: Props) {
           seuil {affaire.seuil_defaut}%
         </span>
       </div>
+
+      {(readOnly || lock.incomingRequest) && (
+        <LockBanner
+          holderTrigramme={lock.holderTrigramme}
+          incomingRequest={lock.incomingRequest}
+          outgoingRequestStatus={lock.outgoingRequestStatus}
+          onRequestPen={lock.requestPen}
+          onApprove={lock.approveRequest}
+          onDeny={lock.denyRequest}
+        />
+      )}
 
       {caissesPosition === "haut" ? (
         <>

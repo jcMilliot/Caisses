@@ -121,3 +121,15 @@ pub struct NewCaisseStock {
     pub observations: String,
     pub affaire_id: Option<i64>,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SectionLock {
+    pub section_key: String,
+    pub titulaire: String,
+    pub acquis_le: String,
+    pub dernier_battement: String,
+    pub demandeur: Option<String>,
+    pub demande_le: Option<String>,
+    pub demande_statut: String,
+    pub expire: bool,
+}

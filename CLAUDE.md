@@ -123,7 +123,18 @@ demande (id,  -- table indépendante, pas de FK — section "Demandes" du menu p
          moteurs, module_lineaire, terminaux, traitement, informations_supp,
          cde_passee_affaire BOOL, cde_passee_achat_stock BOOL,
          observations, ordre)
+
+section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" | "affaire:{id}"
+              titulaire, acquis_le, dernier_battement,  -- trigramme + horodatages
+              demandeur NULL, demande_le NULL, demande_statut)  -- 'aucune'|'en_attente'|'refusee'
 ```
+
+Note sur `section_lock` (verrouillage applicatif multi-poste, cf. journal 2026-07-30) : table
+générique pour les 4 sections verrouillables (l'écran entier pour Demandes/Stock/Achats, une
+affaire précise pour Simulations). Pas de colonne d'expiration stockée — calculée à la volée en
+SQL par comparaison de `dernier_battement` à `datetime('now', '-5 minutes')`, pour rester
+indépendante de l'horloge d'un poste en particulier au moment de l'écriture. Une ligne n'existe
+que si la section a déjà été verrouillée au moins une fois (absence de ligne == libre).
 
 Note sur `demande` : reprend les colonnes du fichier Excel de suivi existant. Les booléens
 (`ok_pour_passer_cde`, `cde_passee_affaire`, `cde_passee_achat_stock`) sont stockés en
@@ -342,6 +353,57 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
 - Build de test local (`npm run tauri build -- --debug`) et cycle complet réel (tag → CI →
   release brouillon → publication manuelle) validés de bout en bout sur `v0.2.1`.
 
+### 2026-07-30 — Verrouillage applicatif par section/affaire (multi-poste)
+
+- **Contexte** : suite à la mise en place du dossier BDD réseau partagé (session précédente le
+  même jour), risque de corruption SQLite si deux postes écrivent en même temps. Décision de
+  mitiger par un verrouillage applicatif ("qui a la main") plutôt que de construire tout de suite
+  un vrai serveur central. Portée actée avec l'utilisateur : verrou sur l'écran entier pour
+  Demandes/Caisses en stock/Demandes d'achats, verrou par affaire précise pour Simulations —
+  jamais plus fin. Pris à l'ouverture (écriture par défaut), libéré en quittant l'écran, après 5
+  min d'inactivité, ou via une demande explicite ("demander le crayon") approuvée/refusée par le
+  titulaire actuel. Synchronisation par polling (7s), pas de serveur temps réel. **Pas de
+  redirection forcée** en cas de perte de la main : l'écran reste ouvert, bascule juste en lecture
+  seule sur place (brouillon `DemandesList` conservé mais figé, pas de perte de données).
+- **Modèle** : une seule table générique `section_lock` (`migrations/0007_add_section_lock.sql`,
+  voir "Modèle de données" ci-dessus) — `section_key` encode la portée
+  (`"demandes"`/`"stock"`/`"achats"`/`` `affaire:{id}` ``), évite une FK obligatoire vers `affaire`
+  puisque 3 des 4 sections n'ont pas de ligne associée.
+- **Backend** (`commands/locks.rs`) : `acquire_lock` atomique via un seul
+  `INSERT ... ON CONFLICT(section_key) DO UPDATE ... WHERE` (idempotent si même titulaire, ou si
+  le verrou existant est périmé) — élimine la course "deux postes ouvrent la même affaire jamais
+  verrouillée en même temps" sans lecture préalable côté application. `heartbeat(renew: bool)`
+  fait à la fois office de poll (état courant) et de "preuve de vie" : `renew=false` quand le
+  client détecte une inactivité locale, pour que l'expiration corresponde à une vraie inactivité
+  utilisateur et pas juste "écran resté ouvert". `request_pen`/`respond_pen_request` pour la
+  demande/réponse de crayon, `list_locks` en un seul appel batch (pas de N+1) pour les badges de
+  `AffairesList`.
+- **Frontend** : hook générique `hooks/useSectionLock.ts` (acquire au montage, release au
+  démontage via un `ref` pour éviter la closure périmée dans le cleanup — même pattern que
+  `brouillonRef`/`demandesRef` déjà en place dans `DemandesList.tsx`), polling 7s, détection
+  d'activité `window` (`mousemove`/`keydown`/`click`) pour piloter `renew`. Composant partagé
+  `components/LockBanner.tsx` (bandeau "verrouillé par XYZ" + bouton "Demander le crayon", ou
+  bannière d'approbation si une demande est entrante) réutilisé par les 3 écrans concernés.
+  Chaque écran/composant de table (`ArticlesTable`, `DemandesTable`, `CaisseCard`) reçoit une
+  prop `readOnly` qui désactive les actions d'écriture (édition inline, drag & drop, boutons
+  Créer/Modifier/Supprimer) sans changer leur state local — pas de remaniement structurel.
+- **Identité trigramme** : fichier séparé `user_config.rs`/`user-identity.json` (délibérément
+  distinct de `db-location.json` — cycles de vie différents, le trigramme est per-poste et sera
+  probablement remplacé par un vrai système de comptes plus tard, sans toucher au choix de
+  dossier). Écran `TrigrammeSetup.tsx` au premier lancement, gating séquentiel dans `App.tsx`
+  après celui du dossier BDD (`useDbSetup` puis `useUserSetup`). `trigramme` passé en prop directe
+  aux 3 routes consommatrices (pas de context, cohérent avec le reste du code).
+- Validation : `cargo check`, `npx tsc --noEmit` et `npm run tauri build -- --debug` (bundle
+  complet) tous passés avec succès. **Non testé : scénario réel à deux postes/instances**
+  (acquisition/libération, timeout d'inactivité, demande de crayon, course à la première
+  acquisition) — le plan de test détaillé (deux `npm run tauri dev` pointées vers le même dossier,
+  trigrammes différents) reste à exécuter manuellement à la prochaine session.
+- **Risques connus, actés avec l'utilisateur** (non bloquants) : dérive d'horloge entre postes
+  (l'expiration est évaluée par l'horloge du poste appelant, pas une horloge serveur centrale) ;
+  perte de connexion réseau pendant qu'un poste tient un verrou → bloqué jusqu'à expiration des 5
+  minutes, aucune détection précoce ; une demande de crayon reste "en_attente" indéfiniment si le
+  titulaire ne poll plus (pas d'auto-expiration de la demande elle-même dans cette itération).
+
 ## Prochaines étapes
 
 1. **Tester manuellement en conditions réelles** la nouvelle section Demandes (collage Excel
@@ -367,17 +429,16 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
    temporairement par l'utilisateur en attendant un vrai système de verrouillage applicatif (voir
    point suivant). **Recommandation en attendant** : éviter d'éditer la même affaire depuis deux
    postes en même temps, et mettre en place une sauvegarde régulière (voir point 10 ci-dessous).
-9. **Verrouillage par affaire (multi-poste)** — idée validée par l'utilisateur (2026-07-30) mais
-   pas encore conçue : verrou applicatif au niveau d'une affaire ("cette affaire est en cours
-   d'édition par X"), les autres postes passant en lecture seule le temps que la personne quitte
-   la simulation. Nécessite une colonne/table dédiée (ex. `verrouillee_par`, `verrouillee_le` sur
-   `affaire`) et de la logique applicative — pas quelque chose que SQLite ou le système de
-   fichiers gèrent seuls. Points à trancher avant implémentation : libération automatique à la
-   fermeture de l'écran, gestion d'un crash/fermeture brutale (verrou qui reste bloqué
-   indéfiniment — probablement un TTL ou une détection de processus), affichage du verrou côté UI
-   (qui a la main, depuis quand). Éventuellement le bon moment pour introduire le petit serveur
-   HTTP déjà anticipé par la séparation `data/` (cf. section Architecture) plutôt qu'un
-   verrouillage géré directement dans le fichier SQLite partagé.
+9. **Verrouillage par section/affaire (multi-poste)** — **implémenté le 2026-07-30** (voir journal
+   ci-dessus, table `section_lock`, `commands/locks.rs`, `hooks/useSectionLock.ts`), mais **non
+   testé en conditions réelles à deux postes/instances**. À faire à la prochaine session : exécuter
+   le plan de test décrit dans le journal (deux `npm run tauri dev` pointées vers le même dossier
+   BDD, trigrammes différents — acquisition/libération, timeout d'inactivité réduit pour le test,
+   demande/approbation/refus de crayon, course à la première acquisition sur une affaire jamais
+   verrouillée). Pas d'auto-expiration de la demande de crayon elle-même si le titulaire arrête de
+   poller — à reconsidérer si ça devient gênant en usage réel. Si le besoin de temps réel/fiabilité
+   dépasse ce que permet le polling, le bon moment pour introduire le petit serveur HTTP déjà
+   anticipé par la séparation `data/` (cf. section Architecture).
 10. **Sauvegarde régulière de `caisses.sqlite3`** — pas encore mise en place. Tant que le
     verrouillage par affaire (point 9) n'existe pas et que la base peut vivre sur un dossier
     réseau partagé (point 8), une copie de sauvegarde à intervalle régulier vers un autre

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { affairesApi } from "../data/affaires";
-import type { Affaire } from "../domain/types";
+import { locksApi } from "../data/locks";
+import type { Affaire, SectionLock } from "../domain/types";
 
 interface Props {
   onOpen: (id: number) => void;
@@ -8,6 +9,7 @@ interface Props {
 
 export default function AffairesList({ onOpen }: Props) {
   const [affaires, setAffaires] = useState<Affaire[]>([]);
+  const [verrous, setVerrous] = useState<Map<number, SectionLock>>(new Map());
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [nom, setNom] = useState("");
@@ -17,7 +19,15 @@ export default function AffairesList({ onOpen }: Props) {
   async function reload() {
     setLoading(true);
     try {
-      setAffaires(await affairesApi.list());
+      const [a, locks] = await Promise.all([affairesApi.list(), locksApi.list()]);
+      setAffaires(a);
+      const map = new Map<number, SectionLock>();
+      for (const lock of locks) {
+        if (lock.expire) continue;
+        const match = lock.section_key.match(/^affaire:(\d+)$/);
+        if (match) map.set(Number(match[1]), lock);
+      }
+      setVerrous(map);
     } finally {
       setLoading(false);
     }
@@ -153,7 +163,24 @@ export default function AffairesList({ onOpen }: Props) {
               }}
             >
               <div>
-                <div style={{ fontWeight: 600, fontSize: 15 }}>{a.nom}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 600, fontSize: 15 }}>{a.nom}</span>
+                  {verrous.has(a.id) && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: "var(--text-muted)",
+                        background: "var(--bg-panel-alt)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 999,
+                        padding: "1px 8px",
+                      }}
+                    >
+                      verrouillée par {verrous.get(a.id)!.titulaire}
+                    </span>
+                  )}
+                </div>
                 <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 2 }}>
                   Créée le {new Date(a.date_creation).toLocaleDateString("fr-FR")} · seuil par défaut {a.seuil_defaut}%
                 </div>
