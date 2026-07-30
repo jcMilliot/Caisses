@@ -29,8 +29,11 @@ Sessions de travail espacées dans le temps → **ce fichier est la mémoire de 
 - **Framework desktop** : Tauri 2 (backend Rust, webview système — pas de runtime Electron/Chromium embarqué)
 - **Frontend** : React 19 + TypeScript, Vite
 - **Stockage** : SQLite local (`rusqlite`, feature `bundled` — SQLite compilé depuis les sources,
-  aucune dépendance système). Un seul fichier `caisses.sqlite3` dans le dossier de données de l'app
-  (`app_data_dir()`, ex. `%APPDATA%\com.xan.caisses\` sous Windows).
+  aucune dépendance système). Un seul fichier `caisses.sqlite3`, dans un dossier **choisi par
+  l'utilisateur au premier lancement** (dialogue natif via `tauri-plugin-dialog`, cf. journal
+  2026-07-30) et mémorisé dans `db-location.json` (`app_config_dir()`). Peut pointer vers un
+  dossier réseau partagé pour un usage multi-poste — voir avertissement dans "Prochaines étapes"
+  sur les risques de corruption SQLite en écriture concurrente sur ce genre de partage.
 - **Pas de bouton "Enregistrer"** : chaque action UI (édition, assignation, création) déclenche
   immédiatement l'appel Tauri correspondant et persiste en base.
 
@@ -287,6 +290,58 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   cocher) — même limitation d'environnement que d'habitude, à valider manuellement à la
   prochaine session avec le vrai contenu du fichier Excel de suivi.
 
+### 2026-07-30 — Dossier BDD configurable au premier lancement + auto-update GitHub
+
+- **Contexte** : besoin de distribuer l'app en `.exe` sur un second poste, avec la base de
+  données dans un dossier choisi par l'utilisateur (potentiellement un dossier réseau partagé
+  pour un usage à plusieurs postes), et de pouvoir pousser des mises à jour sans réinstallation
+  manuelle.
+- **Dossier BDD configurable** : `Db` passe de `Mutex<Connection>` à `Mutex<Option<Connection>>`
+  (`db.rs`) pour permettre l'enregistrement de toutes les commandes Tauri avant que le chemin de
+  la base ne soit connu. `db::init(app_data_dir)` devient `db::open_at(db_folder: &Path)`
+  (logique interne inchangée : create_dir_all, ouverture, pragma, migrations). Nouveau module
+  `config.rs` (lecture/écriture de `db-location.json` dans `app_config_dir()` — nécessairement
+  séparé du dossier BDD lui-même puisqu'il faut le lire avant de savoir où est la base). Nouvelles
+  commandes (`commands/setup.rs`) : `get_db_status`, `choose_db_folder` (dialogue natif via
+  `tauri_plugin_dialog::DialogExt::blocking_pick_folder`), `set_db_folder`, `init_db`. Côté
+  frontend : `src/data/setup.ts`, `hooks/useDbSetup.ts` (state machine
+  checking/needs-setup/ready/error), `components/FirstLaunchSetup.tsx` (écran plein-écran
+  bloquant tant qu'aucun dossier n'est choisi), branché en tête de `App.tsx`. Un dossier déjà
+  occupé par un `caisses.sqlite3` existant (réinstallation, pointage vers une base partagée) est
+  géré gratuitement par les migrations idempotentes existantes.
+- **Passe mécanique sur les 24 sites `db.0.lock()`** dans `commands/{affaires,articles,caisses,
+  demandes,caisse_stock}.rs` : chaque site ajoute `guard.as_ref().ok_or("base de données non
+  initialisée")?` (ou `.as_mut()` pour les 3 sites transactionnels : `create_article`,
+  `bulk_create_articles`/`bulk_create_demandes`, `assign_articles`).
+- **Auto-update** : `tauri-plugin-updater` + `tauri-plugin-process` (Rust et JS). Vérification
+  automatique au démarrage (`hooks/useUpdateCheck.ts`, une fois le dossier BDD résolu), overlay
+  de confirmation custom (`components/UpdateAvailableDialog.tsx`, dialogue natif du plugin
+  désactivé via `"dialog": false`) avant téléchargement/installation/relance
+  (`data/updater.ts`). Endpoint GitHub Releases dans `tauri.conf.json`
+  (`plugins.updater.endpoints`) : `https://github.com/jcMilliot/Caisses/releases/latest/download/latest.json`.
+  **Piège rencontré** : `bundle.createUpdaterArtifacts: true` est nécessaire dans
+  `tauri.conf.json` pour que `tauri-action`/`tauri build` génère `latest.json` et les fichiers
+  `.sig` — sans ce flag, le build produit l'installeur mais pas les artefacts updater, et
+  l'auto-update échoue silencieusement. La release `v0.2.0` (premier tag) a été publiée sans ce
+  flag et est restée incomplète (assets manquants) ; corrigé et retesté avec succès sur `v0.2.1`.
+- **CI/CD** : `.github/workflows/release.yml`, déclenché sur push d'un tag `v*`, build Windows
+  uniquement (`windows-latest`, pas de matrice multi-OS), via `tauri-apps/tauri-action`. Publie
+  une release GitHub en **brouillon** (`releaseDraft: true`) — validation et publication
+  manuelles par l'utilisateur à chaque fois, pas d'auto-publish. Secrets requis :
+  `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (clé générée via
+  `tauri signer generate`, jamais commitée — `*.key`/`*.key.pub` ajoutés au `.gitignore` après
+  qu'un dossier `chemin/vers/caisses.key` littéral se soit retrouvé par erreur à la racine du
+  projet suite à un exemple de commande mal interprété ; clé déplacée vers `~/.tauri/`).
+- **Dépôt GitHub** : `jcMilliot/Caisses`, public (décision utilisateur — pas de token à gérer
+  côté poste client pour télécharger les releases ; aucune donnée client n'est jamais commitée,
+  seul le code l'est). Le dépôt existait déjà côté GitHub avec un commit initial (`README.md`
+  auto-généré) au moment du premier push — fusionné avec `--allow-unrelated-histories -X ours`
+  pour conserver le README local (template `create-tauri-app`) plutôt que le titre seul.
+- Convention de version : `tauri.conf.json`, `package.json` et `Cargo.toml` bumpés ensemble, tag
+  `v{version}` correspondant.
+- Build de test local (`npm run tauri build -- --debug`) et cycle complet réel (tag → CI →
+  release brouillon → publication manuelle) validés de bout en bout sur `v0.2.1`.
+
 ## Prochaines étapes
 
 1. **Tester manuellement en conditions réelles** la nouvelle section Demandes (collage Excel
@@ -304,3 +359,30 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
 6. Icônes de l'app (`src-tauri/icons/`) — actuellement les icônes par défaut de `create-tauri-app`.
 7. Réfléchir à un identifiant d'app plus définitif que `com.xan.caisses` si distribution au-delà
    de la machine de l'auteur.
+8. **⚠️ Risque connu — dossier BDD réseau partagé** : décision utilisateur (2026-07-30) d'utiliser
+   un dossier réseau partagé pour `caisses.sqlite3` afin que plusieurs postes travaillent sur les
+   mêmes données. SQLite n'est pas conçu pour des écritures concurrentes fiables sur un partage
+   réseau (SMB/CIFS) — verrouillage fichier peu fiable dans ce contexte, risque de corruption
+   silencieuse du fichier en cas d'écritures simultanées depuis deux postes. Accepté
+   temporairement par l'utilisateur en attendant un vrai système de verrouillage applicatif (voir
+   point suivant). **Recommandation en attendant** : éviter d'éditer la même affaire depuis deux
+   postes en même temps, et mettre en place une sauvegarde régulière (voir point 10 ci-dessous).
+9. **Verrouillage par affaire (multi-poste)** — idée validée par l'utilisateur (2026-07-30) mais
+   pas encore conçue : verrou applicatif au niveau d'une affaire ("cette affaire est en cours
+   d'édition par X"), les autres postes passant en lecture seule le temps que la personne quitte
+   la simulation. Nécessite une colonne/table dédiée (ex. `verrouillee_par`, `verrouillee_le` sur
+   `affaire`) et de la logique applicative — pas quelque chose que SQLite ou le système de
+   fichiers gèrent seuls. Points à trancher avant implémentation : libération automatique à la
+   fermeture de l'écran, gestion d'un crash/fermeture brutale (verrou qui reste bloqué
+   indéfiniment — probablement un TTL ou une détection de processus), affichage du verrou côté UI
+   (qui a la main, depuis quand). Éventuellement le bon moment pour introduire le petit serveur
+   HTTP déjà anticipé par la séparation `data/` (cf. section Architecture) plutôt qu'un
+   verrouillage géré directement dans le fichier SQLite partagé.
+10. **Sauvegarde régulière de `caisses.sqlite3`** — pas encore mise en place. Tant que le
+    verrouillage par affaire (point 9) n'existe pas et que la base peut vivre sur un dossier
+    réseau partagé (point 8), une copie de sauvegarde à intervalle régulier vers un autre
+    emplacement (pas le même dossier/serveur, pour survivre à une panne du partage lui-même) est
+    nécessaire. Fréquence à définir avec l'utilisateur — pas encore tranché : candidats évidents
+    quotidien ou hebdomadaire selon le volume réel de saisie. Pourrait être un simple script/tâche
+    planifiée Windows dans un premier temps, ou une fonctionnalité intégrée à l'app plus tard
+    (bouton "Sauvegarder maintenant" + copie automatique périodique).
