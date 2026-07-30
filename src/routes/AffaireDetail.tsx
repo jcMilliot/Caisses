@@ -7,6 +7,7 @@ import PasteImportZone from "../components/PasteImportZone";
 import CaisseCard from "../components/CaisseCard";
 import AssignToDialog from "../components/AssignToDialog";
 import LockBanner from "../components/LockBanner";
+import { confirmerSuppression, confirmerAction } from "../data/confirm";
 
 interface Props {
   affaireId: number;
@@ -81,8 +82,9 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
     if (!article || article.caisse_id === caisseCible.id) return;
     if (article.caisse_id !== null) {
       const caisseSource = caissesCalculees.find((c) => c.id === article.caisse_id);
-      const confirme = window.confirm(
+      const confirme = await confirmerAction(
         `Déplacer cet article de « ${caisseSource?.nom ?? "?"} » vers « ${caisseCible.nom} » ?`,
+        "Déplacer l'article",
       );
       if (!confirme) return;
     }
@@ -177,7 +179,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
               }}
               onDelete={async () => {
                 if (readOnly) return;
-                if (window.confirm(`Supprimer la caisse « ${c.nom} » ? Ses articles repasseront en non-assigné.`)) {
+                if (await confirmerSuppression(`Supprimer la caisse « ${c.nom} » ? Ses articles repasseront en non-assigné.`)) {
                   await supprimerCaisse(c.id);
                 }
               }}

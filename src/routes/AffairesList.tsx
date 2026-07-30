@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { affairesApi } from "../data/affaires";
 import { locksApi } from "../data/locks";
+import { confirmerSuppression } from "../data/confirm";
 import type { Affaire, SectionLock } from "../domain/types";
 
 interface Props {
@@ -49,7 +50,7 @@ export default function AffairesList({ onOpen }: Props) {
   }
 
   async function handleDelete(id: number, nom: string) {
-    if (!window.confirm(`Supprimer l'affaire « ${nom} » et tous ses articles/caisses ?`)) return;
+    if (!(await confirmerSuppression(`Supprimer l'affaire « ${nom} » et tous ses articles/caisses ?`))) return;
     await affairesApi.delete(id);
     await reload();
   }

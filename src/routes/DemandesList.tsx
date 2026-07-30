@@ -5,6 +5,7 @@ import PasteImportZoneDemandes from "../components/PasteImportZoneDemandes";
 import AjouterDemandesDialog from "../components/AjouterDemandesDialog";
 import LockBanner from "../components/LockBanner";
 import { useSectionLock } from "../hooks/useSectionLock";
+import { confirmerSuppression } from "../data/confirm";
 import type { Demande, NewDemande } from "../domain/types";
 
 let prochainIdTemporaire = -1;
@@ -78,7 +79,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
   }
 
   async function handleDelete(id: number, affaire: string) {
-    if (!window.confirm(`Supprimer la demande « ${affaire} » ?`)) return;
+    if (!(await confirmerSuppression(`Supprimer la demande « ${affaire} » ?`))) return;
     if (id < 0) {
       // Ligne ajoutée localement, pas encore en base : la retirer suffit.
       setBrouillon((prev) => prev.filter((d) => d.id !== id));
