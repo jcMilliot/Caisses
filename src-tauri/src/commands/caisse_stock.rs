@@ -1,3 +1,4 @@
+use crate::commands::locks::require_lock;
 use crate::db::Db;
 use crate::models::{CaisseStock, NewCaisseStock};
 use tauri::State;
@@ -30,9 +31,10 @@ pub fn list_caisses_stock(db: State<Db>) -> Result<Vec<CaisseStock>, String> {
 }
 
 #[tauri::command]
-pub fn create_caisse_stock(db: State<Db>, caisse: NewCaisseStock) -> Result<CaisseStock, String> {
+pub fn create_caisse_stock(db: State<Db>, caisse: NewCaisseStock, trigramme: String) -> Result<CaisseStock, String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock(conn, "stock", &trigramme)?;
     let ordre: i64 = conn
         .query_row("SELECT COALESCE(MAX(ordre), -1) + 1 FROM caisse_stock", [], |row| row.get(0))
         .map_err(|e| e.to_string())?;
@@ -57,9 +59,10 @@ pub fn create_caisse_stock(db: State<Db>, caisse: NewCaisseStock) -> Result<Cais
 }
 
 #[tauri::command]
-pub fn update_caisse_stock(db: State<Db>, id: i64, caisse: NewCaisseStock) -> Result<(), String> {
+pub fn update_caisse_stock(db: State<Db>, id: i64, caisse: NewCaisseStock, trigramme: String) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock(conn, "stock", &trigramme)?;
     conn.execute(
         "UPDATE caisse_stock SET nom = ?1, longueur_mm = ?2, largeur_mm = ?3, hauteur_mm = ?4,
          quantite = ?5, observations = ?6, affaire_id = ?7 WHERE id = ?8",
@@ -79,9 +82,10 @@ pub fn update_caisse_stock(db: State<Db>, id: i64, caisse: NewCaisseStock) -> Re
 }
 
 #[tauri::command]
-pub fn delete_caisse_stock(db: State<Db>, id: i64) -> Result<(), String> {
+pub fn delete_caisse_stock(db: State<Db>, id: i64, trigramme: String) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock(conn, "stock", &trigramme)?;
     conn.execute("DELETE FROM caisse_stock WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
     Ok(())

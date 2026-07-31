@@ -409,15 +409,49 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   après celui du dossier BDD (`useDbSetup` puis `useUserSetup`). `trigramme` passé en prop directe
   aux 3 routes consommatrices (pas de context, cohérent avec le reste du code).
 - Validation : `cargo check`, `npx tsc --noEmit` et `npm run tauri build -- --debug` (bundle
-  complet) tous passés avec succès. **Non testé : scénario réel à deux postes/instances**
-  (acquisition/libération, timeout d'inactivité, demande de crayon, course à la première
-  acquisition) — le plan de test détaillé (deux `npm run tauri dev` pointées vers le même dossier,
-  trigrammes différents) reste à exécuter manuellement à la prochaine session.
+  complet) tous passés avec succès.
 - **Risques connus, actés avec l'utilisateur** (non bloquants) : dérive d'horloge entre postes
   (l'expiration est évaluée par l'horloge du poste appelant, pas une horloge serveur centrale) ;
   perte de connexion réseau pendant qu'un poste tient un verrou → bloqué jusqu'à expiration des 5
   minutes, aucune détection précoce ; une demande de crayon reste "en_attente" indéfiniment si le
   titulaire ne poll plus (pas d'auto-expiration de la demande elle-même dans cette itération).
+
+### 2026-07-31 — Test réel à deux postes + verrouillage appliqué au backend (pas seulement l'UI)
+
+- **Test du scénario multi-poste exécuté avec succès** : deux instances `npm run tauri dev`
+  isolées (dossiers `APPDATA`/copie de repo/ports Vite distincts pour simuler deux postes sur
+  la même machine), pointées vers un même dossier BDD partagé, trigrammes différents. Timeouts
+  de verrou temporairement réduits pendant le test (12s/15s au lieu de 5 min), remis à leur
+  valeur normale ensuite. Acquisition/libération, expiration par inactivité et affichage du
+  badge "verrouillée par XYZ" dans `AffairesList` validés en conditions réelles.
+- **Bug repéré pendant le test** : le bouton "Supprimer" dans `AffairesList` (écran de liste,
+  avant même d'ouvrir une affaire) n'était bloqué par aucune vérification — une affaire
+  verrouillée par un autre poste pouvait être supprimée depuis la liste. Plus largement,
+  **aucune commande Rust ne vérifiait le verrou avant d'écrire** : jusqu'ici la protection
+  multi-poste reposait entièrement sur le `readOnly` côté frontend (désactivation de boutons),
+  ce qui n'aide pas pour un écran comme `AffairesList` qui n'est pas lui-même verrouillé.
+- **Correctif structurel** : nouvelle fonction `require_lock(conn, section_key, trigramme)`
+  dans `commands/locks.rs`, appelée en tête de **toutes** les commandes de mutation
+  (`create`/`update`/`delete`/`assign`/`set_*`) sur affaires, caisses, articles, demandes et
+  caisses en stock — pas seulement les suppressions. Sémantique retenue : refuse l'action
+  seulement si la ressource est *activement* détenue par un **autre** titulaire (verrou non
+  expiré) ; une ressource jamais verrouillée (ex. suppression depuis `AffairesList` sans avoir
+  ouvert l'affaire) ou dont le verrou a expiré reste autorisée — pas besoin d'acquérir le verrou
+  au préalable pour agir. Pour les commandes qui ne reçoivent qu'un `id` de ligne (article,
+  caisse), l'`affaire_id` propriétaire est résolue côté Rust par une sous-requête
+  (`require_lock_for_article`/`require_lock_for_caisse`) plutôt que transmise par le frontend.
+  `assign_articles` ne vérifie que l'affaire du premier article de la liste (l'UI ne mélange
+  jamais plusieurs affaires dans un seul appel). Toutes les commandes concernées prennent
+  désormais un paramètre `trigramme` supplémentaire ; tous les modules `data/*.ts` et leurs
+  appelants (`useAffaire`, `AffairesList`, `DemandesList`, `CaissesStockList`, `App.tsx`) mis à
+  jour en conséquence. Côté UI, `AffairesList` désactive maintenant aussi le bouton Supprimer
+  quand l'affaire est verrouillée par un autre trigramme (pas seulement un blocage silencieux
+  côté backend).
+- Portée volontairement limitée aux mutations d'écriture (pas de verrouillage plus fin, pas de
+  système de droits/permissions par utilisateur — **noté comme évolution future**, cf.
+  "Prochaines étapes").
+- `cargo check`, `npx tsc --noEmit` et `npm run tauri build -- --debug` validés après le
+  correctif.
 
 ## Prochaines étapes
 
@@ -444,16 +478,15 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
    temporairement par l'utilisateur en attendant un vrai système de verrouillage applicatif (voir
    point suivant). **Recommandation en attendant** : éviter d'éditer la même affaire depuis deux
    postes en même temps, et mettre en place une sauvegarde régulière (voir point 10 ci-dessous).
-9. **Verrouillage par section/affaire (multi-poste)** — **implémenté le 2026-07-30** (voir journal
-   ci-dessus, table `section_lock`, `commands/locks.rs`, `hooks/useSectionLock.ts`), mais **non
-   testé en conditions réelles à deux postes/instances**. À faire à la prochaine session : exécuter
-   le plan de test décrit dans le journal (deux `npm run tauri dev` pointées vers le même dossier
-   BDD, trigrammes différents — acquisition/libération, timeout d'inactivité réduit pour le test,
-   demande/approbation/refus de crayon, course à la première acquisition sur une affaire jamais
-   verrouillée). Pas d'auto-expiration de la demande de crayon elle-même si le titulaire arrête de
-   poller — à reconsidérer si ça devient gênant en usage réel. Si le besoin de temps réel/fiabilité
-   dépasse ce que permet le polling, le bon moment pour introduire le petit serveur HTTP déjà
-   anticipé par la séparation `data/` (cf. section Architecture).
+9. **Verrouillage par section/affaire (multi-poste)** — **implémenté le 2026-07-30, testé en
+   conditions réelles à deux postes/instances et durci côté backend le 2026-07-31** (voir
+   journal ci-dessus : table `section_lock`, `commands/locks.rs::require_lock`,
+   `hooks/useSectionLock.ts`). Pas d'auto-expiration de la demande de crayon elle-même si le
+   titulaire arrête de poller — à reconsidérer si ça devient gênant en usage réel. Pas de système
+   de droits/permissions par utilisateur (tout titulaire du verrou peut tout faire sur sa
+   ressource) — évolution possible plus tard si le besoin se présente. Si le besoin de temps
+   réel/fiabilité dépasse ce que permet le polling, le bon moment pour introduire le petit
+   serveur HTTP déjà anticipé par la séparation `data/` (cf. section Architecture).
 10. **Sauvegarde régulière de `caisses.sqlite3`** — pas encore mise en place. Tant que le
     verrouillage par affaire (point 9) n'existe pas et que la base peut vivre sur un dossier
     réseau partagé (point 8), une copie de sauvegarde à intervalle régulier vers un autre

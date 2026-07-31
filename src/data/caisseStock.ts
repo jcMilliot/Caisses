@@ -3,7 +3,9 @@ import type { CaisseStock, NewCaisseStock } from "../domain/types";
 
 export const caisseStockApi = {
   list: () => call<CaisseStock[]>("list_caisses_stock"),
-  create: (caisse: NewCaisseStock) => call<CaisseStock>("create_caisse_stock", { caisse }),
-  update: (id: number, caisse: NewCaisseStock) => call<void>("update_caisse_stock", { id, caisse }),
-  delete: (id: number) => call<void>("delete_caisse_stock", { id }),
+  create: (caisse: NewCaisseStock, trigramme: string) =>
+    call<CaisseStock>("create_caisse_stock", { caisse, trigramme }),
+  update: (id: number, caisse: NewCaisseStock, trigramme: string) =>
+    call<void>("update_caisse_stock", { id, caisse, trigramme }),
+  delete: (id: number, trigramme: string) => call<void>("delete_caisse_stock", { id, trigramme }),
 };

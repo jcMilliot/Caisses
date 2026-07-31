@@ -1,6 +1,14 @@
+use crate::commands::locks::require_lock;
 use crate::db::Db;
 use crate::models::{Article, NewArticle};
 use tauri::State;
+
+fn require_lock_for_article(conn: &rusqlite::Connection, article_id: i64, trigramme: &str) -> Result<(), String> {
+    let affaire_id: i64 = conn
+        .query_row("SELECT affaire_id FROM article WHERE id = ?1", [article_id], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    require_lock(conn, &format!("affaire:{}", affaire_id), trigramme)
+}
 
 fn map_row(row: &rusqlite::Row) -> rusqlite::Result<Article> {
     Ok(Article {
@@ -37,9 +45,10 @@ pub fn list_articles(db: State<Db>, affaire_id: i64) -> Result<Vec<Article>, Str
 }
 
 #[tauri::command]
-pub fn create_article(db: State<Db>, affaire_id: i64, article: NewArticle) -> Result<Article, String> {
+pub fn create_article(db: State<Db>, affaire_id: i64, article: NewArticle, trigramme: String) -> Result<Article, String> {
     let mut guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_mut().ok_or("base de données non initialisée")?;
+    require_lock(conn, &format!("affaire:{}", affaire_id), &trigramme)?;
     let id = insert_article(conn, affaire_id, &article)?;
     let sql = format!("SELECT {} FROM article WHERE id = ?1", SELECT_COLS);
     conn.query_row(&sql, [id], map_row).map_err(|e| e.to_string())
@@ -50,9 +59,11 @@ pub fn bulk_create_articles(
     db: State<Db>,
     affaire_id: i64,
     articles: Vec<NewArticle>,
+    trigramme: String,
 ) -> Result<Vec<Article>, String> {
     let mut guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_mut().ok_or("base de données non initialisée")?;
+    require_lock(conn, &format!("affaire:{}", affaire_id), &trigramme)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut ids = Vec::with_capacity(articles.len());
     {
@@ -139,9 +150,11 @@ pub fn update_article(
     dim3_mm: f64,
     poids_unitaire_kg: f64,
     quantite: i64,
+    trigramme: String,
 ) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock_for_article(conn, id, &trigramme)?;
     conn.execute(
         "UPDATE article SET ar = ?1, reference = ?2, designation = ?3, dim1_mm = ?4, dim2_mm = ?5,
          dim3_mm = ?6, poids_unitaire_kg = ?7, quantite = ?8 WHERE id = ?9",
@@ -162,19 +175,25 @@ pub fn update_article(
 }
 
 #[tauri::command]
-pub fn delete_article(db: State<Db>, id: i64) -> Result<(), String> {
+pub fn delete_article(db: State<Db>, id: i64, trigramme: String) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock_for_article(conn, id, &trigramme)?;
     conn.execute("DELETE FROM article WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 /// Assigne une liste d'articles à une caisse (ou les désassigne si caisse_id est None).
+/// Ne vérifie le verrou que de l'affaire du premier article : l'UI ne sélectionne jamais
+/// d'articles de plusieurs affaires en même temps (AffaireDetail opère sur une seule affaire).
 #[tauri::command]
-pub fn assign_articles(db: State<Db>, article_ids: Vec<i64>, caisse_id: Option<i64>) -> Result<(), String> {
+pub fn assign_articles(db: State<Db>, article_ids: Vec<i64>, caisse_id: Option<i64>, trigramme: String) -> Result<(), String> {
     let mut guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_mut().ok_or("base de données non initialisée")?;
+    if let Some(&first_id) = article_ids.first() {
+        require_lock_for_article(conn, first_id, &trigramme)?;
+    }
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     for id in article_ids {
         tx.execute(

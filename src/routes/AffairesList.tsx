@@ -6,9 +6,10 @@ import type { Affaire, SectionLock } from "../domain/types";
 
 interface Props {
   onOpen: (id: number) => void;
+  trigramme: string;
 }
 
-export default function AffairesList({ onOpen }: Props) {
+export default function AffairesList({ onOpen, trigramme }: Props) {
   const [affaires, setAffaires] = useState<Affaire[]>([]);
   const [verrous, setVerrous] = useState<Map<number, SectionLock>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -51,7 +52,7 @@ export default function AffairesList({ onOpen }: Props) {
 
   async function handleDelete(id: number, nom: string) {
     if (!(await confirmerSuppression(`Supprimer l'affaire « ${nom} » et tous ses articles/caisses ?`))) return;
-    await affairesApi.delete(id);
+    await affairesApi.delete(id, trigramme);
     await reload();
   }
 
@@ -150,7 +151,10 @@ export default function AffairesList({ onOpen }: Props) {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {affairesFiltrees.map((a) => (
+          {affairesFiltrees.map((a) => {
+            const verrou = verrous.get(a.id);
+            const verrouilleeParAutre = !!verrou && verrou.titulaire !== trigramme;
+            return (
             <div
               key={a.id}
               onClick={() => onOpen(a.id)}
@@ -166,7 +170,7 @@ export default function AffairesList({ onOpen }: Props) {
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontWeight: 600, fontSize: 15 }}>{a.nom}</span>
-                  {verrous.has(a.id) && (
+                  {verrou && (
                     <span
                       style={{
                         fontSize: 11,
@@ -178,7 +182,7 @@ export default function AffairesList({ onOpen }: Props) {
                         padding: "1px 8px",
                       }}
                     >
-                      verrouillée par {verrous.get(a.id)!.titulaire}
+                      verrouillée par {verrou.titulaire}
                     </span>
                   )}
                 </div>
@@ -188,6 +192,8 @@ export default function AffairesList({ onOpen }: Props) {
               </div>
               <button
                 className="btn btn-sm btn-danger"
+                disabled={verrouilleeParAutre}
+                title={verrouilleeParAutre ? `Verrouillée par ${verrou!.titulaire} — suppression impossible` : undefined}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDelete(a.id, a.nom);
@@ -196,7 +202,8 @@ export default function AffairesList({ onOpen }: Props) {
                 Supprimer
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
