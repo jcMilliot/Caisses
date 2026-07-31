@@ -5,7 +5,7 @@ import { caissesApi } from "../data/caisses";
 import { articlesParCaisse, calculerCaisse } from "../domain/calculs";
 import type { Affaire, Article, Caisse, CaisseCalculee, NewArticle } from "../domain/types";
 
-export function useAffaire(affaireId: number) {
+export function useAffaire(affaireId: number, trigramme: string) {
   const [affaire, setAffaire] = useState<Affaire | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
   const [caisses, setCaisses] = useState<Caisse[]>([]);
@@ -39,17 +39,17 @@ export function useAffaire(affaireId: number) {
   const articlesNonAssignes = articles.filter((a) => a.caisse_id === null);
 
   async function ajouterArticles(nouveaux: NewArticle[]) {
-    await articlesApi.bulkCreate(affaireId, nouveaux);
+    await articlesApi.bulkCreate(affaireId, nouveaux, trigramme);
     await reload();
   }
 
   async function modifierArticle(id: number, article: NewArticle) {
-    await articlesApi.update(id, article);
+    await articlesApi.update(id, article, trigramme);
     await reload();
   }
 
   async function supprimerArticle(id: number) {
-    await articlesApi.delete(id);
+    await articlesApi.delete(id, trigramme);
     await reload();
   }
 
@@ -60,7 +60,7 @@ export function useAffaire(affaireId: number) {
     hauteur_mm: number,
     seuil_pct: number | null,
   ) {
-    const caisse = await caissesApi.create(affaireId, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct);
+    const caisse = await caissesApi.create(affaireId, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, trigramme);
     await reload();
     return caisse;
   }
@@ -74,17 +74,17 @@ export function useAffaire(affaireId: number) {
     seuil_pct: number | null,
     couleur: string,
   ) {
-    await caissesApi.update(id, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, couleur);
+    await caissesApi.update(id, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, couleur, trigramme);
     await reload();
   }
 
   async function supprimerCaisse(id: number) {
-    await caissesApi.delete(id);
+    await caissesApi.delete(id, trigramme);
     await reload();
   }
 
   async function assignerArticles(articleIds: number[], caisseId: number | null) {
-    await articlesApi.assign(articleIds, caisseId);
+    await articlesApi.assign(articleIds, caisseId, trigramme);
     await reload();
   }
 

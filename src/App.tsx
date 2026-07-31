@@ -50,7 +50,7 @@ export default function App() {
   }
 
   async function handleConfirmerCreationAffaire() {
-    if (!creationAffaire) return;
+    if (!creationAffaire || !trigramme) return;
     const affaire = await affairesApi.create(creationAffaire.affaire, 90);
     const aDesDimensions = creationAffaire.longueur_mm > 0 || creationAffaire.largeur_mm > 0 || creationAffaire.hauteur_mm > 0;
     await caissesApi.create(
@@ -60,6 +60,7 @@ export default function App() {
       aDesDimensions ? creationAffaire.largeur_mm : 0,
       aDesDimensions ? creationAffaire.hauteur_mm : 0,
       null,
+      trigramme,
     );
     setCreationAffaire(null);
     setAffaireId(affaire.id);
@@ -107,7 +108,7 @@ export default function App() {
         {section === "demandes" && <DemandesList onSimulerAffaire={handleSimulerAffaire} trigramme={trigramme} />}
         {section === "simulations" &&
           (affaireId === null ? (
-            <AffairesList onOpen={setAffaireId} />
+            <AffairesList onOpen={setAffaireId} trigramme={trigramme} />
           ) : (
             <AffaireDetail affaireId={affaireId} onBack={() => setAffaireId(null)} trigramme={trigramme} />
           ))}

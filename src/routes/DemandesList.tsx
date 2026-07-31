@@ -66,7 +66,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
 
   async function handleImport(nouvelles: NewDemande[]) {
     // Le collage Excel reste un import immédiat (gros volume, distinct des éditions manuelles).
-    await demandesApi.bulkCreate(nouvelles);
+    await demandesApi.bulkCreate(nouvelles, trigramme);
     await reload();
   }
 
@@ -85,7 +85,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
       setBrouillon((prev) => prev.filter((d) => d.id !== id));
       return;
     }
-    await demandesApi.delete(id);
+    await demandesApi.delete(id, trigramme);
     await reload();
   }
 
@@ -104,14 +104,17 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
       });
 
       if (aCreer.length > 0) {
-        await demandesApi.bulkCreate(aCreer.map(({ id: _id, ordre: _ordre, validee: _validee, ...n }) => n));
+        await demandesApi.bulkCreate(
+          aCreer.map(({ id: _id, ordre: _ordre, validee: _validee, ...n }) => n),
+          trigramme,
+        );
       }
       for (const d of aModifier) {
         const { id, ordre: _ordre, validee, ...n } = d;
         const original = demandes.find((o) => o.id === id);
-        await demandesApi.update(id, n);
+        await demandesApi.update(id, n, trigramme);
         if (!original || original.validee !== validee) {
-          await demandesApi.setValidee(id, validee);
+          await demandesApi.setValidee(id, validee, trigramme);
         }
       }
       await reload();

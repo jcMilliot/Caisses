@@ -1,3 +1,4 @@
+use crate::commands::locks::require_lock;
 use crate::db::Db;
 use crate::models::Affaire;
 use tauri::State;
@@ -53,9 +54,11 @@ pub fn update_affaire(
     id: i64,
     nom: String,
     seuil_defaut: f64,
+    trigramme: String,
 ) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock(conn, &format!("affaire:{}", id), &trigramme)?;
     conn.execute(
         "UPDATE affaire SET nom = ?1, seuil_defaut = ?2 WHERE id = ?3",
         rusqlite::params![nom, seuil_defaut, id],
@@ -65,9 +68,10 @@ pub fn update_affaire(
 }
 
 #[tauri::command]
-pub fn delete_affaire(db: State<Db>, id: i64) -> Result<(), String> {
+pub fn delete_affaire(db: State<Db>, id: i64, trigramme: String) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock(conn, &format!("affaire:{}", id), &trigramme)?;
     conn.execute("DELETE FROM affaire WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
     Ok(())

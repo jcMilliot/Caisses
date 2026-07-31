@@ -10,6 +10,7 @@ export const caissesApi = {
     largeur_mm: number,
     hauteur_mm: number,
     seuil_pct: number | null,
+    trigramme: string,
   ) =>
     call<Caisse>("create_caisse", {
       affaireId: affaire_id,
@@ -18,6 +19,7 @@ export const caissesApi = {
       largeurMm: largeur_mm,
       hauteurMm: hauteur_mm,
       seuilPct: seuil_pct,
+      trigramme,
     }),
   update: (
     id: number,
@@ -27,6 +29,7 @@ export const caissesApi = {
     hauteur_mm: number,
     seuil_pct: number | null,
     couleur: string,
+    trigramme: string,
   ) =>
     call<void>("update_caisse", {
       id,
@@ -36,6 +39,7 @@ export const caissesApi = {
       hauteurMm: hauteur_mm,
       seuilPct: seuil_pct,
       couleur,
+      trigramme,
     }),
-  delete: (id: number) => call<void>("delete_caisse", { id }),
+  delete: (id: number, trigramme: string) => call<void>("delete_caisse", { id, trigramme }),
 };

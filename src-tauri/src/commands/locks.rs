@@ -2,6 +2,22 @@ use crate::db::Db;
 use crate::models::SectionLock;
 use tauri::State;
 
+/// Refuse l'action seulement si `section_key` est activement détenue par un AUTRE titulaire
+/// que `trigramme` (verrou non expiré). Absence de verrou ou verrou expiré = libre, autorisé —
+/// cohérent avec le fait qu'une ressource jamais ouverte par ce poste (ex: suppression d'une
+/// affaire depuis AffairesList, sans passer par AffaireDetail) n'a pas encore de verrou à elle.
+pub fn require_lock(conn: &rusqlite::Connection, section_key: &str, trigramme: &str) -> Result<(), String> {
+    let sql = format!("SELECT {} FROM section_lock WHERE section_key = ?1", SELECT_COLS);
+    let result = conn.query_row(&sql, [section_key], map_row);
+    match result {
+        Ok(lock) if lock.titulaire != trigramme && !lock.expire => Err(format!(
+            "« {} » est actuellement verrouillée par {} — action refusée.",
+            section_key, lock.titulaire
+        )),
+        _ => Ok(()),
+    }
+}
+
 const SELECT_COLS: &str = "section_key, titulaire, acquis_le, dernier_battement, demandeur, demande_le, demande_statut,
     (julianday('now') - julianday(dernier_battement)) * 1440 >= 5 AS expire";
 

@@ -1,6 +1,14 @@
+use crate::commands::locks::require_lock;
 use crate::db::Db;
 use crate::models::Caisse;
 use tauri::State;
+
+fn require_lock_for_caisse(conn: &rusqlite::Connection, caisse_id: i64, trigramme: &str) -> Result<(), String> {
+    let affaire_id: i64 = conn
+        .query_row("SELECT affaire_id FROM caisse WHERE id = ?1", [caisse_id], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    require_lock(conn, &format!("affaire:{}", affaire_id), trigramme)
+}
 
 /// Palette pastel attribuée automatiquement aux nouvelles caisses, dans l'ordre de création.
 const PALETTE: &[&str] = &[
@@ -48,9 +56,11 @@ pub fn create_caisse(
     largeur_mm: f64,
     hauteur_mm: f64,
     seuil_pct: Option<f64>,
+    trigramme: String,
 ) -> Result<Caisse, String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock(conn, &format!("affaire:{}", affaire_id), &trigramme)?;
     let ordre: i64 = conn
         .query_row(
             "SELECT COALESCE(MAX(ordre), -1) + 1 FROM caisse WHERE affaire_id = ?1",
@@ -80,9 +90,11 @@ pub fn update_caisse(
     hauteur_mm: f64,
     seuil_pct: Option<f64>,
     couleur: String,
+    trigramme: String,
 ) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock_for_caisse(conn, id, &trigramme)?;
     conn.execute(
         "UPDATE caisse SET nom = ?1, longueur_mm = ?2, largeur_mm = ?3, hauteur_mm = ?4, seuil_pct = ?5, couleur = ?6
          WHERE id = ?7",
@@ -93,9 +105,10 @@ pub fn update_caisse(
 }
 
 #[tauri::command]
-pub fn delete_caisse(db: State<Db>, id: i64) -> Result<(), String> {
+pub fn delete_caisse(db: State<Db>, id: i64, trigramme: String) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock_for_caisse(conn, id, &trigramme)?;
     conn.execute("DELETE FROM caisse WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
     Ok(())

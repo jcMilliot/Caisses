@@ -63,7 +63,7 @@ export default function CaissesStockList({ trigramme }: Props) {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!form.nom.trim()) return;
-    await caisseStockApi.create(form);
+    await caisseStockApi.create(form, trigramme);
     setForm(CAISSE_VIDE);
     setCreating(false);
     await reload();
@@ -71,7 +71,7 @@ export default function CaissesStockList({ trigramme }: Props) {
 
   async function handleDelete(id: number, nom: string) {
     if (!(await confirmerSuppression(`Supprimer la caisse en stock « ${nom} » ?`))) return;
-    await caisseStockApi.delete(id);
+    await caisseStockApi.delete(id, trigramme);
     await reload();
   }
 
@@ -82,12 +82,12 @@ export default function CaissesStockList({ trigramme }: Props) {
     const base = toNewCaisseStock(caisse);
     const updated: NewCaisseStock = { ...base, [champ]: valeur };
     if (JSON.stringify(updated) === JSON.stringify(base)) return;
-    await caisseStockApi.update(caisse.id, updated);
+    await caisseStockApi.update(caisse.id, updated, trigramme);
     await reload();
   }
 
   async function handleAffectationChange(caisse: CaisseStock, affaireId: number | null) {
-    await caisseStockApi.update(caisse.id, { ...toNewCaisseStock(caisse), affaire_id: affaireId });
+    await caisseStockApi.update(caisse.id, { ...toNewCaisseStock(caisse), affaire_id: affaireId }, trigramme);
     await reload();
   }
 

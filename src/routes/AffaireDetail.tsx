@@ -29,7 +29,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
     modifierCaisse,
     supprimerCaisse,
     assignerArticles,
-  } = useAffaire(affaireId);
+  } = useAffaire(affaireId, trigramme);
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showPaste, setShowPaste] = useState(false);

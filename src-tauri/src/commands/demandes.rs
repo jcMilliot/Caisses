@@ -1,3 +1,4 @@
+use crate::commands::locks::require_lock;
 use crate::db::Db;
 use crate::models::{Demande, NewDemande};
 use tauri::State;
@@ -80,9 +81,10 @@ fn insert_demande(conn: &rusqlite::Connection, d: &NewDemande, ordre: i64) -> Re
 }
 
 #[tauri::command]
-pub fn create_demande(db: State<Db>, demande: NewDemande) -> Result<Demande, String> {
+pub fn create_demande(db: State<Db>, demande: NewDemande, trigramme: String) -> Result<Demande, String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock(conn, "demandes", &trigramme)?;
     let ordre: i64 = conn
         .query_row("SELECT COALESCE(MAX(ordre), -1) + 1 FROM demande", [], |row| row.get(0))
         .map_err(|e| e.to_string())?;
@@ -92,9 +94,10 @@ pub fn create_demande(db: State<Db>, demande: NewDemande) -> Result<Demande, Str
 }
 
 #[tauri::command]
-pub fn bulk_create_demandes(db: State<Db>, demandes: Vec<NewDemande>) -> Result<Vec<Demande>, String> {
+pub fn bulk_create_demandes(db: State<Db>, demandes: Vec<NewDemande>, trigramme: String) -> Result<Vec<Demande>, String> {
     let mut guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_mut().ok_or("base de données non initialisée")?;
+    require_lock(conn, "demandes", &trigramme)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut ids = Vec::with_capacity(demandes.len());
     {
@@ -149,9 +152,10 @@ pub fn bulk_create_demandes(db: State<Db>, demandes: Vec<NewDemande>) -> Result<
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub fn update_demande(db: State<Db>, id: i64, demande: NewDemande) -> Result<(), String> {
+pub fn update_demande(db: State<Db>, id: i64, demande: NewDemande, trigramme: String) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock(conn, "demandes", &trigramme)?;
     conn.execute(
         "UPDATE demande SET
             ok_pour_passer_cde = ?1, affaire = ?2, type_envoi_caisse = ?3, type_ouverture = ?4, stock = ?5,
@@ -187,18 +191,20 @@ pub fn update_demande(db: State<Db>, id: i64, demande: NewDemande) -> Result<(),
 }
 
 #[tauri::command]
-pub fn delete_demande(db: State<Db>, id: i64) -> Result<(), String> {
+pub fn delete_demande(db: State<Db>, id: i64, trigramme: String) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock(conn, "demandes", &trigramme)?;
     conn.execute("DELETE FROM demande WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn set_demande_validee(db: State<Db>, id: i64, validee: bool) -> Result<(), String> {
+pub fn set_demande_validee(db: State<Db>, id: i64, validee: bool, trigramme: String) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock(conn, "demandes", &trigramme)?;
     conn.execute("UPDATE demande SET validee = ?1 WHERE id = ?2", rusqlite::params![validee, id])
         .map_err(|e| e.to_string())?;
     Ok(())
