@@ -495,3 +495,33 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
     quotidien ou hebdomadaire selon le volume réel de saisie. Pourrait être un simple script/tâche
     planifiée Windows dans un premier temps, ou une fonctionnalité intégrée à l'app plus tard
     (bouton "Sauvegarder maintenant" + copie automatique périodique).
+11. **Idée notée le 2026-07-31 — détection de nom d'affaire déjà existant** : à la saisie d'une
+    ligne (manuelle ou collage Excel) avec un nom d'affaire (colonne `AFFAIRE` de `demande`, ou
+    nom d'affaire dans Simulations) qui correspond à une affaire déjà existante, avertir
+    l'utilisateur ("cette affaire existe déjà, ajouter quand même ?") plutôt que de laisser
+    passer silencieusement. Si l'utilisateur confirme, marquer/indiquer qu'il s'agit bien de la
+    même affaire mais d'une ligne différente (convention déjà utilisée manuellement par
+    l'utilisateur, ex. suffixe `UUSPM01D` pour une variante de `UUSPM01`). Portée : Demandes
+    (texte libre, pas de contrainte d'unicité) et création d'affaire dans Simulations. Pas encore
+    implémenté — à concevoir (comparaison exacte vs approximative du nom, où stocker
+    l'indication de "même affaire, autre ligne").
+12. **Page d'accueil en cards + blocs "caisses à commander/à rapatrier"** — **implémenté le
+    2026-08-03**. Nouvelle route `src/routes/Accueil.tsx` (section `"accueil"`, écran par défaut
+    au démarrage dans `App.tsx`), menu principal sous forme de 4 cards (grille 2×2) au lieu de
+    boutons de navbar ; la navbar classique ne s'affiche plus que sur les autres sections
+    (bouton "← Accueil" ajouté pour y revenir). À droite, séparés par un liseret, deux blocs
+    calculés à partir de `demandesApi.list()` (logique pure dans
+    `src/domain/caissesACommander.ts`) :
+    - **"Caisses à commander cette semaine"** : demandes avec `stock` vide dont la commande doit
+      partir cette semaine calendaire — règle actée avec l'utilisateur : on commande la semaine
+      calendaire précédant celle du picking (fermeture le week-end, donc semaine complète
+      d'avance).
+    - **"Caisses à rapatrier cette semaine"** : demandes avec `stock` renseigné (caisse déjà en
+      stock à faire revenir) — règle : si `date_picking` tombe un lundi, rapatrier la semaine
+      calendaire d'avant ; sinon la semaine calendaire du picking suffit.
+    - **Cas ACHSTOCK non géré pour l'instant** : quand `affaire` contient "ACHSTOCK" (achat de
+      caisses tenues en stock, sans date de picking associée), la ligne est exclue des deux
+      calculs (`estAchstock` dans `caissesACommander.ts`). **À décider plus tard** : comment/où
+      afficher ces lignes-là (pas de date pour les positionner dans le temps).
+    - Ces deux blocs ne modifient ni ne consultent la table `affaire`/`caisse` de Simulations —
+      uniquement `demande`, conformément à la réponse de l'utilisateur sur la source des données.
