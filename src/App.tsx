@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Accueil from "./routes/Accueil";
 import AffairesList from "./routes/AffairesList";
 import AffaireDetail from "./routes/AffaireDetail";
 import DemandesList from "./routes/DemandesList";
@@ -14,7 +15,7 @@ import { useUserSetup } from "./hooks/useUserSetup";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
 import type { Demande } from "./domain/types";
 
-type Section = "demandes" | "simulations" | "stock" | "achats";
+type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "demandes", label: "Demandes" },
@@ -27,7 +28,7 @@ export default function App() {
   const { status: dbStatus, chooseFolder } = useDbSetup();
   const { status: userStatus, trigramme, setTrigramme } = useUserSetup();
   const { update, installing, confirmInstall, dismiss } = useUpdateCheck(dbStatus === "ready");
-  const [section, setSection] = useState<Section>("demandes");
+  const [section, setSection] = useState<Section>("accueil");
   const [affaireId, setAffaireId] = useState<number | null>(null);
   const [creationAffaire, setCreationAffaire] = useState<Demande | null>(null);
 
@@ -84,27 +85,33 @@ export default function App() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-      <nav
-        style={{
-          display: "flex",
-          gap: 4,
-          padding: "10px 24px",
-          borderBottom: "1px solid var(--border)",
-          background: "var(--bg-panel)",
-        }}
-      >
-        {SECTIONS.map((s) => (
-          <button
-            key={s.id}
-            className={section === s.id ? "btn btn-primary btn-sm" : "btn btn-sm"}
-            onClick={() => handleSelectSection(s.id)}
-          >
-            {s.label}
+      {section !== "accueil" && (
+        <nav
+          style={{
+            display: "flex",
+            gap: 4,
+            padding: "10px 24px",
+            borderBottom: "1px solid var(--border)",
+            background: "var(--bg-panel)",
+          }}
+        >
+          <button className="btn btn-sm" onClick={() => handleSelectSection("accueil")}>
+            ← Accueil
           </button>
-        ))}
-      </nav>
+          {SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              className={section === s.id ? "btn btn-primary btn-sm" : "btn btn-sm"}
+              onClick={() => handleSelectSection(s.id)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </nav>
+      )}
 
       <div style={{ flex: 1 }}>
+        {section === "accueil" && <Accueil onSelect={handleSelectSection} />}
         {section === "demandes" && <DemandesList onSimulerAffaire={handleSimulerAffaire} trigramme={trigramme} />}
         {section === "simulations" &&
           (affaireId === null ? (
