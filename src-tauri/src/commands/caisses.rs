@@ -26,11 +26,14 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<Caisse> {
         seuil_pct: row.get(6)?,
         couleur: row.get(7)?,
         ordre: row.get(8)?,
+        caisse_stock_id: row.get(9)?,
+        type_envoi_caisse: row.get(10)?,
+        demande_caisse_id: row.get(11)?,
     })
 }
 
 const SELECT_COLS: &str =
-    "id, affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, couleur, ordre";
+    "id, affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, couleur, ordre, caisse_stock_id, type_envoi_caisse, demande_caisse_id";
 
 #[tauri::command]
 pub fn list_caisses(db: State<Db>, affaire_id: i64) -> Result<Vec<Caisse>, String> {
@@ -48,6 +51,7 @@ pub fn list_caisses(db: State<Db>, affaire_id: i64) -> Result<Vec<Caisse>, Strin
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn create_caisse(
     db: State<Db>,
     affaire_id: i64,
@@ -56,6 +60,9 @@ pub fn create_caisse(
     largeur_mm: f64,
     hauteur_mm: f64,
     seuil_pct: Option<f64>,
+    caisse_stock_id: Option<i64>,
+    type_envoi_caisse: String,
+    demande_caisse_id: Option<i64>,
     trigramme: String,
 ) -> Result<Caisse, String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
@@ -70,9 +77,21 @@ pub fn create_caisse(
         .map_err(|e| e.to_string())?;
     let couleur = PALETTE[(ordre as usize) % PALETTE.len()];
     conn.execute(
-        "INSERT INTO caisse (affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, couleur, ordre)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        rusqlite::params![affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, couleur, ordre],
+        "INSERT INTO caisse (affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, couleur, ordre, caisse_stock_id, type_envoi_caisse, demande_caisse_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        rusqlite::params![
+            affaire_id,
+            nom,
+            longueur_mm,
+            largeur_mm,
+            hauteur_mm,
+            seuil_pct,
+            couleur,
+            ordre,
+            caisse_stock_id,
+            type_envoi_caisse,
+            demande_caisse_id,
+        ],
     )
     .map_err(|e| e.to_string())?;
     let id = conn.last_insert_rowid();
@@ -81,6 +100,7 @@ pub fn create_caisse(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn update_caisse(
     db: State<Db>,
     id: i64,
@@ -90,15 +110,32 @@ pub fn update_caisse(
     hauteur_mm: f64,
     seuil_pct: Option<f64>,
     couleur: String,
+    type_envoi_caisse: String,
     trigramme: String,
 ) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     require_lock_for_caisse(conn, id, &trigramme)?;
     conn.execute(
-        "UPDATE caisse SET nom = ?1, longueur_mm = ?2, largeur_mm = ?3, hauteur_mm = ?4, seuil_pct = ?5, couleur = ?6
-         WHERE id = ?7",
-        rusqlite::params![nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, couleur, id],
+        "UPDATE caisse SET nom = ?1, longueur_mm = ?2, largeur_mm = ?3, hauteur_mm = ?4, seuil_pct = ?5, couleur = ?6, type_envoi_caisse = ?7
+         WHERE id = ?8",
+        rusqlite::params![nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, couleur, type_envoi_caisse, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Pose a posteriori le lien vers la DemandeCaisse issue d'une synchro Simulations -> Demandes
+/// (création manuelle d'une Caisse, confirmée pour être répercutée côté Demandes). Ne sert qu'à
+/// cette liaison ponctuelle — le lien n'est jamais modifié une fois posé.
+#[tauri::command]
+pub fn link_caisse_demande_caisse(db: State<Db>, id: i64, demande_caisse_id: i64, trigramme: String) -> Result<(), String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock_for_caisse(conn, id, &trigramme)?;
+    conn.execute(
+        "UPDATE caisse SET demande_caisse_id = ?1 WHERE id = ?2",
+        rusqlite::params![demande_caisse_id, id],
     )
     .map_err(|e| e.to_string())?;
     Ok(())

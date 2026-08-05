@@ -1,9 +1,8 @@
 import { useState } from "react";
-import type { NewDemande } from "../domain/types";
+import type { NewDemande, CaisseStock } from "../domain/types";
 import {
   TYPES_ENVOI_CAISSE,
   TYPES_OUVERTURE,
-  VALEURS_STOCK,
   MOTEURS,
   TERMINAUX,
   TRAITEMENTS,
@@ -15,6 +14,7 @@ import {
 import SelectOuAutre from "./SelectOuAutre";
 
 interface Props {
+  caissesStock: CaisseStock[];
   onAjouter: (demandes: NewDemande[]) => void;
   onClose: () => void;
 }
@@ -40,10 +40,11 @@ function ligneVide(): NewDemande {
     cde_passee_affaire: false,
     cde_passee_achat_stock: false,
     observations: "",
+    caisse_stock_id: null,
   };
 }
 
-export default function AjouterDemandesDialog({ onAjouter, onClose }: Props) {
+export default function AjouterDemandesDialog({ caissesStock, onAjouter, onClose }: Props) {
   const [lignes, setLignes] = useState<NewDemande[]>([ligneVide()]);
 
   function majLigne(index: number, patch: Partial<NewDemande>) {
@@ -153,11 +154,33 @@ export default function AjouterDemandesDialog({ onAjouter, onClose }: Props) {
               </Champ>
 
               <Champ label="Stock">
-                <SelectOuAutre
-                  valeur={ligne.stock}
-                  options={VALEURS_STOCK}
-                  onChange={(v) => majLigne(index, { stock: v })}
-                />
+                <select
+                  value={ligne.caisse_stock_id ?? ""}
+                  onChange={(e) => {
+                    if (e.target.value === "") {
+                      majLigne(index, { caisse_stock_id: null });
+                      return;
+                    }
+                    const cs = caissesStock.find((c) => c.id === Number(e.target.value));
+                    if (!cs) return;
+                    majLigne(index, {
+                      caisse_stock_id: cs.id,
+                      longueur_mm: cs.longueur_mm,
+                      largeur_mm: cs.largeur_mm,
+                      hauteur_mm: cs.hauteur_mm,
+                    });
+                  }}
+                  style={inputStyle}
+                >
+                  <option value="">— Choisir —</option>
+                  {caissesStock
+                    .filter((c) => !c.validee || c.id === ligne.caisse_stock_id)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nom}
+                      </option>
+                    ))}
+                </select>
               </Champ>
 
               <Champ label="Longueur (m)">
@@ -262,7 +285,9 @@ export default function AjouterDemandesDialog({ onAjouter, onClose }: Props) {
                 <input
                   type="checkbox"
                   checked={ligne.cde_passee_affaire}
-                  onChange={(e) => majLigne(index, { cde_passee_affaire: e.target.checked })}
+                  onChange={(e) =>
+                    majLigne(index, e.target.checked ? { cde_passee_affaire: true, cde_passee_achat_stock: false } : { cde_passee_affaire: false })
+                  }
                 />
                 Cde passée sur affaire
               </label>
@@ -271,7 +296,9 @@ export default function AjouterDemandesDialog({ onAjouter, onClose }: Props) {
                 <input
                   type="checkbox"
                   checked={ligne.cde_passee_achat_stock}
-                  onChange={(e) => majLigne(index, { cde_passee_achat_stock: e.target.checked })}
+                  onChange={(e) =>
+                    majLigne(index, e.target.checked ? { cde_passee_achat_stock: true, cde_passee_affaire: false } : { cde_passee_achat_stock: false })
+                  }
                 />
                 Cde passée sur achat stock
               </label>

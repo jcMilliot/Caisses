@@ -24,6 +24,9 @@
   --danger-border: #dd8b7c;
   --danger-text: #a8402a;
 
+  --row-border-color-marquee: #000000;
+  --row-border-color: var(--border);
+
   --radius: 8px;
   --radius-lg: 12px;
   --shadow-sm: 0 1px 2px rgba(32, 30, 26, 0.06);

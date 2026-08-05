@@ -11,6 +11,14 @@ interface Props {
 
 const RETIRER = "retirer";
 
+function mmToM(mm: number): number {
+  return Math.round((mm / 1000) * 1000) / 1000;
+}
+
+function mToMm(m: number): number {
+  return Math.round(m * 1000);
+}
+
 export default function AssignToDialog({ caisses, nbSelectionnes, onAssign, onCreateAndAssign, onClose }: Props) {
   const [mode, setMode] = useState<"existante" | "nouvelle">(caisses.length > 0 ? "existante" : "nouvelle");
   const [caisseId, setCaisseId] = useState<number | typeof RETIRER>(caisses[0]?.id ?? RETIRER);
@@ -72,7 +80,7 @@ export default function AssignToDialog({ caisses, nbSelectionnes, onAssign, onCr
               <option value={RETIRER}>— Retirer de la caisse (non assigné) —</option>
               {caisses.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.nom} ({c.longueur_mm}×{c.largeur_mm}×{c.hauteur_mm} mm)
+                  {c.nom} ({mmToM(c.longueur_mm)}×{mmToM(c.largeur_mm)}×{mmToM(c.hauteur_mm)} m)
                 </option>
               ))}
             </select>
@@ -84,16 +92,34 @@ export default function AssignToDialog({ caisses, nbSelectionnes, onAssign, onCr
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <div>
-                  <label style={labelStyle}>Longueur (mm)</label>
-                  <input type="number" value={dims.l} onChange={(e) => setDims({ ...dims, l: Number(e.target.value) })} style={inputStyle} />
+                  <label style={labelStyle}>Longueur (m)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={mmToM(dims.l)}
+                    onChange={(e) => setDims({ ...dims, l: mToMm(Number(e.target.value)) })}
+                    style={inputStyle}
+                  />
                 </div>
                 <div>
-                  <label style={labelStyle}>Largeur (mm)</label>
-                  <input type="number" value={dims.w} onChange={(e) => setDims({ ...dims, w: Number(e.target.value) })} style={inputStyle} />
+                  <label style={labelStyle}>Largeur (m)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={mmToM(dims.w)}
+                    onChange={(e) => setDims({ ...dims, w: mToMm(Number(e.target.value)) })}
+                    style={inputStyle}
+                  />
                 </div>
                 <div>
-                  <label style={labelStyle}>Hauteur (mm)</label>
-                  <input type="number" value={dims.h} onChange={(e) => setDims({ ...dims, h: Number(e.target.value) })} style={inputStyle} />
+                  <label style={labelStyle}>Hauteur (m)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={mmToM(dims.h)}
+                    onChange={(e) => setDims({ ...dims, h: mToMm(Number(e.target.value)) })}
+                    style={inputStyle}
+                  />
                 </div>
               </div>
             </>

@@ -19,6 +19,9 @@ pub struct Caisse {
     pub seuil_pct: Option<f64>,
     pub couleur: String,
     pub ordre: i64,
+    pub caisse_stock_id: Option<i64>,
+    pub type_envoi_caisse: String,
+    pub demande_caisse_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -73,6 +76,7 @@ pub struct Demande {
     pub observations: String,
     pub validee: bool,
     pub ordre: i64,
+    pub caisse_stock_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,6 +100,57 @@ pub struct NewDemande {
     pub cde_passee_affaire: bool,
     pub cde_passee_achat_stock: bool,
     pub observations: String,
+    pub caisse_stock_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DemandeCaisse {
+    pub id: i64,
+    pub demande_id: i64,
+    pub nom: String,
+    pub type_envoi_caisse: String,
+    pub type_ouverture: String,
+    pub stock: String,
+    pub date_picking: String,
+    pub date_demandee_s2c: String,
+    pub traitement: String,
+    pub quantite: i64,
+    pub moteurs: String,
+    pub module_lineaire: String,
+    pub informations_supp: String,
+    pub observations: String,
+    pub cde_passee_affaire: bool,
+    pub cde_passee_achat_stock: bool,
+    pub longueur_mm: f64,
+    pub largeur_mm: f64,
+    pub hauteur_mm: f64,
+    pub poids_kg: f64,
+    pub ordre: i64,
+    pub caisse_stock_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NewDemandeCaisse {
+    pub demande_id: i64,
+    pub nom: String,
+    pub type_envoi_caisse: String,
+    pub type_ouverture: String,
+    pub stock: String,
+    pub date_picking: String,
+    pub date_demandee_s2c: String,
+    pub traitement: String,
+    pub quantite: i64,
+    pub moteurs: String,
+    pub module_lineaire: String,
+    pub informations_supp: String,
+    pub observations: String,
+    pub cde_passee_affaire: bool,
+    pub cde_passee_achat_stock: bool,
+    pub longueur_mm: f64,
+    pub largeur_mm: f64,
+    pub hauteur_mm: f64,
+    pub poids_kg: f64,
+    pub caisse_stock_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -109,6 +164,12 @@ pub struct CaisseStock {
     pub observations: String,
     pub affaire_id: Option<i64>,
     pub ordre: i64,
+    pub validee: bool,
+    pub demandeur: Option<String>,
+    pub demande_le: Option<String>,
+    pub demande_statut: String,
+    pub demande_affaire_cible_id: Option<i64>,
+    pub demande_cible_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]

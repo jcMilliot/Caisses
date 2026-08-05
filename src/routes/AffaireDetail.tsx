@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAffaire } from "../hooks/useAffaire";
+import { calculerRecapAffaire } from "../domain/calculs";
+import { estCaisse4C } from "../domain/demandeOptions";
+import type { Article, Demande, DemandeCaisse, NewDemandeCaisse } from "../domain/types";
 import { usePointerDrag } from "../hooks/usePointerDrag";
 import { useSectionLock } from "../hooks/useSectionLock";
 import ArticlesTable from "../components/ArticlesTable";
@@ -7,7 +10,11 @@ import PasteImportZone from "../components/PasteImportZone";
 import CaisseCard from "../components/CaisseCard";
 import AssignToDialog from "../components/AssignToDialog";
 import LockBanner from "../components/LockBanner";
+import ScrollToTopButton from "../components/ScrollToTopButton";
 import { confirmerSuppression, confirmerAction } from "../data/confirm";
+import { demandeCaisseApi } from "../data/demandeCaisse";
+import { demandesApi } from "../data/demandes";
+import { caissesApi } from "../data/caisses";
 
 interface Props {
   affaireId: number;
@@ -29,8 +36,10 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
     modifierCaisse,
     supprimerCaisse,
     assignerArticles,
+    reload,
   } = useAffaire(affaireId, trigramme);
 
+  const conteneurArticlesRef = useRef<HTMLDivElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showPaste, setShowPaste] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
@@ -38,6 +47,19 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
   const [caissesPosition, setCaissesPosition] = useState<"droite" | "haut">(
     () => (localStorage.getItem("caisses:panelPosition") as "droite" | "haut") ?? "droite",
   );
+  // Sous-lignes DemandeCaisse liées aux Caisse de cette affaire — pour la synchro retour vers
+  // Demandes (modif dims / création / suppression), et la demande parente pour retrouver son nom
+  // et ses valeurs par défaut (type envoi, dates, traitement, cde passée) à la création.
+  const [demandeCaissesLiees, setDemandeCaissesLiees] = useState<DemandeCaisse[]>([]);
+  const [demandeParente, setDemandeParente] = useState<Demande | null>(null);
+
+  useEffect(() => {
+    demandeCaisseApi.listAll().then(setDemandeCaissesLiees);
+    demandesApi
+      .list()
+      .then((toutes) => toutes.find((d) => d.affaire.trim().toLowerCase() === affaire?.nom.trim().toLowerCase()) ?? null)
+      .then(setDemandeParente);
+  }, [affaire?.nom]);
 
   function togglePosition() {
     setCaissesPosition((prev) => {
@@ -145,8 +167,43 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
             className="btn btn-sm"
             disabled={readOnly}
             onClick={async () => {
-              const caisse = await creerCaisse(`Caisse ${caissesCalculees.length + 1}`, 0, 0, 0, null);
+              const nom = `Caisse ${caissesCalculees.length + 1}`;
+              const caisse = await creerCaisse(nom, 0, 0, 0, null);
               setCaisseRecenteId(caisse.id);
+              if (demandeParente) {
+                const confirme = await confirmerAction(
+                  `Ajouter une caisse correspondante « ${nom} » dans la demande « ${demandeParente.affaire} » ?`,
+                  "Synchroniser avec Demandes",
+                );
+                if (confirme) {
+                  const nouvelle: NewDemandeCaisse = {
+                    demande_id: demandeParente.id,
+                    nom,
+                    type_envoi_caisse: demandeParente.type_envoi_caisse,
+                    type_ouverture: "",
+                    stock: "",
+                    date_picking: demandeParente.date_picking,
+                    date_demandee_s2c: demandeParente.date_demandee_s2c,
+                    traitement: demandeParente.traitement,
+                    quantite: 1,
+                    moteurs: "",
+                    module_lineaire: "",
+                    informations_supp: "",
+                    observations: "",
+                    cde_passee_affaire: demandeParente.cde_passee_affaire,
+                    cde_passee_achat_stock: demandeParente.cde_passee_achat_stock,
+                    longueur_mm: 0,
+                    largeur_mm: 0,
+                    hauteur_mm: 0,
+                    poids_kg: 0,
+                    caisse_stock_id: null,
+                  };
+                  const sousLigneCreee = await demandeCaisseApi.create(nouvelle, trigramme);
+                  await caissesApi.linkDemandeCaisse(caisse.id, sousLigneCreee.id, trigramme);
+                  setDemandeCaissesLiees((prev) => [...prev, sousLigneCreee]);
+                  await reload();
+                }
+              }
             }}
           >
             + Nouvelle caisse
@@ -173,19 +230,40 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
               key={c.id}
               caisse={c}
               autoEdit={c.id === caisseRecenteId}
-              onUpdate={(nom, l, w, h, seuil, couleur) => {
+              onUpdate={async (nom, l, w, h, seuil, couleur) => {
                 setCaisseRecenteId(null);
-                return modifierCaisse(c.id, nom, l, w, h, seuil, couleur);
+                const dimsChangees = l !== c.longueur_mm || w !== c.largeur_mm || h !== c.hauteur_mm;
+                if (dimsChangees && c.demande_caisse_id !== null) {
+                  const confirme = await confirmerAction(
+                    `Répercuter ces nouvelles dimensions sur la demande d'origine « ${c.nom} » ?`,
+                    "Synchroniser avec Demandes",
+                  );
+                  if (confirme) {
+                    const sousLigne = demandeCaissesLiees.find((sl) => sl.id === c.demande_caisse_id);
+                    if (sousLigne) {
+                      const { id: _id, ordre: _ordre, ...base } = sousLigne;
+                      await demandeCaisseApi.update(sousLigne.id, { ...base, longueur_mm: l, largeur_mm: w, hauteur_mm: h }, trigramme);
+                    }
+                  }
+                }
+                return modifierCaisse(c.id, nom, l, w, h, seuil, couleur, c.type_envoi_caisse);
               }}
               onDelete={async () => {
                 if (readOnly) return;
-                if (await confirmerSuppression(`Supprimer la caisse « ${c.nom} » ? Ses articles repasseront en non-assigné.`)) {
-                  await supprimerCaisse(c.id);
+                if (!(await confirmerSuppression(`Supprimer la caisse « ${c.nom} » ? Ses articles repasseront en non-assigné.`))) return;
+                if (c.demande_caisse_id !== null) {
+                  const confirmeSync = await confirmerAction(
+                    `Supprimer aussi la caisse détaillée correspondante dans la demande « ${demandeParente?.affaire ?? affaire.nom} » ?`,
+                    "Synchroniser avec Demandes",
+                  );
+                  if (confirmeSync) await demandeCaisseApi.delete(c.demande_caisse_id, trigramme);
                 }
+                await supprimerCaisse(c.id);
               }}
               dragActif={!!drag}
               survolee={survolCaisseId === c.id}
               readOnly={readOnly}
+              dimensionsReadOnly={c.caisse_stock_id !== null}
             />
           ))}
         </div>
@@ -216,7 +294,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
         </div>
       </div>
 
-      <div className="panel" style={{ padding: "4px 12px", overflowX: "auto" }}>
+      <div ref={conteneurArticlesRef} className="panel" style={{ padding: "4px 12px", overflow: "auto", maxHeight: "calc(100vh - 48px)" }}>
         <ArticlesTable
           affaireId={affaireId}
           articles={articles}
@@ -229,6 +307,8 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
           readOnly={readOnly}
         />
       </div>
+
+      <ScrollToTopButton cible={conteneurArticlesRef} />
     </section>
   );
 
@@ -253,6 +333,8 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
           seuil {affaire.seuil_defaut}%
         </span>
       </div>
+
+      <RecapAffaireBandeau articles={articles} aUneCaisse4C={caissesCalculees.some((c) => estCaisse4C(c.type_envoi_caisse))} />
 
       {(readOnly || lock.incomingRequest) && (
         <LockBanner
@@ -324,6 +406,52 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function RecapAffaireBandeau({ articles, aUneCaisse4C }: { articles: Article[]; aUneCaisse4C: boolean }) {
+  const recap = useMemo(() => calculerRecapAffaire(articles), [articles]);
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 24,
+        alignItems: "center",
+        marginBottom: 24,
+        padding: "12px 18px",
+        background: "var(--bg-panel-alt)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius)",
+        fontSize: 13,
+      }}
+    >
+      <RecapValeur label="Longueur max" valeur={`${(recap.dim1MaxMm / 1000).toFixed(2)} m`} />
+      <RecapValeur label="Largeur max" valeur={`${(recap.dim2MaxMm / 1000).toFixed(2)} m`} />
+      <RecapValeur label="Hauteur max" valeur={`${(recap.dim3MaxMm / 1000).toFixed(2)} m`} />
+      <div style={{ width: 1, height: 24, background: "var(--border-strong)" }} />
+      <RecapValeur label="Volume total" valeur={`${recap.volumeTotalM3.toFixed(3)} m³`} />
+      <RecapValeur label="Poids total" valeur={`${recap.poidsTotalKg.toFixed(1)} kg`} />
+      {aUneCaisse4C && (
+        <>
+          <div style={{ width: 1, height: 24, background: "var(--border-strong)" }} />
+          <RecapValeur label="Mousse (4C)" valeur="0.025 m / face" />
+        </>
+      )}
+    </div>
+  );
+}
+
+function RecapValeur({ label, valeur }: { label: string; valeur: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+        {label}
+      </span>
+      <span className="mono" style={{ fontWeight: 700 }}>
+        {valeur}
+      </span>
     </div>
   );
 }

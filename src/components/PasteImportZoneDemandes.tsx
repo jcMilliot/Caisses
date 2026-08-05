@@ -133,6 +133,7 @@ function parseColle(texte: string): { demandes: NewDemande[]; erreurs: string[] 
       cde_passee_affaire: parseBool(cdeAffaire),
       cde_passee_achat_stock: parseBool(cdeAchatStock),
       observations: observations.trim(),
+      caisse_stock_id: null,
     });
   });
 
@@ -254,9 +255,9 @@ export default function PasteImportZoneDemandes({ onImport, onClose }: Props) {
                           <td style={tdStyle}>{d.type_envoi_caisse}</td>
                           <td style={tdStyle}>{d.type_ouverture}</td>
                           <td style={tdStyle}>{d.stock}</td>
-                          <td className="mono" style={tdStyle}>{d.longueur_mm}</td>
-                          <td className="mono" style={tdStyle}>{d.largeur_mm}</td>
-                          <td className="mono" style={tdStyle}>{d.hauteur_mm}</td>
+                          <td className="mono" style={tdStyle}>{(d.longueur_mm / 1000).toFixed(2)}</td>
+                          <td className="mono" style={tdStyle}>{(d.largeur_mm / 1000).toFixed(2)}</td>
+                          <td className="mono" style={tdStyle}>{(d.hauteur_mm / 1000).toFixed(2)}</td>
                           <td className="mono" style={tdStyle}>{d.quantite}</td>
                           <td style={tdStyle}>{dateIsoVersAffichage(d.date_picking)}</td>
                           <td style={tdStyle}>{dateIsoVersAffichage(d.date_demandee_s2c)}</td>

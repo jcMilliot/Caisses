@@ -8,12 +8,14 @@ import CreerAffaireDialog from "./components/CreerAffaireDialog";
 import FirstLaunchSetup from "./components/FirstLaunchSetup";
 import TrigrammeSetup from "./components/TrigrammeSetup";
 import UpdateAvailableDialog from "./components/UpdateAvailableDialog";
+import ConfirmDialogHost from "./components/ConfirmDialogHost";
 import { affairesApi } from "./data/affaires";
 import { caissesApi } from "./data/caisses";
+import { demandeCaisseApi } from "./data/demandeCaisse";
 import { useDbSetup } from "./hooks/useDbSetup";
 import { useUserSetup } from "./hooks/useUserSetup";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
-import type { Demande } from "./domain/types";
+import type { Demande, DemandeCaisse } from "./domain/types";
 
 type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats";
 
@@ -31,20 +33,67 @@ export default function App() {
   const [section, setSection] = useState<Section>("accueil");
   const [affaireId, setAffaireId] = useState<number | null>(null);
   const [creationAffaire, setCreationAffaire] = useState<Demande | null>(null);
+  const [creationSousCaisses, setCreationSousCaisses] = useState<DemandeCaisse[]>([]);
 
   function handleSelectSection(next: Section) {
     setSection(next);
     if (next !== "simulations") setAffaireId(null);
   }
 
+  // Crée, dans une affaire déjà existante, une Caisse pour chaque sous-ligne de la demande pas
+  // encore liée (demande_caisse_id absent des caisses existantes), PLUS une caisse pour la ligne
+  // mère elle-même (peu importe ses dimensions) si elle n'a pas déjà été créée — identifiée par
+  // son nom (celui de la demande) parmi les caisses non liées à une sous-ligne.
+  async function creerCaissesManquantes(affaireIdCible: number, demande: Demande, sousCaisses: DemandeCaisse[]) {
+    if (!trigramme) return;
+    const caissesExistantes = await caissesApi.list(affaireIdCible);
+    const dejaLiees = new Set(caissesExistantes.map((c) => c.demande_caisse_id).filter((id): id is number => id !== null));
+    for (const sc of sousCaisses) {
+      if (dejaLiees.has(sc.id)) continue;
+      await caissesApi.create(
+        affaireIdCible,
+        sc.nom,
+        sc.longueur_mm,
+        sc.largeur_mm,
+        sc.hauteur_mm,
+        null,
+        sc.caisse_stock_id,
+        sc.type_envoi_caisse,
+        sc.id,
+        trigramme,
+      );
+    }
+    const mereDejaCreee = caissesExistantes.some(
+      (c) => c.demande_caisse_id === null && c.nom.trim().toLowerCase() === demande.affaire.trim().toLowerCase(),
+    );
+    if (!mereDejaCreee) {
+      await caissesApi.create(
+        affaireIdCible,
+        demande.affaire,
+        demande.longueur_mm,
+        demande.largeur_mm,
+        demande.hauteur_mm,
+        null,
+        demande.caisse_stock_id,
+        demande.type_envoi_caisse,
+        null,
+        trigramme,
+      );
+    }
+  }
+
   async function handleSimulerAffaire(demande: Demande) {
     const affaires = await affairesApi.list();
     const existante = affaires.find((a) => a.nom.trim().toLowerCase() === demande.affaire.trim().toLowerCase());
+    const toutes = await demandeCaisseApi.listAll();
+    const sousCaisses = toutes.filter((c) => c.demande_id === demande.id);
     if (existante) {
+      await creerCaissesManquantes(existante.id, demande, sousCaisses);
       setSection("simulations");
       setAffaireId(existante.id);
       return;
     }
+    setCreationSousCaisses(sousCaisses);
     setSection("simulations");
     setAffaireId(null);
     setCreationAffaire(demande);
@@ -52,18 +101,36 @@ export default function App() {
 
   async function handleConfirmerCreationAffaire() {
     if (!creationAffaire || !trigramme) return;
-    const affaire = await affairesApi.create(creationAffaire.affaire, 90);
-    const aDesDimensions = creationAffaire.longueur_mm > 0 || creationAffaire.largeur_mm > 0 || creationAffaire.hauteur_mm > 0;
+    const affaire = await affairesApi.create(creationAffaire.affaire, 70);
+    for (const sc of creationSousCaisses) {
+      await caissesApi.create(
+        affaire.id,
+        sc.nom,
+        sc.longueur_mm,
+        sc.largeur_mm,
+        sc.hauteur_mm,
+        null,
+        sc.caisse_stock_id,
+        sc.type_envoi_caisse,
+        sc.id,
+        trigramme,
+      );
+    }
+    // Caisse mère créée systématiquement, en plus des sous-caisses éventuelles.
     await caissesApi.create(
       affaire.id,
       creationAffaire.affaire,
-      aDesDimensions ? creationAffaire.longueur_mm : 0,
-      aDesDimensions ? creationAffaire.largeur_mm : 0,
-      aDesDimensions ? creationAffaire.hauteur_mm : 0,
+      creationAffaire.longueur_mm,
+      creationAffaire.largeur_mm,
+      creationAffaire.hauteur_mm,
+      null,
+      creationAffaire.caisse_stock_id,
+      creationAffaire.type_envoi_caisse,
       null,
       trigramme,
     );
     setCreationAffaire(null);
+    setCreationSousCaisses([]);
     setAffaireId(affaire.id);
   }
 
@@ -126,11 +193,20 @@ export default function App() {
       {creationAffaire && (
         <CreerAffaireDialog
           nomAffaire={creationAffaire.affaire}
-          longueur_mm={creationAffaire.longueur_mm}
-          largeur_mm={creationAffaire.largeur_mm}
-          hauteur_mm={creationAffaire.hauteur_mm}
+          caisses={[
+            {
+              nom: creationAffaire.affaire,
+              longueur_mm: creationAffaire.longueur_mm,
+              largeur_mm: creationAffaire.largeur_mm,
+              hauteur_mm: creationAffaire.hauteur_mm,
+            },
+            ...creationSousCaisses.map((sc) => ({ nom: sc.nom, longueur_mm: sc.longueur_mm, largeur_mm: sc.largeur_mm, hauteur_mm: sc.hauteur_mm })),
+          ]}
           onConfirmer={handleConfirmerCreationAffaire}
-          onClose={() => setCreationAffaire(null)}
+          onClose={() => {
+            setCreationAffaire(null);
+            setCreationSousCaisses([]);
+          }}
         />
       )}
 
@@ -143,6 +219,8 @@ export default function App() {
           onDismiss={dismiss}
         />
       )}
+
+      <ConfirmDialogHost />
     </div>
   );
 }

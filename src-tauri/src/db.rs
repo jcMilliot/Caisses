@@ -38,6 +38,34 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0007_add_section_lock",
         include_str!("../../migrations/0007_add_section_lock.sql"),
     ),
+    (
+        "0008_add_demande_caisse",
+        include_str!("../../migrations/0008_add_demande_caisse.sql"),
+    ),
+    (
+        "0009_add_demande_caisse_traitement",
+        include_str!("../../migrations/0009_add_demande_caisse_traitement.sql"),
+    ),
+    (
+        "0010_add_demande_caisse_champs_supplementaires",
+        include_str!("../../migrations/0010_add_demande_caisse_champs_supplementaires.sql"),
+    ),
+    (
+        "0011_add_caisse_stock_links",
+        include_str!("../../migrations/0011_add_caisse_stock_links.sql"),
+    ),
+    (
+        "0012_add_caisse_stock_validee_et_reaffectation",
+        include_str!("../../migrations/0012_add_caisse_stock_validee_et_reaffectation.sql"),
+    ),
+    (
+        "0013_add_caisse_stock_demande_cible",
+        include_str!("../../migrations/0013_add_caisse_stock_demande_cible.sql"),
+    ),
+    (
+        "0014_add_caisse_type_envoi_et_demande_caisse_id",
+        include_str!("../../migrations/0014_add_caisse_type_envoi_et_demande_caisse_id.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {
