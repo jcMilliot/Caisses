@@ -27,13 +27,14 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<Demande> {
         observations: row.get(19)?,
         validee: row.get(20)?,
         ordre: row.get(21)?,
+        caisse_stock_id: row.get(22)?,
     })
 }
 
 const SELECT_COLS: &str = "id, ok_pour_passer_cde, affaire, type_envoi_caisse, type_ouverture, stock,
     longueur_mm, largeur_mm, hauteur_mm, quantite, date_picking, date_demandee_s2c,
     moteurs, module_lineaire, terminaux, traitement, informations_supp,
-    cde_passee_affaire, cde_passee_achat_stock, observations, validee, ordre";
+    cde_passee_affaire, cde_passee_achat_stock, observations, validee, ordre, caisse_stock_id";
 
 #[tauri::command]
 pub fn list_demandes(db: State<Db>) -> Result<Vec<Demande>, String> {
@@ -51,8 +52,8 @@ fn insert_demande(conn: &rusqlite::Connection, d: &NewDemande, ordre: i64) -> Re
             ok_pour_passer_cde, affaire, type_envoi_caisse, type_ouverture, stock,
             longueur_mm, largeur_mm, hauteur_mm, quantite, date_picking, date_demandee_s2c,
             moteurs, module_lineaire, terminaux, traitement, informations_supp,
-            cde_passee_affaire, cde_passee_achat_stock, observations, ordre
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+            cde_passee_affaire, cde_passee_achat_stock, observations, ordre, caisse_stock_id
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
         rusqlite::params![
             d.ok_pour_passer_cde,
             d.affaire,
@@ -74,6 +75,7 @@ fn insert_demande(conn: &rusqlite::Connection, d: &NewDemande, ordre: i64) -> Re
             d.cde_passee_achat_stock,
             d.observations,
             ordre,
+            d.caisse_stock_id,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -110,8 +112,8 @@ pub fn bulk_create_demandes(db: State<Db>, demandes: Vec<NewDemande>, trigramme:
                     ok_pour_passer_cde, affaire, type_envoi_caisse, type_ouverture, stock,
                     longueur_mm, largeur_mm, hauteur_mm, quantite, date_picking, date_demandee_s2c,
                     moteurs, module_lineaire, terminaux, traitement, informations_supp,
-                    cde_passee_affaire, cde_passee_achat_stock, observations, ordre
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+                    cde_passee_affaire, cde_passee_achat_stock, observations, ordre, caisse_stock_id
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
                 rusqlite::params![
                     d.ok_pour_passer_cde,
                     d.affaire,
@@ -133,6 +135,7 @@ pub fn bulk_create_demandes(db: State<Db>, demandes: Vec<NewDemande>, trigramme:
                     d.cde_passee_achat_stock,
                     d.observations,
                     ordre,
+                    d.caisse_stock_id,
                 ],
             )
             .map_err(|e| e.to_string())?;
@@ -161,8 +164,9 @@ pub fn update_demande(db: State<Db>, id: i64, demande: NewDemande, trigramme: St
             ok_pour_passer_cde = ?1, affaire = ?2, type_envoi_caisse = ?3, type_ouverture = ?4, stock = ?5,
             longueur_mm = ?6, largeur_mm = ?7, hauteur_mm = ?8, quantite = ?9, date_picking = ?10,
             date_demandee_s2c = ?11, moteurs = ?12, module_lineaire = ?13, terminaux = ?14, traitement = ?15,
-            informations_supp = ?16, cde_passee_affaire = ?17, cde_passee_achat_stock = ?18, observations = ?19
-        WHERE id = ?20",
+            informations_supp = ?16, cde_passee_affaire = ?17, cde_passee_achat_stock = ?18, observations = ?19,
+            caisse_stock_id = ?20
+        WHERE id = ?21",
         rusqlite::params![
             demande.ok_pour_passer_cde,
             demande.affaire,
@@ -183,6 +187,7 @@ pub fn update_demande(db: State<Db>, id: i64, demande: NewDemande, trigramme: St
             demande.cde_passee_affaire,
             demande.cde_passee_achat_stock,
             demande.observations,
+            demande.caisse_stock_id,
             id,
         ],
     )

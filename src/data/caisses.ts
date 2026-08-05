@@ -10,6 +10,9 @@ export const caissesApi = {
     largeur_mm: number,
     hauteur_mm: number,
     seuil_pct: number | null,
+    caisse_stock_id: number | null,
+    type_envoi_caisse: string,
+    demande_caisse_id: number | null,
     trigramme: string,
   ) =>
     call<Caisse>("create_caisse", {
@@ -19,6 +22,9 @@ export const caissesApi = {
       largeurMm: largeur_mm,
       hauteurMm: hauteur_mm,
       seuilPct: seuil_pct,
+      caisseStockId: caisse_stock_id,
+      typeEnvoiCaisse: type_envoi_caisse,
+      demandeCaisseId: demande_caisse_id,
       trigramme,
     }),
   update: (
@@ -29,6 +35,7 @@ export const caissesApi = {
     hauteur_mm: number,
     seuil_pct: number | null,
     couleur: string,
+    type_envoi_caisse: string,
     trigramme: string,
   ) =>
     call<void>("update_caisse", {
@@ -39,7 +46,10 @@ export const caissesApi = {
       hauteurMm: hauteur_mm,
       seuilPct: seuil_pct,
       couleur,
+      typeEnvoiCaisse: type_envoi_caisse,
       trigramme,
     }),
+  linkDemandeCaisse: (id: number, demande_caisse_id: number, trigramme: string) =>
+    call<void>("link_caisse_demande_caisse", { id, demandeCaisseId: demande_caisse_id, trigramme }),
   delete: (id: number, trigramme: string) => call<void>("delete_caisse", { id, trigramme }),
 };

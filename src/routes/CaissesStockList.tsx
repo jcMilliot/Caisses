@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { caisseStockApi } from "../data/caisseStock";
-import { affairesApi } from "../data/affaires";
+import { demandesApi } from "../data/demandes";
+import { demandeCaisseApi } from "../data/demandeCaisse";
 import { useSectionLock } from "../hooks/useSectionLock";
 import LockBanner from "../components/LockBanner";
 import EditableCellInput from "../components/EditableCellInput";
 import { confirmerSuppression } from "../data/confirm";
-import type { Affaire, CaisseStock, NewCaisseStock } from "../domain/types";
+import { estArCaiss } from "../domain/caisseStock";
+import type { CaisseStock, NewCaisseStock, Demande, DemandeCaisse } from "../domain/types";
 
 const CAISSE_VIDE: NewCaisseStock = {
   nom: "",
@@ -39,7 +41,8 @@ export default function CaissesStockList({ trigramme }: Props) {
   const lock = useSectionLock("stock", trigramme);
   const readOnly = lock.status !== "held";
   const [caisses, setCaisses] = useState<CaisseStock[]>([]);
-  const [affaires, setAffaires] = useState<Affaire[]>([]);
+  const [demandes, setDemandes] = useState<Demande[]>([]);
+  const [demandeCaisses, setDemandeCaisses] = useState<DemandeCaisse[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<NewCaisseStock>(CAISSE_VIDE);
@@ -48,9 +51,10 @@ export default function CaissesStockList({ trigramme }: Props) {
   async function reload() {
     setLoading(true);
     try {
-      const [c, a] = await Promise.all([caisseStockApi.list(), affairesApi.list()]);
+      const [c, d, dc] = await Promise.all([caisseStockApi.list(), demandesApi.list(), demandeCaisseApi.listAll()]);
       setCaisses(c);
-      setAffaires(a);
+      setDemandes(d);
+      setDemandeCaisses(dc);
     } finally {
       setLoading(false);
     }
@@ -86,13 +90,8 @@ export default function CaissesStockList({ trigramme }: Props) {
     await reload();
   }
 
-  async function handleAffectationChange(caisse: CaisseStock, affaireId: number | null) {
-    await caisseStockApi.update(caisse.id, { ...toNewCaisseStock(caisse), affaire_id: affaireId }, trigramme);
-    await reload();
-  }
-
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "48px 24px" }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 24px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 32 }}>
         <div>
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent)", marginBottom: 4 }}>
@@ -116,6 +115,11 @@ export default function CaissesStockList({ trigramme }: Props) {
         />
       )}
 
+      <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: -20, marginBottom: 24 }}>
+        L'affectation d'une caisse à une affaire se fait désormais depuis Demandes (menu « Stock » d'une ligne) —
+        cet écran affiche l'affectation actuelle à titre informatif.
+      </p>
+
       {creating && (
         <form
           onSubmit={handleCreate}
@@ -125,6 +129,9 @@ export default function CaissesStockList({ trigramme }: Props) {
           <div style={{ gridColumn: "span 3" }}>
             <label style={labelStyle}>Nom</label>
             <input autoFocus value={form.nom} onChange={(e) => setForm({ ...form, nom: e.target.value })} style={inputStyle} />
+            <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: "4px 0 0" }}>
+              Préfixer par « AR_CAISS » pour une caisse réutilisable, affectable à plusieurs affaires en même temps.
+            </p>
           </div>
 
           <div>
@@ -156,22 +163,6 @@ export default function CaissesStockList({ trigramme }: Props) {
               onChange={(e) => setForm({ ...form, hauteur_mm: Number(e.target.value) * 1000 || 0 })}
               style={inputStyle}
             />
-          </div>
-
-          <div>
-            <label style={labelStyle}>Affectation</label>
-            <select
-              value={form.affaire_id ?? ""}
-              onChange={(e) => setForm({ ...form, affaire_id: e.target.value === "" ? null : Number(e.target.value) })}
-              style={inputStyle}
-            >
-              <option value="">Non affectée</option>
-              {affaires.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.nom}
-                </option>
-              ))}
-            </select>
           </div>
 
           <div style={{ gridColumn: "span 3" }}>
@@ -240,27 +231,25 @@ export default function CaissesStockList({ trigramme }: Props) {
                     </td>
                   );
                 }
+                const demandeProprietaire =
+                  demandes.find((d) => d.caisse_stock_id === c.id) ??
+                  (() => {
+                    const sc = demandeCaisses.find((sl) => sl.caisse_stock_id === c.id);
+                    return sc ? demandes.find((d) => d.id === sc.demande_id) : undefined;
+                  })();
                 return (
-                  <tr key={c.id}>
+                  <tr key={c.id} style={{ background: c.validee ? "var(--success-bg, #d4f4dd)" : undefined }}>
                     {cell("nom", c.nom)}
                     {cell("longueur_mm", (c.longueur_mm / 1000).toFixed(2), true)}
                     {cell("largeur_mm", (c.largeur_mm / 1000).toFixed(2), true)}
                     {cell("hauteur_mm", (c.hauteur_mm / 1000).toFixed(2), true)}
                     {cell("observations", c.observations)}
                     <td style={tdStyle}>
-                      <select
-                        value={c.affaire_id ?? ""}
-                        disabled={readOnly}
-                        onChange={(e) => handleAffectationChange(c, e.target.value === "" ? null : Number(e.target.value))}
-                        style={{ ...inputStyle, padding: "4px 6px" }}
-                      >
-                        <option value="">Non affectée</option>
-                        {affaires.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.nom}
-                          </option>
-                        ))}
-                      </select>
+                      {estArCaiss(c.nom) ? (
+                        <span style={{ color: "var(--text-faint)" }}>—</span>
+                      ) : (
+                        <span>{demandeProprietaire ? demandeProprietaire.affaire : "Non affectée"}</span>
+                      )}
                     </td>
                     <td style={tdStyle}>
                       <button className="btn btn-sm btn-danger" onClick={() => handleDelete(c.id, c.nom)} disabled={readOnly}>
@@ -296,7 +285,7 @@ const inputStyle: React.CSSProperties = {
 
 const thStyle: React.CSSProperties = {
   padding: "9px 8px",
-  borderBottom: "2px solid var(--border)",
+  borderBottom: "2px solid var(--row-border-color)",
   fontSize: 11,
   fontWeight: 700,
   letterSpacing: "0.03em",
@@ -305,5 +294,6 @@ const thStyle: React.CSSProperties = {
 
 const tdStyle: React.CSSProperties = {
   padding: "10px 8px",
-  borderBottom: "1px solid var(--border)",
+  borderBottom: "1px solid var(--row-border-color)",
+  verticalAlign: "top",
 };

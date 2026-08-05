@@ -15,7 +15,7 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [nom, setNom] = useState("");
-  const [seuilDefaut, setSeuilDefaut] = useState(90);
+  const [seuilDefaut, setSeuilDefaut] = useState(70);
   const [recherche, setRecherche] = useState("");
 
   async function reload() {
@@ -44,7 +44,7 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
     if (!nom.trim()) return;
     const affaire = await affairesApi.create(nom.trim(), seuilDefaut);
     setNom("");
-    setSeuilDefaut(90);
+    setSeuilDefaut(70);
     setCreating(false);
     await reload();
     onOpen(affaire.id);

@@ -1,13 +1,24 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Demande } from "../domain/types";
+import type { Demande, DemandeCaisse, CaisseStock } from "../domain/types";
 import { dateIsoVersAffichage } from "../domain/dates";
 import { necessiteNimp15, estCaisse4C, AVERTISSEMENT_MOUSSE_4C } from "../domain/demandeOptions";
+import { PALETTE_CAISSES } from "../domain/palette";
 import ColumnFilterMenu from "./ColumnFilterMenu";
 import TableOptionsMenu from "./TableOptionsMenu";
+import ScrollToTopButton from "./ScrollToTopButton";
 
 interface Props {
   demandes: Demande[];
+  demandeCaisses: DemandeCaisse[];
+  caissesStock: CaisseStock[];
+  lignesEtendues: Set<number>;
+  onToggleEtendue: (demandeId: number) => void;
+  onCreerDemandeCaisse: (demande: Demande) => void;
+  onEditDemandeCaisse: (id: number, patch: Partial<DemandeCaisse>) => void;
+  onDeleteDemandeCaisse: (id: number) => void;
+  onSelectStock: (demandeId: number, caisseStockId: number | null) => void;
+  onSelectStockSousLigne: (id: number, caisseStockId: number | null) => void;
   onEdit: (id: number, patch: Partial<Demande>) => void;
   onDelete: (id: number, affaire: string) => void;
   onValider: (id: number, validee: boolean) => void;
@@ -133,12 +144,14 @@ function sauvegarderLargeurs(largeurs: Partial<Record<Champ, number>>) {
 
 const CHAMPS_BOOL: ReadonlySet<Champ> = new Set(["ok_pour_passer_cde", "cde_passee_affaire", "cde_passee_achat_stock"]);
 const CHAMPS_NOMBRE: ReadonlySet<Champ> = new Set(["longueur_mm", "largeur_mm", "hauteur_mm", "quantite"]);
+const CHAMPS_DIM: ReadonlySet<Champ> = new Set(["longueur_mm", "largeur_mm", "hauteur_mm"]);
 const CHAMPS_DATE: ReadonlySet<Champ> = new Set(["date_picking", "date_demandee_s2c"]);
 
 function valeurTexte(d: Demande, champ: Champ): string {
   const v = d[champ];
   if (typeof v === "boolean") return v ? "Oui" : "Non";
   if (CHAMPS_DATE.has(champ)) return dateIsoVersAffichage(String(v));
+  if (CHAMPS_DIM.has(champ)) return ((v as number) / 1000).toFixed(2);
   return String(v);
 }
 
@@ -166,7 +179,23 @@ const COLONNES: { champ: Champ; label: string; align?: "left" | "right" }[] = [
 
 const TOUTES_LES_COLONNES = COLONNES.map((c) => c.champ);
 
-export default function DemandesTable({ demandes, onEdit, onDelete, onValider, onSimulerAffaire, readOnly }: Props) {
+export default function DemandesTable({
+  demandes,
+  demandeCaisses,
+  caissesStock,
+  lignesEtendues,
+  onToggleEtendue,
+  onCreerDemandeCaisse,
+  onEditDemandeCaisse,
+  onDeleteDemandeCaisse,
+  onSelectStock,
+  onSelectStockSousLigne,
+  onEdit,
+  onDelete,
+  onValider,
+  onSimulerAffaire,
+  readOnly,
+}: Props) {
   const [cellEnEdition, setCellEnEdition] = useState<{ id: number; champ: Champ } | null>(null);
   const [tri, setTri] = useState<Tri | null>(() => chargerTri());
   const [filtres, setFiltres] = useState<Filtres>(() => chargerFiltres());
@@ -176,8 +205,10 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
   const [masquerValidees, setMasquerValidees] = useState(() => chargerMasquerValidees());
   const [menuContextuel, setMenuContextuel] = useState<{ demande: Demande; x: number; y: number; validee: boolean } | null>(null);
   const [largeurs, setLargeurs] = useState<Partial<Record<Champ, number>>>(() => chargerLargeurs());
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const boutonsFiltreRef = useRef<Partial<Record<Champ, HTMLButtonElement>>>({});
   const redimensionnement = useRef<{ champ: Champ; xDepart: number; largeurDepart: number } | null>(null);
+  const conteneurScrollRef = useRef<HTMLDivElement>(null);
 
   function commencerRedimensionnement(e: React.PointerEvent, champ: Champ, largeurActuelle: number) {
     e.preventDefault();
@@ -231,6 +262,24 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
     sauvegarderMasquerValidees(v);
   }
 
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) => (prev.size === demandesTriees.length ? new Set() : new Set(demandesTriees.map((d) => d.id))));
+  }
+
+  function validerSelection(validee: boolean) {
+    for (const id of selectedIds) onValider(id, validee);
+    setSelectedIds(new Set());
+  }
+
   const colonnesAffichees = COLONNES.filter((c) => colonnesVisibles.has(c.champ));
 
   const demandesVisibles = masquerValidees ? demandes.filter((d) => !estDemandeValidee(d)) : demandes;
@@ -282,7 +331,8 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
 
   function sauvegarderChamp(demande: Demande, champ: Champ, valeurBrute: string) {
     setCellEnEdition(null);
-    const valeur = CHAMPS_NOMBRE.has(champ) ? Number(valeurBrute.replace(",", ".")) || 0 : valeurBrute;
+    const nombre = Number(valeurBrute.replace(",", ".")) || 0;
+    const valeur = CHAMPS_DIM.has(champ) ? nombre * 1000 : CHAMPS_NOMBRE.has(champ) ? nombre : valeurBrute;
     if (demande[champ] === valeur) return;
     // Une caisse 4B/4C impose le traitement NIMP15 — pré-rempli seulement si le champ
     // Traitement est encore vide, pour ne pas écraser une saisie manuelle déjà faite.
@@ -294,7 +344,14 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
   }
 
   function toggleBool(demande: Demande, champ: "ok_pour_passer_cde" | "cde_passee_affaire" | "cde_passee_achat_stock") {
-    onEdit(demande.id, { [champ]: !demande[champ] });
+    const nouvelle = !demande[champ];
+    if (champ === "cde_passee_affaire" && nouvelle) {
+      onEdit(demande.id, { cde_passee_affaire: true, cde_passee_achat_stock: false });
+    } else if (champ === "cde_passee_achat_stock" && nouvelle) {
+      onEdit(demande.id, { cde_passee_achat_stock: true, cde_passee_affaire: false });
+    } else {
+      onEdit(demande.id, { [champ]: nouvelle });
+    }
   }
 
   function cell(demande: Demande, champ: Champ, align: "left" | "right" = "left", td: React.CSSProperties = tdStyle) {
@@ -310,11 +367,36 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
         </td>
       );
     }
+    if (champ === "stock") {
+      const options = caissesStock.filter((c) => !c.validee || c.id === demande.caisse_stock_id);
+      return (
+        <td style={{ ...td, textAlign: align, width: largeurColonne(champ), maxWidth: largeurColonne(champ) }}>
+          <select
+            value={demande.caisse_stock_id ?? ""}
+            disabled={readOnly}
+            onChange={(e) => onSelectStock(demande.id, e.target.value === "" ? null : Number(e.target.value))}
+            style={{ width: "100%", border: "none", background: "transparent", font: "inherit", color: "inherit" }}
+          >
+            <option value="">—</option>
+            {options.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nom}
+              </option>
+            ))}
+          </select>
+        </td>
+      );
+    }
     const enEdition = cellEnEdition?.id === demande.id && cellEnEdition.champ === champ;
     const estNombre = CHAMPS_NOMBRE.has(champ);
+    const estDim = CHAMPS_DIM.has(champ);
     const estDate = CHAMPS_DATE.has(champ);
     const valeurBrute = demande[champ] as string | number;
-    const valeurAffichee = estDate ? dateIsoVersAffichage(String(valeurBrute)) : valeurBrute;
+    const valeurAffichee = estDim
+      ? ((valeurBrute as number) / 1000).toFixed(2)
+      : estDate
+        ? dateIsoVersAffichage(String(valeurBrute))
+        : valeurBrute;
     const largeur = largeurColonne(champ);
     const avertissementMousse = champ === "type_envoi_caisse" && estCaisse4C(demande.type_envoi_caisse) ? AVERTISSEMENT_MOUSSE_4C : undefined;
     return (
@@ -337,7 +419,7 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
         {enEdition ? (
           <EditableCellInput
             type={estDate ? "date" : estNombre ? "number" : "text"}
-            defaultValue={String(valeurBrute)}
+            defaultValue={estDim ? String((valeurBrute as number) / 1000) : String(valeurBrute)}
             align={align}
             onCommit={(v) => sauvegarderChamp(demande, champ, v)}
             onCancel={() => setCellEnEdition(null)}
@@ -435,10 +517,23 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
   const yATrouFiltre = Object.keys(filtres).length > 0;
   const th = compact ? thStyleCompact : thStyle;
   const td = compact ? tdStyleCompact : tdStyle;
+  const colonnesAvecLargeur = colonnesAffichees.map((c) => ({ ...c, largeur: largeurColonne(c.champ) }));
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+        <div>
+          {selectedIds.size > 0 && !readOnly && (
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-sm btn-primary" onClick={() => validerSelection(true)}>
+                Valider la sélection ({selectedIds.size})
+              </button>
+              <button className="btn btn-sm" onClick={() => validerSelection(false)}>
+                Dévalider la sélection
+              </button>
+            </div>
+          )}
+        </div>
         <TableOptionsMenu
           colonnes={COLONNES.map((c) => ({ champ: c.champ, label: c.label }))}
           colonnesVisibles={colonnesVisibles}
@@ -449,7 +544,7 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
           onChangeMasquerValidees={changerMasquerValidees}
         />
       </div>
-      <div style={{ overflowX: "auto" }}>
+      <div ref={conteneurScrollRef} style={{ overflow: "auto", maxHeight: "calc(100vh - 220px)" }}>
         <table
           style={{
             fontSize: compact ? 12 : 13,
@@ -460,6 +555,14 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
         >
           <thead>
             <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
+              <th style={{ ...th, width: 20 }}></th>
+              <th style={{ ...th, width: 32 }}>
+                <input
+                  type="checkbox"
+                  checked={demandesTriees.length > 0 && selectedIds.size === demandesTriees.length}
+                  onChange={toggleSelectAll}
+                />
+              </th>
               {colonnesAffichees.map((c) => (
                 <Fragment key={c.champ}>{thFiltrable(c.champ, c.label, c.align, th)}</Fragment>
               ))}
@@ -469,13 +572,13 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
           <tbody>
             {demandes.length === 0 ? (
               <tr>
-                <td colSpan={colonnesAffichees.length + 1} style={{ ...td, textAlign: "center", color: "var(--text-muted)", padding: "20px 8px" }}>
+                <td colSpan={colonnesAffichees.length + 3} style={{ ...td, textAlign: "center", color: "var(--text-muted)", padding: "20px 8px" }}>
                   Aucune demande. Collez des lignes depuis Excel ou ajoutez-en une manuellement.
                 </td>
               </tr>
             ) : demandesTriees.length === 0 ? (
               <tr>
-                <td colSpan={colonnesAffichees.length + 1} style={{ ...td, textAlign: "center", color: "var(--text-muted)", padding: "20px 8px" }}>
+                <td colSpan={colonnesAffichees.length + 3} style={{ ...td, textAlign: "center", color: "var(--text-muted)", padding: "20px 8px" }}>
                   {yATrouFiltre
                     ? "Aucune demande ne correspond aux filtres actifs."
                     : masquerValidees
@@ -486,27 +589,65 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
             ) : (
               demandesTriees.map((d) => {
                 const estValidee = estDemandeValidee(d);
+                const sousLignes = demandeCaisses.filter((c) => c.demande_id === d.id);
+                const etendue = lignesEtendues.has(d.id);
                 return (
-                  <tr
-                    key={d.id}
-                    className="article-row"
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setMenuContextuel({ demande: d, x: e.clientX, y: e.clientY, validee: estValidee });
-                    }}
-                    style={{
-                      background: estValidee ? "var(--success-bg, #d4f4dd)" : d.ok_pour_passer_cde ? "#f5eee0" : undefined,
-                    }}
-                  >
-                    {colonnesAffichees.map((c) => (
-                      <Fragment key={c.champ}>{cell(d, c.champ, c.align, td)}</Fragment>
-                    ))}
-                    <td style={td}>
-                      <button className="btn btn-sm btn-danger" onClick={() => onDelete(d.id, d.affaire)} disabled={readOnly}>
-                        Suppr.
-                      </button>
-                    </td>
-                  </tr>
+                  <Fragment key={d.id}>
+                    <tr
+                      className="article-row"
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setMenuContextuel({ demande: d, x: e.clientX, y: e.clientY, validee: estValidee });
+                      }}
+                      style={{
+                        background: selectedIds.has(d.id)
+                          ? "var(--accent-soft-strong)"
+                          : estValidee
+                            ? "var(--success-bg, #d4f4dd)"
+                            : d.ok_pour_passer_cde
+                              ? "#f5eee0"
+                              : undefined,
+                      }}
+                    >
+                      <td style={{ ...td, textAlign: "center" }}>
+                        {sousLignes.length > 0 && (
+                          <button
+                            onClick={() => onToggleEtendue(d.id)}
+                            title={etendue ? "Replier les caisses détaillées" : "Déplier les caisses détaillées"}
+                            style={{ background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 11, color: "var(--text-muted)" }}
+                          >
+                            {etendue ? "▾" : "▸"}
+                          </button>
+                        )}
+                      </td>
+                      <td style={td}>
+                        <input type="checkbox" checked={selectedIds.has(d.id)} onChange={() => toggleSelect(d.id)} />
+                      </td>
+                      {colonnesAffichees.map((c) => (
+                        <Fragment key={c.champ}>{cell(d, c.champ, c.align, td)}</Fragment>
+                      ))}
+                      <td style={td}>
+                        <button className="btn btn-sm btn-danger" onClick={() => onDelete(d.id, d.affaire)} disabled={readOnly}>
+                          Suppr.
+                        </button>
+                      </td>
+                    </tr>
+                    {etendue &&
+                      sousLignes.map((sc, index) => (
+                        <SousLigneCaisse
+                          key={sc.id}
+                          caisse={sc}
+                          colonnesAffichees={colonnesAvecLargeur}
+                          caissesStock={caissesStock}
+                          td={td}
+                          readOnly={readOnly}
+                          coloredBackground={PALETTE_CAISSES[index % PALETTE_CAISSES.length]}
+                          onEdit={(patch) => onEditDemandeCaisse(sc.id, patch)}
+                          onDelete={() => onDeleteDemandeCaisse(sc.id)}
+                          onSelectStock={(id) => onSelectStockSousLigne(sc.id, id)}
+                        />
+                      ))}
+                  </Fragment>
                 );
               })
             )}
@@ -549,10 +690,195 @@ export default function DemandesTable({ demandes, onEdit, onDelete, onValider, o
             >
               Simuler l'affaire
             </button>
+            <button
+              onClick={() => {
+                onCreerDemandeCaisse(menuContextuel.demande);
+                setMenuContextuel(null);
+              }}
+              style={menuBoutonStyle}
+            >
+              Créer une nouvelle caisse
+            </button>
           </div>,
           document.body
         )}
+
+      <ScrollToTopButton cible={conteneurScrollRef} />
     </div>
+  );
+}
+
+// Correspondance entre les colonnes de la demande parente et le champ équivalent porté par une
+// sous-caisse — permet d'aligner chaque valeur sous la colonne du tableau qui lui correspond,
+// pour que la sous-ligne se lise visuellement comme une vraie ligne du même tableau plutôt qu'un
+// mini-formulaire séparé. `null` = pas d'équivalent, la cellule reste vide sous cette colonne.
+const CHAMP_SOUS_LIGNE: Partial<Record<Champ, keyof DemandeCaisse>> = {
+  affaire: "nom",
+  type_envoi_caisse: "type_envoi_caisse",
+  type_ouverture: "type_ouverture",
+  stock: "stock",
+  date_picking: "date_picking",
+  date_demandee_s2c: "date_demandee_s2c",
+  traitement: "traitement",
+  quantite: "quantite",
+  moteurs: "moteurs",
+  module_lineaire: "module_lineaire",
+  informations_supp: "informations_supp",
+  observations: "observations",
+  longueur_mm: "longueur_mm",
+  largeur_mm: "largeur_mm",
+  hauteur_mm: "hauteur_mm",
+  cde_passee_affaire: "cde_passee_affaire",
+  cde_passee_achat_stock: "cde_passee_achat_stock",
+};
+
+const CHAMPS_DIM_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["longueur_mm", "largeur_mm", "hauteur_mm"]);
+const CHAMPS_NOMBRE_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["quantite"]);
+const CHAMPS_BOOL_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["cde_passee_affaire", "cde_passee_achat_stock"]);
+const CHAMPS_DATE_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["date_picking", "date_demandee_s2c"]);
+// Champs copiés depuis la demande mère à la création et jamais modifiables sur la sous-ligne —
+// seule la mère fait foi pour ces informations, la sous-ligne ne détaille que dims/traitement/cde.
+const CHAMPS_VERROUILLES_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["nom", "type_envoi_caisse", "date_picking"]);
+
+function SousLigneCaisse({
+  caisse,
+  colonnesAffichees,
+  caissesStock,
+  td,
+  readOnly,
+  coloredBackground,
+  onEdit,
+  onDelete,
+  onSelectStock,
+}: {
+  caisse: DemandeCaisse;
+  colonnesAffichees: { champ: Champ; label: string; align?: "left" | "right"; largeur: number }[];
+  caissesStock: CaisseStock[];
+  td: React.CSSProperties;
+  readOnly?: boolean;
+  coloredBackground?: string;
+  onEdit: (patch: Partial<DemandeCaisse>) => void;
+  onDelete: () => void;
+  onSelectStock: (caisseStockId: number | null) => void;
+}) {
+  const [champEnEdition, setChampEnEdition] = useState<keyof DemandeCaisse | null>(null);
+
+  function toggleCdePassee(champ: "cde_passee_affaire" | "cde_passee_achat_stock") {
+    const nouvelle = !caisse[champ];
+    if (champ === "cde_passee_affaire" && nouvelle) {
+      onEdit({ cde_passee_affaire: true, cde_passee_achat_stock: false });
+    } else if (champ === "cde_passee_achat_stock" && nouvelle) {
+      onEdit({ cde_passee_achat_stock: true, cde_passee_affaire: false });
+    } else {
+      onEdit({ [champ]: nouvelle });
+    }
+  }
+
+  function cellulePourColonne(colonne: { champ: Champ; align?: "left" | "right"; largeur: number }) {
+    const champSousLigne = CHAMP_SOUS_LIGNE[colonne.champ];
+    const style: React.CSSProperties = {
+      ...td,
+      textAlign: colonne.align,
+      width: colonne.largeur,
+      maxWidth: colonne.largeur,
+      whiteSpace: "normal",
+      wordBreak: "break-word",
+    };
+
+    if (!champSousLigne) return <td style={style} />;
+
+    if (champSousLigne === "stock") {
+      const options = caissesStock.filter((c) => !c.validee || c.id === caisse.caisse_stock_id);
+      return (
+        <td style={style}>
+          <select
+            value={caisse.caisse_stock_id ?? ""}
+            disabled={readOnly}
+            onChange={(e) => onSelectStock(e.target.value === "" ? null : Number(e.target.value))}
+            style={{ width: "100%", border: "none", background: "transparent", font: "inherit", color: "inherit" }}
+          >
+            <option value="">—</option>
+            {options.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nom}
+              </option>
+            ))}
+          </select>
+        </td>
+      );
+    }
+
+    if (CHAMPS_BOOL_SOUS_LIGNE.has(champSousLigne)) {
+      return (
+        <td style={{ ...style, textAlign: "center" }}>
+          <input
+            type="checkbox"
+            checked={caisse[champSousLigne] as boolean}
+            disabled={readOnly}
+            onChange={() => toggleCdePassee(champSousLigne as "cde_passee_affaire" | "cde_passee_achat_stock")}
+          />
+        </td>
+      );
+    }
+
+    const enEdition = champEnEdition === champSousLigne;
+    const estDim = CHAMPS_DIM_SOUS_LIGNE.has(champSousLigne);
+    const estNombre = estDim || CHAMPS_NOMBRE_SOUS_LIGNE.has(champSousLigne);
+    const estDate = CHAMPS_DATE_SOUS_LIGNE.has(champSousLigne);
+    const verrouille = CHAMPS_VERROUILLES_SOUS_LIGNE.has(champSousLigne);
+    const editable = !readOnly && !verrouille;
+    const valeurBrute = caisse[champSousLigne] as string | number;
+    const valeurAffichee = estDim
+      ? ((valeurBrute as number) / 1000).toFixed(2)
+      : estDate
+        ? dateIsoVersAffichage(String(valeurBrute))
+        : valeurBrute;
+
+    return (
+      <td
+        style={{ ...style, cursor: editable ? "text" : "default", padding: enEdition ? 2 : style.padding }}
+        className={estNombre ? "mono" : undefined}
+        title={verrouille ? "Repris de la demande — non modifiable ici" : undefined}
+        onClick={() => editable && !enEdition && setChampEnEdition(champSousLigne)}
+      >
+        {enEdition ? (
+          <EditableCellInput
+            type={estDate ? "date" : estNombre ? "number" : "text"}
+            defaultValue={estDim ? String((valeurBrute as number) / 1000) : String(valeurBrute)}
+            align={colonne.align ?? "left"}
+            onCommit={(v) => {
+              setChampEnEdition(null);
+              if (estDim) {
+                const metres = Number(v.replace(",", ".")) || 0;
+                onEdit({ [champSousLigne]: metres * 1000 });
+              } else if (CHAMPS_NOMBRE_SOUS_LIGNE.has(champSousLigne)) {
+                onEdit({ [champSousLigne]: Math.round(Number(v.replace(",", "."))) || 0 });
+              } else if (v !== valeurBrute) {
+                onEdit({ [champSousLigne]: v });
+              }
+            }}
+            onCancel={() => setChampEnEdition(null)}
+          />
+        ) : (
+          valeurAffichee || "—"
+        )}
+      </td>
+    );
+  }
+
+  return (
+    <tr style={{ background: coloredBackground ?? "var(--bg-panel-alt)" }}>
+      <td style={td} />
+      <td style={td} />
+      {colonnesAffichees.map((c) => (
+        <Fragment key={c.champ}>{cellulePourColonne(c)}</Fragment>
+      ))}
+      <td style={td}>
+        <button className="btn btn-sm btn-danger" onClick={onDelete} disabled={readOnly}>
+          Suppr.
+        </button>
+      </td>
+    </tr>
   );
 }
 
@@ -625,8 +951,8 @@ const menuBoutonStyle: React.CSSProperties = {
 
 const thStyle: React.CSSProperties = {
   padding: "9px 8px",
-  borderBottom: "2px solid var(--border)",
-  borderRight: "1px solid var(--border)",
+  borderBottom: "2px solid var(--row-border-color)",
+  borderRight: "1px solid var(--row-border-color)",
   fontSize: 11,
   fontWeight: 700,
   letterSpacing: "0.03em",
@@ -639,8 +965,8 @@ const thStyle: React.CSSProperties = {
 };
 const tdStyle: React.CSSProperties = {
   padding: "10px 8px",
-  borderBottom: "1px solid var(--border)",
-  borderRight: "1px solid var(--border)",
+  borderBottom: "1px solid var(--row-border-color)",
+  borderRight: "1px solid var(--row-border-color)",
   verticalAlign: "middle",
 };
 

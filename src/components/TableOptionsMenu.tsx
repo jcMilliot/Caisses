@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSeparationLignesMarquee } from "../hooks/useSettings";
 
 interface ColonneOption<T extends string> {
   champ: T;
@@ -26,6 +27,7 @@ export default function TableOptionsMenu<T extends string>({
 }: Props<T>) {
   const [ouvert, setOuvert] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const [separationMarquee, setSeparationMarquee] = useSeparationLignesMarquee();
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -71,6 +73,10 @@ export default function TableOptionsMenu<T extends string>({
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
               <input type="checkbox" checked={masquerValidees} onChange={(e) => onChangeMasquerValidees(e.target.checked)} />
               Masquer les caisses validées
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={separationMarquee} onChange={(e) => setSeparationMarquee(e.target.checked)} />
+              Séparation des lignes plus marquée
             </label>
           </div>
 

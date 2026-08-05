@@ -2,6 +2,7 @@ pub mod affaires;
 pub mod articles;
 pub mod caisse_stock;
 pub mod caisses;
+pub mod demande_caisse;
 pub mod demandes;
 pub mod locks;
 pub mod setup;

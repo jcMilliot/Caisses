@@ -34,6 +34,7 @@ function sauvegarderTri(affaireId: number, tri: Tri | null) {
 }
 
 const CHAMPS_TEXTE: ReadonlySet<Champ> = new Set(["ar", "reference", "designation"]);
+const CHAMPS_EDITABLES: ReadonlySet<Champ> = new Set(["dim1_mm", "dim2_mm", "dim3_mm", "poids_unitaire_kg"]);
 
 function toNewArticle(a: Article): NewArticle {
   return {
@@ -64,6 +65,21 @@ export default function ArticlesTable({
 
   const caisseById = useMemo(() => new Map(caisses.map((c) => [c.id, c])), [caisses]);
   const caisseName = (id: number | null) => (id === null ? "—" : caisseById.get(id)?.nom ?? "?");
+
+  // Identifie, pour chaque colonne de dimension, le premier article portant la valeur la plus
+  // haute — pour surligner visuellement quelle case correspond au maximum de chaque dimension.
+  const idArticleMaxParChamp = useMemo(() => {
+    const champs: ("dim1_mm" | "dim2_mm" | "dim3_mm")[] = ["dim1_mm", "dim2_mm", "dim3_mm"];
+    const result: Partial<Record<Champ, number>> = {};
+    for (const champ of champs) {
+      let meilleur: Article | null = null;
+      for (const a of articles) {
+        if (!meilleur || a[champ] > meilleur[champ]) meilleur = a;
+      }
+      if (meilleur && meilleur[champ] > 0) result[champ] = meilleur.id;
+    }
+    return result;
+  }, [articles]);
 
   const articlesTries = useMemo(() => {
     if (!tri) return articles;
@@ -120,11 +136,21 @@ export default function ArticlesTable({
   function cell(article: Article, champ: Champ, valeurAffichee: React.ReactNode, align: "left" | "right" = "left") {
     const enEdition = cellEnEdition?.id === article.id && cellEnEdition.champ === champ;
     const estNombre = !CHAMPS_TEXTE.has(champ);
+    const editable = !readOnly && CHAMPS_EDITABLES.has(champ);
+    const estMax = idArticleMaxParChamp[champ] === article.id;
     return (
       <td
-        style={{ ...tdStyle, textAlign: align, cursor: readOnly ? "default" : "text", padding: enEdition ? 2 : tdStyle.padding }}
+        style={{
+          ...tdStyle,
+          textAlign: align,
+          cursor: editable ? "text" : "default",
+          padding: enEdition ? 2 : tdStyle.padding,
+          background: estMax ? "var(--accent-soft)" : undefined,
+          fontWeight: estMax ? 700 : undefined,
+        }}
         className={estNombre ? "mono" : undefined}
-        onClick={() => !readOnly && !enEdition && setCellEnEdition({ id: article.id, champ })}
+        title={estMax ? "Valeur maximale de la colonne pour cette affaire" : undefined}
+        onClick={() => editable && !enEdition && setCellEnEdition({ id: article.id, champ })}
       >
         {enEdition ? (
           <EditableCellInput
@@ -305,8 +331,8 @@ function EditableCellInput({
 
 const thStyle: React.CSSProperties = {
   padding: "9px 8px",
-  borderBottom: "2px solid var(--border)",
-  borderRight: "1px solid var(--border)",
+  borderBottom: "2px solid var(--row-border-color)",
+  borderRight: "1px solid var(--row-border-color)",
   fontSize: 11,
   fontWeight: 700,
   letterSpacing: "0.03em",
@@ -318,6 +344,6 @@ const thStyle: React.CSSProperties = {
 };
 const tdStyle: React.CSSProperties = {
   padding: "6px 8px",
-  borderBottom: "1px solid var(--border)",
-  borderRight: "1px solid var(--border)",
+  borderBottom: "1px solid var(--row-border-color)",
+  borderRight: "1px solid var(--row-border-color)",
 };

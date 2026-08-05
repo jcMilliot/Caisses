@@ -59,8 +59,21 @@ export function useAffaire(affaireId: number, trigramme: string) {
     largeur_mm: number,
     hauteur_mm: number,
     seuil_pct: number | null,
+    type_envoi_caisse: string = "",
+    demande_caisse_id: number | null = null,
   ) {
-    const caisse = await caissesApi.create(affaireId, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, trigramme);
+    const caisse = await caissesApi.create(
+      affaireId,
+      nom,
+      longueur_mm,
+      largeur_mm,
+      hauteur_mm,
+      seuil_pct,
+      null,
+      type_envoi_caisse,
+      demande_caisse_id,
+      trigramme,
+    );
     await reload();
     return caisse;
   }
@@ -73,8 +86,9 @@ export function useAffaire(affaireId: number, trigramme: string) {
     hauteur_mm: number,
     seuil_pct: number | null,
     couleur: string,
+    type_envoi_caisse: string,
   ) {
-    await caissesApi.update(id, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, couleur, trigramme);
+    await caissesApi.update(id, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, couleur, type_envoi_caisse, trigramme);
     await reload();
   }
 

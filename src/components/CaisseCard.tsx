@@ -1,6 +1,7 @@
 import { useState } from "react";
 import FillRateBadge from "./FillRateBadge";
 import { PALETTE_CAISSES } from "../domain/palette";
+import { estCaisse4C } from "../domain/demandeOptions";
 import type { CaisseCalculee } from "../domain/types";
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
   dragActif?: boolean;
   survolee?: boolean;
   readOnly?: boolean;
+  dimensionsReadOnly?: boolean;
 }
 
 const BORDER_BY_NIVEAU: Record<CaisseCalculee["niveauAlerte"], string> = {
@@ -36,10 +38,12 @@ function DimensionInput({
   value,
   onChange,
   placeholder,
+  disabled,
 }: {
   value: number;
   onChange: (v: number) => void;
   placeholder: string;
+  disabled?: boolean;
 }) {
   const [texte, setTexte] = useState(value === 0 ? "" : String(value));
 
@@ -48,6 +52,7 @@ function DimensionInput({
       style={inputStyle}
       value={texte}
       placeholder={placeholder}
+      disabled={disabled}
       onFocus={(e) => e.target.select()}
       onChange={(e) => {
         setTexte(e.target.value);
@@ -58,7 +63,7 @@ function DimensionInput({
   );
 }
 
-export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragActif, survolee, readOnly }: Props) {
+export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragActif, survolee, readOnly, dimensionsReadOnly }: Props) {
   const [editing, setEditing] = useState(!!autoEdit && !readOnly);
   // Les dimensions sont saisies/affichées en mètres dans l'UI, mais stockées en mm partout
   // ailleurs (calculs, base de données) — conversion faite uniquement aux frontières de ce
@@ -84,7 +89,9 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
       data-caisse-id={caisse.id}
       className="panel"
       style={{
-        borderColor: survolee ? "var(--accent)" : BORDER_BY_NIVEAU[caisse.niveauAlerte],
+        borderTopColor: survolee ? "var(--accent)" : BORDER_BY_NIVEAU[caisse.niveauAlerte],
+        borderRightColor: survolee ? "var(--accent)" : BORDER_BY_NIVEAU[caisse.niveauAlerte],
+        borderBottomColor: survolee ? "var(--accent)" : BORDER_BY_NIVEAU[caisse.niveauAlerte],
         boxShadow: survolee ? "var(--shadow-md)" : "var(--shadow-sm)",
         padding: 18,
         minWidth: 260,
@@ -105,10 +112,15 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
             onChange={(e) => setForm({ ...form, nom: e.target.value })}
           />
           <div style={{ display: "flex", gap: 6 }}>
-            <DimensionInput value={form.l} placeholder="L (m)" onChange={(v) => setForm({ ...form, l: v })} />
-            <DimensionInput value={form.w} placeholder="l (m)" onChange={(v) => setForm({ ...form, w: v })} />
-            <DimensionInput value={form.h} placeholder="H (m)" onChange={(v) => setForm({ ...form, h: v })} />
+            <DimensionInput value={form.l} placeholder="L (m)" onChange={(v) => setForm({ ...form, l: v })} disabled={dimensionsReadOnly} />
+            <DimensionInput value={form.w} placeholder="l (m)" onChange={(v) => setForm({ ...form, w: v })} disabled={dimensionsReadOnly} />
+            <DimensionInput value={form.h} placeholder="H (m)" onChange={(v) => setForm({ ...form, h: v })} disabled={dimensionsReadOnly} />
           </div>
+          {dimensionsReadOnly && (
+            <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: 0 }}>
+              Dimensions héritées d'une caisse en stock — non modifiables ici.
+            </p>
+          )}
           <input
             type="number"
             style={inputStyle}
@@ -200,6 +212,9 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
           <div style={{ marginTop: 12, fontSize: 12.5, display: "flex", flexDirection: "column", gap: 4 }}>
             <Row label="Volume interne" value={`${caisse.volumeInterneM3.toFixed(4)} m³`} />
             <Row label="Volume occupé" value={`${caisse.volumeOccupeM3.toFixed(4)} m³`} />
+            {estCaisse4C(caisse.type_envoi_caisse) && (
+              <Row label="Volume disponible" value={`${caisse.volumeDisponibleM3.toFixed(4)} m³`} />
+            )}
             <Row label="Poids total" value={`${caisse.poidsTotalKg.toFixed(1)} kg`} />
             <Row label="Seuil d'alerte" value={`${caisse.seuilEffectif}%${caisse.seuil_pct === null ? " (défaut)" : ""}`} />
           </div>

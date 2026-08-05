@@ -8,4 +8,8 @@ export const caisseStockApi = {
   update: (id: number, caisse: NewCaisseStock, trigramme: string) =>
     call<void>("update_caisse_stock", { id, caisse, trigramme }),
   delete: (id: number, trigramme: string) => call<void>("delete_caisse_stock", { id, trigramme }),
+  transfer: (caisseStockId: number, demandeCibleId: number, trigramme: string) =>
+    call<void>("transfer_caisse_stock", { caisseStockId, demandeCibleId, trigramme }),
+  setValidee: (id: number, validee: boolean, trigramme: string) =>
+    call<void>("set_caisse_stock_validee", { id, validee, trigramme }),
 };

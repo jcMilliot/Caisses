@@ -10,9 +10,11 @@ use commands::articles::{
     update_article,
 };
 use commands::caisse_stock::{
-    create_caisse_stock, delete_caisse_stock, list_caisses_stock, update_caisse_stock,
+    create_caisse_stock, delete_caisse_stock, list_caisses_stock, set_caisse_stock_validee, transfer_caisse_stock,
+    update_caisse_stock,
 };
-use commands::caisses::{create_caisse, delete_caisse, list_caisses, update_caisse};
+use commands::caisses::{create_caisse, delete_caisse, link_caisse_demande_caisse, list_caisses, update_caisse};
+use commands::demande_caisse::{create_demande_caisse, delete_demande_caisse, list_all_demande_caisses, update_demande_caisse};
 use commands::demandes::{
     bulk_create_demandes, create_demande, delete_demande, list_demandes, set_demande_validee,
     update_demande,
@@ -45,6 +47,7 @@ pub fn run() {
             list_caisses,
             create_caisse,
             update_caisse,
+            link_caisse_demande_caisse,
             delete_caisse,
             list_articles,
             create_article,
@@ -58,10 +61,16 @@ pub fn run() {
             update_demande,
             delete_demande,
             set_demande_validee,
+            list_all_demande_caisses,
+            create_demande_caisse,
+            update_demande_caisse,
+            delete_demande_caisse,
             list_caisses_stock,
             create_caisse_stock,
             update_caisse_stock,
             delete_caisse_stock,
+            transfer_caisse_stock,
+            set_caisse_stock_validee,
             acquire_lock,
             release_lock,
             heartbeat,
