@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { volumeUnitaireM3 } from "../domain/calculs";
 import type { Article, Caisse, NewArticle } from "../domain/types";
+import ColumnFilterMenu from "./ColumnFilterMenu";
 
 interface Props {
   affaireId: number;
@@ -33,6 +34,25 @@ function sauvegarderTri(affaireId: number, tri: Tri | null) {
   else localStorage.removeItem(cle);
 }
 
+// null = pas de filtre actif sur cette colonne (tout affiché) ; sinon ensemble des valeurs
+// sélectionnées (au format texte affiché).
+type Filtres = Partial<Record<ColonneTriable, string[]>>;
+
+function chargerFiltres(affaireId: number): Filtres {
+  try {
+    const brut = localStorage.getItem(`caisses:filtresArticles:${affaireId}`);
+    return brut ? (JSON.parse(brut) as Filtres) : {};
+  } catch {
+    return {};
+  }
+}
+
+function sauvegarderFiltres(affaireId: number, filtres: Filtres) {
+  const cle = `caisses:filtresArticles:${affaireId}`;
+  if (Object.keys(filtres).length === 0) localStorage.removeItem(cle);
+  else localStorage.setItem(cle, JSON.stringify(filtres));
+}
+
 const CHAMPS_TEXTE: ReadonlySet<Champ> = new Set(["ar", "reference", "designation"]);
 const CHAMPS_EDITABLES: ReadonlySet<Champ> = new Set(["dim1_mm", "dim2_mm", "dim3_mm", "poids_unitaire_kg"]);
 
@@ -62,9 +82,23 @@ export default function ArticlesTable({
 }: Props) {
   const [cellEnEdition, setCellEnEdition] = useState<{ id: number; champ: Champ } | null>(null);
   const [tri, setTri] = useState<Tri | null>(() => chargerTri(affaireId));
+  const [filtres, setFiltres] = useState<Filtres>(() => chargerFiltres(affaireId));
+  const [menuOuvert, setMenuOuvert] = useState<ColonneTriable | null>(null);
+  const boutonsFiltreRef = useRef<Partial<Record<ColonneTriable, HTMLButtonElement>>>({});
 
   const caisseById = useMemo(() => new Map(caisses.map((c) => [c.id, c])), [caisses]);
   const caisseName = (id: number | null) => (id === null ? "—" : caisseById.get(id)?.nom ?? "?");
+
+  function valeurTexte(a: Article, colonne: ColonneTriable): string {
+    switch (colonne) {
+      case "volume":
+        return volumeUnitaireM3(a).toFixed(4);
+      case "caisse":
+        return caisseName(a.caisse_id);
+      default:
+        return String(a[colonne]);
+    }
+  }
 
   // Identifie, pour chaque colonne de dimension, le premier article portant la valeur la plus
   // haute — pour surligner visuellement quelle case correspond au maximum de chaque dimension.
@@ -81,8 +115,14 @@ export default function ArticlesTable({
     return result;
   }, [articles]);
 
+  const articlesFiltres = useMemo(() => {
+    const colonnesFiltrees = Object.entries(filtres) as [ColonneTriable, string[]][];
+    if (colonnesFiltrees.length === 0) return articles;
+    return articles.filter((a) => colonnesFiltrees.every(([colonne, valeurs]) => valeurs.includes(valeurTexte(a, colonne))));
+  }, [articles, filtres, caisseById]);
+
   const articlesTries = useMemo(() => {
-    if (!tri) return articles;
+    if (!tri) return articlesFiltres;
     const facteur = tri.sens === "asc" ? 1 : -1;
     const valeur = (a: Article): string | number => {
       switch (tri.colonne) {
@@ -96,14 +136,14 @@ export default function ArticlesTable({
             : (a[tri.colonne as Champ] as number);
       }
     };
-    return [...articles].sort((a, b) => {
+    return [...articlesFiltres].sort((a, b) => {
       const va = valeur(a);
       const vb = valeur(b);
       if (va < vb) return -1 * facteur;
       if (va > vb) return 1 * facteur;
       return 0;
     });
-  }, [articles, tri, caisseById]);
+  }, [articlesFiltres, tri, caisseById]);
 
   function toggleTri(colonne: ColonneTriable) {
     setTri((prev) => {
@@ -112,6 +152,24 @@ export default function ArticlesTable({
       sauvegarderTri(affaireId, next);
       return next;
     });
+  }
+
+  function appliquerFiltreColonne(colonne: ColonneTriable, selection: Set<string> | null, sens: "asc" | "desc" | null) {
+    setFiltres((prev) => {
+      const next = { ...prev };
+      if (selection === null) delete next[colonne];
+      else next[colonne] = [...selection];
+      sauvegarderFiltres(affaireId, next);
+      return next;
+    });
+    if (sens) {
+      const nextTri: Tri = { colonne, sens };
+      setTri(nextTri);
+      sauvegarderTri(affaireId, nextTri);
+    } else if (tri?.colonne === colonne) {
+      setTri(null);
+      sauvegarderTri(affaireId, null);
+    }
   }
 
   if (articles.length === 0) {
@@ -169,18 +227,63 @@ export default function ArticlesTable({
 
   function thTriable(colonne: ColonneTriable, label: string, align: "left" | "right" = "left") {
     const actif = tri?.colonne === colonne;
+    const filtreActif = filtres[colonne] !== undefined;
+    const valeursDistinctes = [...new Set(articles.map((a) => valeurTexte(a, colonne)))].sort((a, b) => a.localeCompare(b));
+    const selection = filtres[colonne] ? new Set(filtres[colonne]) : null;
     return (
-      <th
-        style={{ ...thStyle, textAlign: align, cursor: "pointer", userSelect: "none", color: actif ? "var(--accent)" : undefined }}
-        onClick={() => toggleTri(colonne)}
-      >
-        {label}
-        <span style={{ marginLeft: 4, opacity: actif ? 1 : 0.25 }}>
-          {actif ? (tri!.sens === "asc" ? "▲" : "▼") : "▲"}
-        </span>
+      <th style={{ ...thStyle, textAlign: align, position: "relative" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: align === "right" ? "flex-end" : "flex-start", gap: 4 }}>
+          <span style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleTri(colonne)}>
+            {label}
+            <span style={{ marginLeft: 4, opacity: actif ? 1 : 0.25 }}>{actif ? (tri!.sens === "asc" ? "▲" : "▼") : "▲"}</span>
+          </span>
+          <button
+            ref={(el) => {
+              if (el) boutonsFiltreRef.current[colonne] = el;
+            }}
+            onClick={() => setMenuOuvert((prev) => (prev === colonne ? null : colonne))}
+            title="Filtrer"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: "2px 4px",
+              fontSize: 11,
+              color: filtreActif ? "var(--accent)" : "var(--text-faint)",
+              position: "relative",
+            }}
+          >
+            ▾
+            {filtreActif && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  right: 0,
+                  width: 5,
+                  height: 5,
+                  borderRadius: "50%",
+                  background: "var(--accent)",
+                }}
+              />
+            )}
+          </button>
+        </div>
+        {menuOuvert === colonne && boutonsFiltreRef.current[colonne] && (
+          <ColumnFilterMenu
+            valeurs={valeursDistinctes}
+            selection={selection}
+            onApply={(s, sens) => appliquerFiltreColonne(colonne, s, sens)}
+            triActif={actif ? tri!.sens : null}
+            onClose={() => setMenuOuvert(null)}
+            ancre={boutonsFiltreRef.current[colonne]!}
+          />
+        )}
       </th>
     );
   }
+
+  const yATrouFiltre = Object.keys(filtres).length > 0;
 
   return (
     <table style={{ width: "100%", fontSize: 13, borderCollapse: "separate", borderSpacing: 0 }}>
@@ -207,68 +310,79 @@ export default function ArticlesTable({
         </tr>
       </thead>
       <tbody>
-        {articlesTries.map((a) => {
-          const caisseAssignee = a.caisse_id !== null ? caisseById.get(a.caisse_id) : undefined;
-          return (
-            <tr
-              key={a.id}
-              className="article-row"
-              style={{
-                background: selectedIds.has(a.id)
-                  ? "var(--accent-soft-strong)"
-                  : caisseAssignee
-                    ? `color-mix(in srgb, ${caisseAssignee.couleur} 55%, white)`
-                    : undefined,
-              }}
+        {articlesTries.length === 0 ? (
+          <tr>
+            <td
+              colSpan={(onStartDrag ? 1 : 0) + 10}
+              style={{ ...tdStyle, textAlign: "center", color: "var(--text-muted)", padding: "20px 8px" }}
             >
-              {onStartDrag && !readOnly && (
-                <td
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    onStartDrag(a.id, e);
-                  }}
-                  style={{ ...tdStyle, cursor: "grab", color: "var(--text-faint)", textAlign: "center", userSelect: "none", touchAction: "none", fontSize: 15 }}
-                  title="Glisser vers une caisse pour assigner"
-                >
-                  ⠿
-                </td>
-              )}
-              <td style={tdStyle}>
-                <input type="checkbox" checked={selectedIds.has(a.id)} onChange={() => onToggleSelect(a.id)} />
-              </td>
-              {cell(a, "ar", a.ar)}
-              {cell(a, "reference", a.reference)}
-              {cell(a, "designation", a.designation)}
-              {cell(a, "dim1_mm", a.dim1_mm, "right")}
-              {cell(a, "dim2_mm", a.dim2_mm, "right")}
-              {cell(a, "dim3_mm", a.dim3_mm, "right")}
-              {cell(a, "poids_unitaire_kg", a.poids_unitaire_kg, "right")}
-              {cell(a, "quantite", a.quantite, "right")}
-              <td style={{ ...tdStyle, textAlign: "right" }} className="mono">
-                {volumeUnitaireM3(a).toFixed(4)}
-              </td>
-              <td style={tdStyle}>
-                {caisseAssignee ? (
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 5,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "var(--text)",
+              {yATrouFiltre ? "Aucun article ne correspond aux filtres actifs." : "Aucun article."}
+            </td>
+          </tr>
+        ) : (
+          articlesTries.map((a) => {
+            const caisseAssignee = a.caisse_id !== null ? caisseById.get(a.caisse_id) : undefined;
+            return (
+              <tr
+                key={a.id}
+                className="article-row"
+                style={{
+                  background: selectedIds.has(a.id)
+                    ? "var(--accent-soft-strong)"
+                    : caisseAssignee
+                      ? `color-mix(in srgb, ${caisseAssignee.couleur} 55%, white)`
+                      : undefined,
+                }}
+              >
+                {onStartDrag && !readOnly && (
+                  <td
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      onStartDrag(a.id, e);
                     }}
+                    style={{ ...tdStyle, cursor: "grab", color: "var(--text-faint)", textAlign: "center", userSelect: "none", touchAction: "none", fontSize: 15 }}
+                    title="Glisser vers une caisse pour assigner"
                   >
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: caisseAssignee.couleur, border: "1px solid rgba(0,0,0,0.15)" }} />
-                    {caisseAssignee.nom}
-                  </span>
-                ) : (
-                  <span style={{ color: "var(--text-faint)" }}>—</span>
+                    ⠿
+                  </td>
                 )}
-              </td>
-            </tr>
-          );
-        })}
+                <td style={tdStyle}>
+                  <input type="checkbox" checked={selectedIds.has(a.id)} onChange={() => onToggleSelect(a.id)} />
+                </td>
+                {cell(a, "ar", a.ar)}
+                {cell(a, "reference", a.reference)}
+                {cell(a, "designation", a.designation)}
+                {cell(a, "dim1_mm", a.dim1_mm, "right")}
+                {cell(a, "dim2_mm", a.dim2_mm, "right")}
+                {cell(a, "dim3_mm", a.dim3_mm, "right")}
+                {cell(a, "poids_unitaire_kg", a.poids_unitaire_kg, "right")}
+                {cell(a, "quantite", a.quantite, "right")}
+                <td style={{ ...tdStyle, textAlign: "right" }} className="mono">
+                  {volumeUnitaireM3(a).toFixed(4)}
+                </td>
+                <td style={tdStyle}>
+                  {caisseAssignee ? (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "var(--text)",
+                      }}
+                    >
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: caisseAssignee.couleur, border: "1px solid rgba(0,0,0,0.15)" }} />
+                      {caisseAssignee.nom}
+                    </span>
+                  ) : (
+                    <span style={{ color: "var(--text-faint)" }}>—</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })
+        )}
       </tbody>
     </table>
   );

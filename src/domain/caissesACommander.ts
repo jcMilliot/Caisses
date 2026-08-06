@@ -1,4 +1,5 @@
 import type { Demande } from "./types";
+import { estDemandeValidee } from "./demandeOptions";
 
 export interface AffaireACommander {
   demande: Demande;
@@ -42,7 +43,7 @@ function estAchstock(demande: Demande): boolean {
 // doit partir la semaine calendaire précédant celle du picking).
 export function caissesACommanderCetteSemaine(demandes: Demande[], aujourdHui: Date = new Date()): AffaireACommander[] {
   return demandes
-    .filter((d) => !estAchstock(d) && !d.stock.trim())
+    .filter((d) => !estAchstock(d) && !d.stock.trim() && !estDemandeValidee(d))
     .filter((d) => {
       const picking = parseIso(d.date_picking);
       if (!picking) return false;
@@ -57,7 +58,7 @@ export function caissesACommanderCetteSemaine(demandes: Demande[], aujourdHui: D
 // du picking elle-même suffit.
 export function caissesARapatrierCetteSemaine(demandes: Demande[], aujourdHui: Date = new Date()): AffaireACommander[] {
   return demandes
-    .filter((d) => !estAchstock(d) && d.stock.trim())
+    .filter((d) => !estAchstock(d) && d.stock.trim() && !estDemandeValidee(d))
     .filter((d) => {
       const picking = parseIso(d.date_picking);
       if (!picking) return false;

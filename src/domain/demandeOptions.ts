@@ -1,6 +1,8 @@
 // Valeurs prédéfinies proposées dans les champs de la section Demandes. Chaque liste inclut
 // une option "Autre" en saisie libre côté UI (pas ici — voir SelectOuAutre).
 
+import type { Demande } from "./types";
+
 export const TYPES_ENVOI_CAISSE = ["STANDARD", "STANDARD (4B)", "STANDARD (4C)"];
 
 export const TYPES_OUVERTURE = ["Par dessus", "Par dessus et par devant", "Par devant"];
@@ -32,3 +34,18 @@ export function necessiteNimp15(typeEnvoiCaisse: string): boolean {
 
 export const AVERTISSEMENT_MOUSSE_4C =
   "Attention, mousse présente, prévoir 5cm de plus sur les côtés et sur la hauteur.";
+
+// Le contre-plaqué est systématiquement requis pour STANDARD et 4B ; le 4C (housse soudée) ne
+// l'impose pas automatiquement, donc reste décoché par défaut et à la discrétion de l'utilisateur.
+export function contrePlaqueParDefaut(typeEnvoiCaisse: string): boolean {
+  return !estCaisse4C(typeEnvoiCaisse);
+}
+
+// Une demande est considérée validée soit via la colonne `validee` (case "Valider" cochée et
+// enregistrée), soit via une observation historique "livrée"/"rapatriée" saisie avant que cette
+// colonne n'existe (données Excel importées, ou saisies manuelles anciennes) — les deux signaux
+// doivent rester équivalents partout où l'app décide qu'une demande est "terminée".
+export function estDemandeValidee(d: Demande): boolean {
+  const obs = d.observations.trim().toLowerCase();
+  return d.validee || obs.includes("livrée") || obs.includes("livree") || obs.includes("rapatriée") || obs.includes("rapatriee");
+}

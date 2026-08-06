@@ -4,6 +4,7 @@ import AffairesList from "./routes/AffairesList";
 import AffaireDetail from "./routes/AffaireDetail";
 import DemandesList from "./routes/DemandesList";
 import CaissesStockList from "./routes/CaissesStockList";
+import DemandesAchatsList from "./routes/DemandesAchatsList";
 import CreerAffaireDialog from "./components/CreerAffaireDialog";
 import FirstLaunchSetup from "./components/FirstLaunchSetup";
 import TrigrammeSetup from "./components/TrigrammeSetup";
@@ -160,6 +161,9 @@ export default function App() {
             padding: "10px 24px",
             borderBottom: "1px solid var(--border)",
             background: "var(--bg-panel)",
+            position: "sticky",
+            top: 0,
+            zIndex: 50,
           }}
         >
           <button className="btn btn-sm" onClick={() => handleSelectSection("accueil")}>
@@ -187,7 +191,7 @@ export default function App() {
             <AffaireDetail affaireId={affaireId} onBack={() => setAffaireId(null)} trigramme={trigramme} />
           ))}
         {section === "stock" && <CaissesStockList trigramme={trigramme} />}
-        {section === "achats" && <SectionAVenir titre="Demandes d'achats" />}
+        {section === "achats" && <DemandesAchatsList trigramme={trigramme} />}
       </div>
 
       {creationAffaire && (
@@ -221,17 +225,6 @@ export default function App() {
       )}
 
       <ConfirmDialogHost />
-    </div>
-  );
-}
-
-function SectionAVenir({ titre }: { titre: string }) {
-  return (
-    <div style={{ maxWidth: 920, margin: "0 auto", padding: "48px 24px" }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700, margin: "0 0 16px", letterSpacing: "-0.01em" }}>{titre}</h1>
-      <div className="panel" style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-muted)" }}>
-        <p style={{ margin: 0 }}>À venir.</p>
-      </div>
     </div>
   );
 }

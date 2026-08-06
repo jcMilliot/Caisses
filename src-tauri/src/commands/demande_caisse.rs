@@ -5,7 +5,7 @@ use tauri::State;
 
 const SELECT_COLS: &str = "id, demande_id, nom, type_envoi_caisse, type_ouverture, stock, date_picking, date_demandee_s2c,
     traitement, quantite, moteurs, module_lineaire, informations_supp, observations,
-    cde_passee_affaire, cde_passee_achat_stock, longueur_mm, largeur_mm, hauteur_mm, poids_kg, ordre, caisse_stock_id";
+    cde_passee_affaire, cde_passee_achat_stock, longueur_mm, largeur_mm, hauteur_mm, poids_kg, contre_plaque, ordre, caisse_stock_id";
 
 fn map_row(row: &rusqlite::Row) -> rusqlite::Result<DemandeCaisse> {
     Ok(DemandeCaisse {
@@ -29,8 +29,9 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<DemandeCaisse> {
         largeur_mm: row.get(17)?,
         hauteur_mm: row.get(18)?,
         poids_kg: row.get(19)?,
-        ordre: row.get(20)?,
-        caisse_stock_id: row.get(21)?,
+        contre_plaque: row.get(20)?,
+        ordre: row.get(21)?,
+        caisse_stock_id: row.get(22)?,
     })
 }
 
@@ -59,8 +60,8 @@ pub fn create_demande_caisse(db: State<Db>, caisse: NewDemandeCaisse, trigramme:
     conn.execute(
         "INSERT INTO demande_caisse (demande_id, nom, type_envoi_caisse, type_ouverture, stock, date_picking, date_demandee_s2c,
             traitement, quantite, moteurs, module_lineaire, informations_supp, observations,
-            cde_passee_affaire, cde_passee_achat_stock, longueur_mm, largeur_mm, hauteur_mm, poids_kg, ordre, caisse_stock_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+            cde_passee_affaire, cde_passee_achat_stock, longueur_mm, largeur_mm, hauteur_mm, poids_kg, contre_plaque, ordre, caisse_stock_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
         rusqlite::params![
             caisse.demande_id,
             caisse.nom,
@@ -81,6 +82,7 @@ pub fn create_demande_caisse(db: State<Db>, caisse: NewDemandeCaisse, trigramme:
             caisse.largeur_mm,
             caisse.hauteur_mm,
             caisse.poids_kg,
+            caisse.contre_plaque,
             ordre,
             caisse.caisse_stock_id,
         ],
@@ -101,7 +103,7 @@ pub fn update_demande_caisse(db: State<Db>, id: i64, caisse: NewDemandeCaisse, t
             date_picking = ?5, date_demandee_s2c = ?6, traitement = ?7, quantite = ?8, moteurs = ?9,
             module_lineaire = ?10, informations_supp = ?11, observations = ?12,
             cde_passee_affaire = ?13, cde_passee_achat_stock = ?14, longueur_mm = ?15, largeur_mm = ?16,
-            hauteur_mm = ?17, poids_kg = ?18, caisse_stock_id = ?19 WHERE id = ?20",
+            hauteur_mm = ?17, poids_kg = ?18, contre_plaque = ?19, caisse_stock_id = ?20 WHERE id = ?21",
         rusqlite::params![
             caisse.nom,
             caisse.type_envoi_caisse,
@@ -121,6 +123,7 @@ pub fn update_demande_caisse(db: State<Db>, id: i64, caisse: NewDemandeCaisse, t
             caisse.largeur_mm,
             caisse.hauteur_mm,
             caisse.poids_kg,
+            caisse.contre_plaque,
             caisse.caisse_stock_id,
             id,
         ],

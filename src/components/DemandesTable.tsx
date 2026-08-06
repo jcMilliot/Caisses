@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Demande, DemandeCaisse, CaisseStock } from "../domain/types";
 import { dateIsoVersAffichage } from "../domain/dates";
-import { necessiteNimp15, estCaisse4C, AVERTISSEMENT_MOUSSE_4C } from "../domain/demandeOptions";
+import { necessiteNimp15, estCaisse4C, contrePlaqueParDefaut, estDemandeValidee, AVERTISSEMENT_MOUSSE_4C } from "../domain/demandeOptions";
 import { PALETTE_CAISSES } from "../domain/palette";
 import ColumnFilterMenu from "./ColumnFilterMenu";
 import TableOptionsMenu from "./TableOptionsMenu";
@@ -119,11 +119,6 @@ function chargerMasquerValidees(): boolean {
 function sauvegarderMasquerValidees(masquer: boolean) {
   if (masquer) localStorage.setItem(CLE_MASQUER_VALIDEES, "1");
   else localStorage.removeItem(CLE_MASQUER_VALIDEES);
-}
-
-function estDemandeValidee(d: Demande): boolean {
-  const obs = d.observations.trim().toLowerCase();
-  return d.validee || obs.includes("livrée") || obs.includes("livree");
 }
 
 const CLE_LARGEURS = "caisses:largeursColonnes:demandes";
@@ -282,6 +277,19 @@ export default function DemandesTable({
 
   const colonnesAffichees = COLONNES.filter((c) => colonnesVisibles.has(c.champ));
 
+  // Colonnes qui passent par EditableCellInput (texte/nombre/date) — les booléens et "stock"
+  // ont leur propre widget (case à cocher / <select>) et ne font pas partie du parcours Tab.
+  const champsEditablesOrdre = colonnesAffichees
+    .map((c) => c.champ)
+    .filter((champ) => !CHAMPS_BOOL.has(champ) && champ !== "stock");
+
+  function champEditableSuivant(champActuel: Champ, backward: boolean): Champ | null {
+    const index = champsEditablesOrdre.indexOf(champActuel);
+    if (index === -1) return null;
+    const prochainIndex = backward ? index - 1 : index + 1;
+    return champsEditablesOrdre[prochainIndex] ?? null;
+  }
+
   const demandesVisibles = masquerValidees ? demandes.filter((d) => !estDemandeValidee(d)) : demandes;
 
   const demandesFiltrees = useMemo(() => {
@@ -335,9 +343,11 @@ export default function DemandesTable({
     const valeur = CHAMPS_DIM.has(champ) ? nombre * 1000 : CHAMPS_NOMBRE.has(champ) ? nombre : valeurBrute;
     if (demande[champ] === valeur) return;
     // Une caisse 4B/4C impose le traitement NIMP15 — pré-rempli seulement si le champ
-    // Traitement est encore vide, pour ne pas écraser une saisie manuelle déjà faite.
-    if (champ === "type_envoi_caisse" && necessiteNimp15(String(valeur)) && !demande.traitement.trim()) {
-      onEdit(demande.id, { type_envoi_caisse: valeur as string, traitement: "NIMP15" });
+    // Traitement est encore vide, pour ne pas écraser une saisie manuelle déjà faite. Le
+    // contre-plaqué, lui, est systématiquement recalculé (STANDARD/4B → requis, 4C → non).
+    if (champ === "type_envoi_caisse") {
+      const traitement = necessiteNimp15(String(valeur)) && !demande.traitement.trim() ? "NIMP15" : demande.traitement;
+      onEdit(demande.id, { type_envoi_caisse: valeur as string, traitement, contre_plaque: contrePlaqueParDefaut(String(valeur)) });
       return;
     }
     onEdit(demande.id, { [champ]: valeur });
@@ -423,6 +433,10 @@ export default function DemandesTable({
             align={align}
             onCommit={(v) => sauvegarderChamp(demande, champ, v)}
             onCancel={() => setCellEnEdition(null)}
+            onTabNext={(backward) => {
+              const suivant = champEditableSuivant(champ, backward);
+              setCellEnEdition(suivant ? { id: demande.id, champ: suivant } : null);
+            }}
           />
         ) : (
           <>
@@ -763,6 +777,25 @@ function SousLigneCaisse({
 }) {
   const [champEnEdition, setChampEnEdition] = useState<keyof DemandeCaisse | null>(null);
 
+  // Même logique de parcours Tab que la ligne mère (cell()) : uniquement les colonnes visibles
+  // qui passent par EditableCellInput, en respectant l'ordre d'affichage des colonnes.
+  const champsSousLigneEditablesOrdre = colonnesAffichees
+    .map((c) => CHAMP_SOUS_LIGNE[c.champ])
+    .filter((champ): champ is keyof DemandeCaisse => {
+      if (!champ) return false;
+      if (CHAMPS_BOOL_SOUS_LIGNE.has(champ)) return false;
+      if (champ === "stock") return false;
+      if (CHAMPS_VERROUILLES_SOUS_LIGNE.has(champ)) return false;
+      return true;
+    });
+
+  function champSousLigneEditableSuivant(champActuel: keyof DemandeCaisse, backward: boolean): keyof DemandeCaisse | null {
+    const index = champsSousLigneEditablesOrdre.indexOf(champActuel);
+    if (index === -1) return null;
+    const prochainIndex = backward ? index - 1 : index + 1;
+    return champsSousLigneEditablesOrdre[prochainIndex] ?? null;
+  }
+
   function toggleCdePassee(champ: "cde_passee_affaire" | "cde_passee_achat_stock") {
     const nouvelle = !caisse[champ];
     if (champ === "cde_passee_affaire" && nouvelle) {
@@ -858,6 +891,10 @@ function SousLigneCaisse({
               }
             }}
             onCancel={() => setChampEnEdition(null)}
+            onTabNext={(backward) => {
+              const suivant = champSousLigneEditableSuivant(champSousLigne, backward);
+              setChampEnEdition(suivant);
+            }}
           />
         ) : (
           valeurAffichee || "—"
@@ -888,12 +925,14 @@ function EditableCellInput({
   align,
   onCommit,
   onCancel,
+  onTabNext,
 }: {
   type: "text" | "number" | "date";
   defaultValue: string;
   align: "left" | "right";
   onCommit: (value: string) => void;
   onCancel: () => void;
+  onTabNext?: (backward: boolean) => void;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const committed = useRef(false);
@@ -924,6 +963,10 @@ function EditableCellInput({
           e.preventDefault();
           committed.current = true;
           onCancel();
+        } else if (e.key === "Tab" && onTabNext) {
+          e.preventDefault();
+          commitOnce();
+          onTabNext(e.shiftKey);
         }
       }}
       style={{

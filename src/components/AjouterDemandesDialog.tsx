@@ -9,6 +9,7 @@ import {
   MODULES_LINEAIRES,
   necessiteNimp15,
   estCaisse4C,
+  contrePlaqueParDefaut,
   AVERTISSEMENT_MOUSSE_4C,
 } from "../domain/demandeOptions";
 import SelectOuAutre from "./SelectOuAutre";
@@ -40,6 +41,7 @@ function ligneVide(): NewDemande {
     cde_passee_affaire: false,
     cde_passee_achat_stock: false,
     observations: "",
+    contre_plaque: contrePlaqueParDefaut(""),
     caisse_stock_id: null,
   };
 }
@@ -58,7 +60,7 @@ export default function AjouterDemandesDialog({ caissesStock, onAjouter, onClose
       prev.map((l, i) => {
         if (i !== index) return l;
         const traitement = necessiteNimp15(valeur) && !l.traitement.trim() ? "NIMP15" : l.traitement;
-        return { ...l, type_envoi_caisse: valeur, traitement };
+        return { ...l, type_envoi_caisse: valeur, traitement, contre_plaque: contrePlaqueParDefaut(valeur) };
       })
     );
   }

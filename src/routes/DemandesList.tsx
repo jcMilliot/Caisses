@@ -11,6 +11,7 @@ import LockBanner from "../components/LockBanner";
 import { useSectionLock } from "../hooks/useSectionLock";
 import { confirmerSuppression, confirmerAction } from "../data/confirm";
 import { estArCaiss } from "../domain/caisseStock";
+import { contrePlaqueParDefaut } from "../domain/demandeOptions";
 import type { Demande, NewDemande, DemandeCaisse, NewDemandeCaisse, CaisseStock } from "../domain/types";
 
 let prochainIdTemporaire = -1;
@@ -162,6 +163,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
       largeur_mm: 0,
       hauteur_mm: 0,
       poids_kg: 0,
+      contre_plaque: contrePlaqueParDefaut(demande.type_envoi_caisse),
       caisse_stock_id: null,
     };
     const creee = await demandeCaisseApi.create(nouvelle, trigramme);

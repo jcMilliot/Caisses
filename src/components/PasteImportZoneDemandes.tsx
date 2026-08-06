@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { NewDemande } from "../domain/types";
 import { dateExcelVersIso, dateIsoVersAffichage } from "../domain/dates";
-import { necessiteNimp15 } from "../domain/demandeOptions";
+import { necessiteNimp15, contrePlaqueParDefaut } from "../domain/demandeOptions";
+import { decouperColonnesTsv, decouperLignesTsv } from "../domain/tsv";
 
 interface Props {
   onImport: (demandes: NewDemande[]) => Promise<void>;
@@ -57,16 +58,13 @@ function parseColle(texte: string): { demandes: NewDemande[]; erreurs: string[] 
   // Ne pas utiliser .trim() ici : une case "Ok pour passer cde" vide en tête de ligne produit
   // une tabulation de début significative qu'un trim() supprimerait à tort, décalant toutes
   // les colonnes suivantes.
-  const lignes = texte
-    .split(/\r?\n/)
-    .map((l) => l.replace(/\r$/, ""))
-    .filter((l) => l.length > 0);
+  const lignes = decouperLignesTsv(texte);
 
   const demandes: NewDemande[] = [];
   const erreurs: string[] = [];
 
   lignes.forEach((ligne, i) => {
-    const colsBrutes = ligne.split("\t");
+    const colsBrutes = decouperColonnesTsv(ligne);
     if (colsBrutes.length > NB_COLONNES) {
       erreurs.push(
         `Ligne ${i + 1} : ${colsBrutes.length} colonne(s) trouvée(s), ${NB_COLONNES} attendues au maximum — ignorée`
@@ -133,6 +131,7 @@ function parseColle(texte: string): { demandes: NewDemande[]; erreurs: string[] 
       cde_passee_affaire: parseBool(cdeAffaire),
       cde_passee_achat_stock: parseBool(cdeAchatStock),
       observations: observations.trim(),
+      contre_plaque: contrePlaqueParDefaut(typeEnvoiTrim),
       caisse_stock_id: null,
     });
   });

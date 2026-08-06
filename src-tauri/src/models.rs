@@ -74,6 +74,7 @@ pub struct Demande {
     pub cde_passee_affaire: bool,
     pub cde_passee_achat_stock: bool,
     pub observations: String,
+    pub contre_plaque: bool,
     pub validee: bool,
     pub ordre: i64,
     pub caisse_stock_id: Option<i64>,
@@ -100,6 +101,7 @@ pub struct NewDemande {
     pub cde_passee_affaire: bool,
     pub cde_passee_achat_stock: bool,
     pub observations: String,
+    pub contre_plaque: bool,
     pub caisse_stock_id: Option<i64>,
 }
 
@@ -125,6 +127,7 @@ pub struct DemandeCaisse {
     pub largeur_mm: f64,
     pub hauteur_mm: f64,
     pub poids_kg: f64,
+    pub contre_plaque: bool,
     pub ordre: i64,
     pub caisse_stock_id: Option<i64>,
 }
@@ -150,6 +153,7 @@ pub struct NewDemandeCaisse {
     pub largeur_mm: f64,
     pub hauteur_mm: f64,
     pub poids_kg: f64,
+    pub contre_plaque: bool,
     pub caisse_stock_id: Option<i64>,
 }
 

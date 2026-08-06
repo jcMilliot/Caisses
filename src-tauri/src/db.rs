@@ -66,6 +66,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0014_add_caisse_type_envoi_et_demande_caisse_id",
         include_str!("../../migrations/0014_add_caisse_type_envoi_et_demande_caisse_id.sql"),
     ),
+    (
+        "0015_add_contre_plaque",
+        include_str!("../../migrations/0015_add_contre_plaque.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {

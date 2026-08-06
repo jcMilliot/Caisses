@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { NewArticle } from "../domain/types";
+import { decouperColonnesTsv, decouperLignesTsv } from "../domain/tsv";
 
 interface Props {
   onImport: (articles: NewArticle[]) => Promise<void>;
@@ -10,16 +11,13 @@ interface Props {
 const COLONNES = ["AR", "Référence", "Désignation", "Dim1 (mm)", "Dim2 (mm)", "Dim3 (mm)", "Poids unit. (kg)", "Quantité"];
 
 function parseColle(texte: string): { articles: NewArticle[]; erreurs: string[] } {
-  const lignes = texte
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
+  const lignes = decouperLignesTsv(texte).map((l) => l.trim());
 
   const articles: NewArticle[] = [];
   const erreurs: string[] = [];
 
   lignes.forEach((ligne, i) => {
-    const colsBrutes = ligne.split("\t");
+    const colsBrutes = decouperColonnesTsv(ligne);
     if (colsBrutes.length > 8) {
       erreurs.push(`Ligne ${i + 1} : ${colsBrutes.length} colonne(s) trouvée(s), 8 attendues au maximum — ignorée`);
       return;
