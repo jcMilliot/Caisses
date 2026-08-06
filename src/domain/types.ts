@@ -67,6 +67,7 @@ export interface Demande {
   cde_passee_affaire: boolean;
   cde_passee_achat_stock: boolean;
   observations: string;
+  contre_plaque: boolean;
   validee: boolean;
   ordre: number;
   caisse_stock_id: number | null;
@@ -92,6 +93,7 @@ export interface NewDemande {
   cde_passee_affaire: boolean;
   cde_passee_achat_stock: boolean;
   observations: string;
+  contre_plaque: boolean;
   caisse_stock_id: number | null;
 }
 
@@ -116,6 +118,7 @@ export interface DemandeCaisse {
   largeur_mm: number;
   hauteur_mm: number;
   poids_kg: number;
+  contre_plaque: boolean;
   ordre: number;
   caisse_stock_id: number | null;
 }
@@ -140,6 +143,7 @@ export interface NewDemandeCaisse {
   largeur_mm: number;
   hauteur_mm: number;
   poids_kg: number;
+  contre_plaque: boolean;
   caisse_stock_id: number | null;
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAffaire } from "../hooks/useAffaire";
 import { calculerRecapAffaire } from "../domain/calculs";
-import { estCaisse4C } from "../domain/demandeOptions";
+import { estCaisse4C, contrePlaqueParDefaut } from "../domain/demandeOptions";
 import type { Article, Demande, DemandeCaisse, NewDemandeCaisse } from "../domain/types";
 import { usePointerDrag } from "../hooks/usePointerDrag";
 import { useSectionLock } from "../hooks/useSectionLock";
@@ -196,6 +196,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
                     largeur_mm: 0,
                     hauteur_mm: 0,
                     poids_kg: 0,
+                    contre_plaque: contrePlaqueParDefaut(demandeParente.type_envoi_caisse),
                     caisse_stock_id: null,
                   };
                   const sousLigneCreee = await demandeCaisseApi.create(nouvelle, trigramme);
