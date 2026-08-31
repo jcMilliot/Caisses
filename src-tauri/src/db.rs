@@ -70,6 +70,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0015_add_contre_plaque",
         include_str!("../../migrations/0015_add_contre_plaque.sql"),
     ),
+    (
+        "0016_add_option_liste",
+        include_str!("../../migrations/0016_add_option_liste.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {

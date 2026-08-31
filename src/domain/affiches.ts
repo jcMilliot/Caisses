@@ -1,7 +1,6 @@
 import type { Demande, DemandeCaisse } from "./types";
 import { estCaisse4B, estCaisse4C, necessiteNimp15, estDemandeValidee, estDemandeCaisseValidee } from "./demandeOptions";
 import { dateIsoVersAffichage } from "./dates";
-import { PALETTE_CAISSES } from "./palette";
 
 export interface AfficheCaisse {
   cle: string;
@@ -49,15 +48,16 @@ export function titreAffiche(typeEnvoiCaisse: string): string {
   }
 }
 
+// Couleurs fixes des affiches par catégorie (fond de l'en-tête du rendu HTML, pastille +
+// bordure gauche de la carte). Valeurs définies avec l'utilisateur.
+export const COULEUR_AFFICHE: Record<CategorieEnvoi, string> = {
+  standard: "#99ccff",
+  "4b": "#dbf9e7",
+  "4c": "#a7e0e0",
+};
+
 export function couleurAffiche(typeEnvoiCaisse: string): string {
-  switch (categorieEnvoi(typeEnvoiCaisse)) {
-    case "4c":
-      return PALETTE_CAISSES[1];
-    case "4b":
-      return PALETTE_CAISSES[4];
-    default:
-      return PALETTE_CAISSES[0];
-  }
+  return COULEUR_AFFICHE[categorieEnvoi(typeEnvoiCaisse)];
 }
 
 // Une demande ACHSTOCK (achat de caisses déjà tenues en stock, référence `AR_CAISS_XXXXX` dans
@@ -116,13 +116,13 @@ function formaterMetres(mm: number): string {
   return (mm / 1000).toFixed(2);
 }
 
-// Teinte de bordure/accent un ton plus soutenu que le pastel de fond, par catégorie.
+// Teinte de bordure/accent un ton plus soutenu que le pastel de fond (COULEUR_AFFICHE), par catégorie.
 function accentAffiche(typeEnvoiCaisse: string): string {
   switch (categorieEnvoi(typeEnvoiCaisse)) {
     case "4c":
-      return "#c9527a";
+      return "#4c9a9a";
     case "4b":
-      return "#7c5cbf";
+      return "#5cbf87";
     default:
       return "#3b7dd8";
   }

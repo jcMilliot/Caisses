@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Demande, DemandeCaisse, CaisseStock } from "../domain/types";
+import type { Demande, DemandeCaisse, CaisseStock, OptionListe } from "../domain/types";
 import { dateIsoVersAffichage } from "../domain/dates";
 import {
   necessiteNimp15,
@@ -10,6 +10,10 @@ import {
   estDemandeCaisseValidee,
   AVERTISSEMENT_MOUSSE_4C,
   depassementMesuresMax4C,
+  TYPES_ENVOI_CAISSE,
+  TYPES_OUVERTURE,
+  TRAITEMENTS,
+  optionsListe,
 } from "../domain/demandeOptions";
 import { PALETTE_CAISSES } from "../domain/palette";
 import ColumnFilterMenu from "./ColumnFilterMenu";
@@ -31,6 +35,7 @@ interface Props {
   onDelete: (id: number, affaire: string) => void;
   onValider: (id: number, validee: boolean) => void;
   onSimulerAffaire: (demande: Demande) => void;
+  optionsPersonnalisees: OptionListe[];
   readOnly?: boolean;
 }
 
@@ -134,6 +139,19 @@ function sauvegarderMasquerValidees(masquer: boolean) {
   else localStorage.removeItem(CLE_MASQUER_VALIDEES);
 }
 
+// "Tableau inversé" : les lignes les plus anciennes en haut, les plus récentes en bas — pour
+// reproduire l'habitude Excel de remplir de haut en bas. Réglage par poste (localStorage).
+const CLE_INVERSE = "caisses:inverse:demandes";
+
+function chargerInverse(): boolean {
+  return localStorage.getItem(CLE_INVERSE) === "1";
+}
+
+function sauvegarderInverse(inverse: boolean) {
+  if (inverse) localStorage.setItem(CLE_INVERSE, "1");
+  else localStorage.removeItem(CLE_INVERSE);
+}
+
 const CLE_LARGEURS = "caisses:largeursColonnes:demandes";
 const LARGEUR_MIN = 40;
 
@@ -148,6 +166,34 @@ function chargerLargeurs(): Partial<Record<Champ, number>> {
 
 function sauvegarderLargeurs(largeurs: Partial<Record<Champ, number>>) {
   localStorage.setItem(CLE_LARGEURS, JSON.stringify(largeurs));
+}
+
+// Champs à valeurs prédéfinies : l'édition inline ouvre une liste déroulante (avec "Autre…"
+// pour rester saisissable librement) plutôt qu'un simple champ texte. Les listes moteurs /
+// module linéaire / terminaux sont étendues par les options personnalisées (cf. buildOptions).
+function buildOptions(perso: OptionListe[]): {
+  parChamp: Partial<Record<Champ, string[]>>;
+  parChampSousLigne: Partial<Record<keyof DemandeCaisse, string[]>>;
+} {
+  const moteurs = optionsListe("moteurs", perso);
+  const moduleLineaire = optionsListe("module_lineaire", perso);
+  const terminaux = optionsListe("terminaux", perso);
+  return {
+    parChamp: {
+      type_envoi_caisse: TYPES_ENVOI_CAISSE,
+      type_ouverture: TYPES_OUVERTURE,
+      moteurs,
+      module_lineaire: moduleLineaire,
+      terminaux,
+      traitement: TRAITEMENTS,
+    },
+    parChampSousLigne: {
+      type_ouverture: TYPES_OUVERTURE,
+      moteurs,
+      module_lineaire: moduleLineaire,
+      traitement: TRAITEMENTS,
+    },
+  };
 }
 
 const CHAMPS_BOOL: ReadonlySet<Champ> = new Set(["ok_pour_passer_cde", "cde_passee_affaire", "cde_passee_achat_stock"]);
@@ -202,8 +248,13 @@ export default function DemandesTable({
   onDelete,
   onValider,
   onSimulerAffaire,
+  optionsPersonnalisees,
   readOnly,
 }: Props) {
+  const { parChamp: optionsParChamp, parChampSousLigne: optionsParChampSousLigne } = useMemo(
+    () => buildOptions(optionsPersonnalisees),
+    [optionsPersonnalisees],
+  );
   const [cellEnEdition, setCellEnEdition] = useState<{ id: number; champ: Champ } | null>(null);
   const [tri, setTri] = useState<Tri | null>(() => chargerTri());
   const [filtres, setFiltres] = useState<Filtres>(() => chargerFiltres());
@@ -211,6 +262,7 @@ export default function DemandesTable({
   const [colonnesVisibles, setColonnesVisibles] = useState<Set<Champ>>(() => chargerColonnesVisibles(TOUTES_LES_COLONNES));
   const [compact, setCompact] = useState(() => chargerCompact());
   const [masquerValidees, setMasquerValidees] = useState(() => chargerMasquerValidees());
+  const [inverse, setInverse] = useState(() => chargerInverse());
   const [menuContextuel, setMenuContextuel] = useState<{ demande: Demande; x: number; y: number; validee: boolean } | null>(null);
   const [largeurs, setLargeurs] = useState<Partial<Record<Champ, number>>>(() => chargerLargeurs());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -268,6 +320,18 @@ export default function DemandesTable({
   function changerMasquerValidees(v: boolean) {
     setMasquerValidees(v);
     sauvegarderMasquerValidees(v);
+  }
+
+  function changerInverse(v: boolean) {
+    setInverse(v);
+    sauvegarderInverse(v);
+    // À l'activation, aller directement en bas du tableau (là où se fait la nouvelle saisie).
+    if (v) {
+      requestAnimationFrame(() => {
+        const el = conteneurScrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    }
   }
 
   function toggleSelect(id: number) {
@@ -328,6 +392,13 @@ export default function DemandesTable({
       return 0;
     });
   }, [demandesFiltrees, tri]);
+
+  // Ordre d'affichage effectif : le tableau inversé retourne la liste triée pour placer les
+  // lignes les plus anciennes en haut (saisie de haut en bas façon Excel).
+  const demandesAffichees = useMemo(
+    () => (inverse ? [...demandesTriees].reverse() : demandesTriees),
+    [demandesTriees, inverse],
+  );
 
   function appliquerFiltreColonne(champ: Champ, selection: Set<string> | null, sens: "asc" | "desc" | null) {
     setFiltres((prev) => {
@@ -443,7 +514,14 @@ export default function DemandesTable({
         title={avertissement}
         onClick={() => !readOnly && !enEdition && setCellEnEdition({ id: demande.id, champ })}
       >
-        {enEdition ? (
+        {enEdition && optionsParChamp[champ]?.length ? (
+          <EditableCellSelect
+            defaultValue={String(valeurBrute)}
+            options={optionsParChamp[champ]!}
+            onCommit={(v) => sauvegarderChamp(demande, champ, v)}
+            onCancel={() => setCellEnEdition(null)}
+          />
+        ) : enEdition ? (
           <EditableCellInput
             type={estDate ? "date" : estNombre ? "number" : "text"}
             defaultValue={estDim ? String((valeurBrute as number) / 1000) : String(valeurBrute)}
@@ -458,7 +536,7 @@ export default function DemandesTable({
         ) : (
           <>
             {valeurAffichee}
-            {avertissement && <span style={{ color: "var(--warn-text)", marginLeft: 4 }}>⚠</span>}
+            {avertissement && <AvertissementBadge texte={avertissement} rouge={!avertissementMousse && Boolean(avertissementMesures4C)} />}
           </>
         )}
       </td>
@@ -573,9 +651,11 @@ export default function DemandesTable({
           onChangeCompact={changerCompact}
           masquerValidees={masquerValidees}
           onChangeMasquerValidees={changerMasquerValidees}
+          inverse={inverse}
+          onChangeInverse={changerInverse}
         />
       </div>
-      <div ref={conteneurScrollRef} style={{ overflow: "auto", maxHeight: "calc(100vh - 220px)" }}>
+      <div ref={conteneurScrollRef} style={{ overflow: "auto", maxHeight: "calc(100vh - 220px)", paddingBottom: 80 }}>
         <table
           style={{
             fontSize: compact ? 12 : 13,
@@ -618,7 +698,7 @@ export default function DemandesTable({
                 </td>
               </tr>
             ) : (
-              demandesTriees.map((d) => {
+              demandesAffichees.map((d) => {
                 const estValidee = estDemandeValidee(d);
                 const sousLignes = demandeCaisses.filter((c) => c.demande_id === d.id);
                 const etendue = lignesEtendues.has(d.id);
@@ -678,6 +758,7 @@ export default function DemandesTable({
                           caisse={sc}
                           colonnesAffichees={colonnesAvecLargeur}
                           caissesStock={caissesStock}
+                          optionsParChamp={optionsParChampSousLigne}
                           td={td}
                           readOnly={readOnly}
                           coloredBackground={
@@ -704,8 +785,9 @@ export default function DemandesTable({
             onClick={(e) => e.stopPropagation()}
             style={{
               position: "fixed",
-              top: menuContextuel.y,
-              left: menuContextuel.x,
+              // Recale le menu dans le viewport : sur un clic droit près du bas de l'écran
+              // (dernière ligne du tableau), il s'ouvrait vers le bas et se retrouvait tronqué.
+              ...positionMenuContextuel(menuContextuel.x, menuContextuel.y, 190, 132),
               background: "var(--bg-panel)",
               border: "1px solid var(--border-strong)",
               borderRadius: "var(--radius)",
@@ -751,6 +833,15 @@ export default function DemandesTable({
   );
 }
 
+// Cale un menu contextuel (dimensions estimées `larg` × `haut`) dans le viewport à partir du
+// point de clic : bascule vers le haut / la gauche s'il déborderait, avec une marge de 8px.
+function positionMenuContextuel(x: number, y: number, larg: number, haut: number): { top: number; left: number } {
+  const marge = 8;
+  const top = y + haut + marge > window.innerHeight ? Math.max(marge, y - haut) : y;
+  const left = x + larg + marge > window.innerWidth ? Math.max(marge, x - larg) : x;
+  return { top, left };
+}
+
 // Correspondance entre les colonnes de la demande parente et le champ équivalent porté par une
 // sous-caisse — permet d'aligner chaque valeur sous la colonne du tableau qui lui correspond,
 // pour que la sous-ligne se lise visuellement comme une vraie ligne du même tableau plutôt qu'un
@@ -787,6 +878,7 @@ function SousLigneCaisse({
   caisse,
   colonnesAffichees,
   caissesStock,
+  optionsParChamp,
   td,
   readOnly,
   coloredBackground,
@@ -797,6 +889,7 @@ function SousLigneCaisse({
   caisse: DemandeCaisse;
   colonnesAffichees: { champ: Champ; label: string; align?: "left" | "right"; largeur: number }[];
   caissesStock: CaisseStock[];
+  optionsParChamp: Partial<Record<keyof DemandeCaisse, string[]>>;
   td: React.CSSProperties;
   readOnly?: boolean;
   coloredBackground?: string;
@@ -901,12 +994,26 @@ function SousLigneCaisse({
 
     return (
       <td
-        style={{ ...style, cursor: editable ? "text" : "default", padding: enEdition ? 2 : style.padding }}
+        style={{
+          ...style,
+          cursor: editable ? "text" : "default",
+          padding: enEdition ? 2 : style.padding,
+        }}
         className={estNombre ? "mono" : undefined}
         title={verrouille ? "Repris de la demande — non modifiable ici" : avertissementMesures4C}
         onClick={() => editable && !enEdition && setChampEnEdition(champSousLigne)}
       >
-        {enEdition ? (
+        {enEdition && optionsParChamp[champSousLigne]?.length ? (
+          <EditableCellSelect
+            defaultValue={String(valeurBrute)}
+            options={optionsParChamp[champSousLigne]!}
+            onCommit={(v) => {
+              setChampEnEdition(null);
+              if (v !== valeurBrute) onEdit({ [champSousLigne]: v });
+            }}
+            onCancel={() => setChampEnEdition(null)}
+          />
+        ) : enEdition ? (
           <EditableCellInput
             type={estDate ? "date" : estNombre ? "number" : "text"}
             defaultValue={estDim ? String((valeurBrute as number) / 1000) : String(valeurBrute)}
@@ -931,7 +1038,7 @@ function SousLigneCaisse({
         ) : (
           <>
             {valeurAffichee || "—"}
-            {avertissementMesures4C && <span style={{ color: "var(--warn-text)", marginLeft: 4 }}>⚠</span>}
+            {avertissementMesures4C && <AvertissementBadge texte={avertissementMesures4C} rouge />}
           </>
         )}
       </td>
@@ -1013,6 +1120,110 @@ function EditableCellInput({
         font: "inherit",
       }}
     />
+  );
+}
+
+// Édition inline d'un champ à valeurs prédéfinies : liste déroulante ouverte immédiatement,
+// avec l'option "Autre…" qui bascule vers un champ texte libre. La valeur courante est toujours
+// proposée même si elle n'est pas dans la liste (donnée historique / saisie manuelle).
+const OPTION_AUTRE = "__autre__";
+
+function EditableCellSelect({
+  defaultValue,
+  options,
+  onCommit,
+  onCancel,
+}: {
+  defaultValue: string;
+  options: string[];
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const done = useRef(false);
+  const [modeLibre, setModeLibre] = useState(false);
+  const selectRef = useRef<HTMLSelectElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (modeLibre) inputRef.current?.focus();
+    else selectRef.current?.focus();
+  }, [modeLibre]);
+
+  function commit(v: string) {
+    if (done.current) return;
+    done.current = true;
+    onCommit(v);
+  }
+  function cancel() {
+    if (done.current) return;
+    done.current = true;
+    onCancel();
+  }
+
+  if (modeLibre) {
+    return (
+      <input
+        ref={inputRef}
+        defaultValue={defaultValue}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit((e.target as HTMLInputElement).value);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            cancel();
+          }
+        }}
+        style={{ width: "100%", padding: "3px 6px", border: "1px solid var(--accent)", borderRadius: 4, font: "inherit" }}
+      />
+    );
+  }
+
+  // Option pour la valeur courante hors-liste, pour ne pas la perdre à l'ouverture.
+  const valeurHorsListe = defaultValue !== "" && !options.includes(defaultValue) ? defaultValue : null;
+
+  return (
+    <select
+      ref={selectRef}
+      defaultValue={defaultValue}
+      onChange={(e) => {
+        if (e.target.value === OPTION_AUTRE) setModeLibre(true);
+        else commit(e.target.value);
+      }}
+      onBlur={(e) => {
+        if (e.target.value !== OPTION_AUTRE) commit(e.target.value);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancel();
+        }
+      }}
+      style={{ width: "100%", padding: "3px 6px", border: "1px solid var(--accent)", borderRadius: 4, font: "inherit" }}
+    >
+      <option value="">—</option>
+      {valeurHorsListe && <option value={valeurHorsListe}>{valeurHorsListe}</option>}
+      {options.map((o) => (
+        <option key={o} value={o}>
+          {o}
+        </option>
+      ))}
+      <option value={OPTION_AUTRE}>Autre…</option>
+    </select>
+  );
+}
+
+// Le ⚠ historique. `rouge` (dépassement des mesures max 4C) le colore en rouge pour le
+// distinguer de l'avertissement mousse 4C, qui reste orange.
+function AvertissementBadge({ texte, rouge }: { texte: string; rouge?: boolean }) {
+  return (
+    <span
+      title={texte}
+      style={{ color: rouge ? "var(--danger-text)" : "var(--warn-text)", marginLeft: 4, fontSize: "1.15em" }}
+    >
+      ⚠
+    </span>
   );
 }
 

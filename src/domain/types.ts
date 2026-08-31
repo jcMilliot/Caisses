@@ -175,6 +175,17 @@ export interface NewCaisseStock {
   affaire_id: number | null;
 }
 
+// Listes de valeurs de la section Demandes auxquelles l'utilisateur peut ajouter ses propres
+// options (les valeurs "de base" restent dans demandeOptions.ts, la table ne porte que les ajouts).
+export type ListeOption = "moteurs" | "module_lineaire" | "terminaux";
+
+export interface OptionListe {
+  id: number;
+  liste: ListeOption;
+  valeur: string;
+  ordre: number;
+}
+
 export interface SectionLock {
   section_key: string;
   titulaire: string;
@@ -195,4 +206,8 @@ export interface CaisseCalculee extends Caisse {
   tauxRemplissage: number; // 0..∞, peut dépasser 1 (surcharge)
   estSurcharge: boolean;
   niveauAlerte: "ok" | "attention" | "alerte";
+  // Dimensions maximales (mm) parmi les articles assignés à cette caisse — 0 si aucun article.
+  dim1MaxMm: number;
+  dim2MaxMm: number;
+  dim3MaxMm: number;
 }

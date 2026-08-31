@@ -210,6 +210,12 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
           )}
 
           <div style={{ marginTop: 12, fontSize: 12.5, display: "flex", flexDirection: "column", gap: 4 }}>
+            {(caisse.dim1MaxMm > 0 || caisse.dim2MaxMm > 0 || caisse.dim3MaxMm > 0) && (
+              <Row
+                label="Dim. max articles (L×l×H)"
+                value={`${caisse.dim1MaxMm} × ${caisse.dim2MaxMm} × ${caisse.dim3MaxMm} mm`}
+              />
+            )}
             <Row label="Volume interne" value={`${caisse.volumeInterneM3.toFixed(4)} m³`} />
             <Row label="Volume occupé" value={`${caisse.volumeOccupeM3.toFixed(4)} m³`} />
             {estCaisse4C(caisse.type_envoi_caisse) && (

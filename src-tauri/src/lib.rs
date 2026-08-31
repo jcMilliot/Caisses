@@ -20,6 +20,7 @@ use commands::demandes::{
     update_demande,
 };
 use commands::locks::{acquire_lock, heartbeat, list_locks, release_lock, request_pen, respond_pen_request};
+use commands::options_liste::{create_option_liste, delete_option_liste, list_options_liste};
 use commands::setup::{choose_db_folder, get_db_status, init_db, set_db_folder};
 use commands::user::{get_user_status, set_trigramme};
 use tauri::Manager;
@@ -94,6 +95,9 @@ pub fn run() {
             list_locks,
             get_user_status,
             set_trigramme,
+            list_options_liste,
+            create_option_liste,
+            delete_option_liste,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -5,5 +5,6 @@ pub mod caisses;
 pub mod demande_caisse;
 pub mod demandes;
 pub mod locks;
+pub mod options_liste;
 pub mod setup;
 pub mod user;

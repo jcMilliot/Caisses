@@ -198,3 +198,11 @@ pub struct SectionLock {
     pub demande_statut: String,
     pub expire: bool,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OptionListe {
+    pub id: i64,
+    pub liste: String,
+    pub valeur: String,
+    pub ordre: i64,
+}

@@ -16,7 +16,9 @@ import SelectOuAutre from "./SelectOuAutre";
 
 interface Props {
   caissesStock: CaisseStock[];
-  onAjouter: (demandes: NewDemande[]) => void;
+  // Retourne false pour garder le dialogue ouvert (ex. l'utilisateur a annulé un avertissement
+  // « affaire déjà présente ») ; true / void = les lignes ont été prises en compte.
+  onAjouter: (demandes: NewDemande[]) => boolean | void | Promise<boolean | void>;
   onClose: () => void;
 }
 
@@ -73,10 +75,11 @@ export default function AjouterDemandesDialog({ caissesStock, onAjouter, onClose
     setLignes((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function handleAjouter() {
+  async function handleAjouter() {
     const valides = lignes.filter((l) => l.affaire.trim().length > 0);
     if (valides.length === 0) return;
-    onAjouter(valides);
+    const resultat = await onAjouter(valides);
+    if (resultat === false) return; // avertissement annulé — on garde la saisie à l'écran
     onClose();
   }
 

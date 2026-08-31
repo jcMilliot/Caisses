@@ -5,7 +5,9 @@ import { necessiteNimp15, contrePlaqueParDefaut } from "../domain/demandeOptions
 import { decouperColonnesTsv, decouperLignesTsv } from "../domain/tsv";
 
 interface Props {
-  onImport: (demandes: NewDemande[]) => Promise<void>;
+  // Retourne false pour garder la fenêtre ouverte (ex. avertissement « affaire déjà présente »
+  // annulé) ; true / void = import effectué.
+  onImport: (demandes: NewDemande[]) => boolean | void | Promise<boolean | void>;
   onClose: () => void;
 }
 
@@ -149,7 +151,8 @@ export default function PasteImportZoneDemandes({ onImport, onClose }: Props) {
     if (demandes.length === 0) return;
     setImporting(true);
     try {
-      await onImport(demandes);
+      const resultat = await onImport(demandes);
+      if (resultat === false) return; // avertissement annulé — on garde le contenu collé
       onClose();
     } finally {
       setImporting(false);

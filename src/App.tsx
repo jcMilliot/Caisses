@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import Accueil from "./routes/Accueil";
 import AffairesList from "./routes/AffairesList";
 import AffaireDetail from "./routes/AffaireDetail";
@@ -10,6 +10,7 @@ import FirstLaunchSetup from "./components/FirstLaunchSetup";
 import TrigrammeSetup from "./components/TrigrammeSetup";
 import UpdateAvailableDialog from "./components/UpdateAvailableDialog";
 import ConfirmDialogHost from "./components/ConfirmDialogHost";
+import { confirmerAction } from "./data/confirm";
 import { affairesApi } from "./data/affaires";
 import { caissesApi } from "./data/caisses";
 import { demandeCaisseApi } from "./data/demandeCaisse";
@@ -35,8 +36,26 @@ export default function App() {
   const [affaireId, setAffaireId] = useState<number | null>(null);
   const [creationAffaire, setCreationAffaire] = useState<Demande | null>(null);
   const [creationSousCaisses, setCreationSousCaisses] = useState<DemandeCaisse[]>([]);
+  // Vrai quand la section Demandes a des modifications non enregistrées (remonté par DemandesList).
+  const demandesModifieRef = useRef(false);
+  const marquerDemandesModifie = useCallback((dirty: boolean) => {
+    demandesModifieRef.current = dirty;
+  }, []);
 
-  function handleSelectSection(next: Section) {
+  // À appeler avant toute navigation hors de la section Demandes. Renvoie false si l'utilisateur
+  // annule la sortie (il veut d'abord enregistrer).
+  async function confirmerSortieDemandes(): Promise<boolean> {
+    if (section !== "demandes" || !demandesModifieRef.current) return true;
+    return confirmerAction(
+      "Des modifications de la section Demandes ne sont pas enregistrées. Quitter sans enregistrer ?",
+      "Modifications non enregistrées",
+    );
+  }
+
+  async function handleSelectSection(next: Section) {
+    if (next === section) return;
+    if (!(await confirmerSortieDemandes())) return;
+    demandesModifieRef.current = false;
     setSection(next);
     if (next !== "simulations") setAffaireId(null);
   }
@@ -84,6 +103,8 @@ export default function App() {
   }
 
   async function handleSimulerAffaire(demande: Demande) {
+    if (!(await confirmerSortieDemandes())) return;
+    demandesModifieRef.current = false;
     const affaires = await affairesApi.list();
     const existante = affaires.find((a) => a.nom.trim().toLowerCase() === demande.affaire.trim().toLowerCase());
     const toutes = await demandeCaisseApi.listAll();
@@ -183,7 +204,13 @@ export default function App() {
 
       <div style={{ flex: 1 }}>
         {section === "accueil" && <Accueil onSelect={handleSelectSection} />}
-        {section === "demandes" && <DemandesList onSimulerAffaire={handleSimulerAffaire} trigramme={trigramme} />}
+        {section === "demandes" && (
+          <DemandesList
+            onSimulerAffaire={handleSimulerAffaire}
+            trigramme={trigramme}
+            onDirtyChange={marquerDemandesModifie}
+          />
+        )}
         {section === "simulations" &&
           (affaireId === null ? (
             <AffairesList onOpen={setAffaireId} trigramme={trigramme} />

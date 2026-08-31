@@ -1,7 +1,7 @@
 // Valeurs prédéfinies proposées dans les champs de la section Demandes. Chaque liste inclut
 // une option "Autre" en saisie libre côté UI (pas ici — voir SelectOuAutre).
 
-import type { Demande, DemandeCaisse } from "./types";
+import type { Demande, DemandeCaisse, ListeOption, OptionListe } from "./types";
 
 export const TYPES_ENVOI_CAISSE = ["STANDARD", "STANDARD (4B)", "STANDARD (4C)"];
 
@@ -15,8 +15,30 @@ export const TERMINAUX = Array.from({ length: 10 }, (_, i) => `${i + 1} ${i === 
 
 export const TRAITEMENTS = ["NIMP15"];
 
-// Module Linéaire : liste à définir plus tard, saisie libre pour l'instant.
+// Module Linéaire : pas de valeur de base, la liste est entièrement alimentée par l'utilisateur.
 export const MODULES_LINEAIRES: string[] = [];
+
+// Valeurs de base par liste — le socle codé en dur auquel s'ajoutent les options personnalisées
+// stockées en base (table `option_liste`).
+const BASE_PAR_LISTE: Record<ListeOption, string[]> = {
+  moteurs: MOTEURS,
+  module_lineaire: MODULES_LINEAIRES,
+  terminaux: TERMINAUX,
+};
+
+export const LIBELLE_LISTE: Record<ListeOption, string> = {
+  moteurs: "Moteurs",
+  module_lineaire: "Module linéaire",
+  terminaux: "Terminaux",
+};
+
+// Fusionne les valeurs de base d'une liste avec les options personnalisées (dédoublonné, base
+// d'abord puis ajouts dans leur ordre d'insertion).
+export function optionsListe(liste: ListeOption, personnalisees: OptionListe[]): string[] {
+  const base = BASE_PAR_LISTE[liste];
+  const ajouts = personnalisees.filter((o) => o.liste === liste).map((o) => o.valeur);
+  return [...base, ...ajouts.filter((v) => !base.includes(v))];
+}
 
 // Une caisse "4B"/"4C" (renforcée) impose systématiquement le traitement NIMP15 ; le "4C"
 // contient en plus de la mousse de calage qui réduit le volume utile.
@@ -68,6 +90,22 @@ export function contrePlaqueParDefaut(typeEnvoiCaisse: string): boolean {
 export function estDemandeValidee(d: Demande): boolean {
   const obs = d.observations.trim().toLowerCase();
   return d.validee || obs.includes("livrée") || obs.includes("livree") || obs.includes("rapatriée") || obs.includes("rapatriee");
+}
+
+// Compare deux noms d'affaire : égalité stricte (après trim, insensible à la casse). La
+// comparaison est volontairement exacte — "UUSPM01D" et "UUSPM010" sont deux affaires
+// différentes, une variante d'affaire porte toujours un suffixe distinct assumé.
+export function memeNomAffaire(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+// Demandes existantes portant exactement ce nom d'affaire ET non validées — sert à avertir
+// avant d'ajouter une nouvelle ligne / une nouvelle caisse pour une affaire déjà en cours.
+// Les demandes déjà validées sont ignorées : rouvrir le même nom d'affaire pour un nouveau
+// besoin est normal, l'ancienne demande est close.
+export function demandesActivesPourAffaire(nomAffaire: string, demandes: Demande[]): Demande[] {
+  if (nomAffaire.trim() === "") return [];
+  return demandes.filter((d) => !estDemandeValidee(d) && memeNomAffaire(d.affaire, nomAffaire));
 }
 
 // Une sous-caisse (demande_caisse) n'a pas sa propre colonne `validee` — elle est considérée

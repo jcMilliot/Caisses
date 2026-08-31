@@ -65,6 +65,9 @@ export function calculerCaisse(
     tauxRemplissage,
     estSurcharge,
     niveauAlerte,
+    dim1MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, a.dim1_mm), 0),
+    dim2MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, a.dim2_mm), 0),
+    dim3MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, a.dim3_mm), 0),
   };
 }
 
