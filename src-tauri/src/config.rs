@@ -20,3 +20,16 @@ pub fn write(app_config_dir: &Path, cfg: &DbConfig) -> std::io::Result<()> {
     let data = serde_json::to_string_pretty(cfg).expect("sérialisation DbConfig infaillible");
     std::fs::write(config_file_path(app_config_dir), data)
 }
+
+/// Récupère `db-location.json` depuis un ancien dossier de config (changement
+/// d'identifiant d'app, cf. journal 2026-08) si le dossier courant n'en a pas.
+/// Best-effort : toute erreur est silencieuse, l'utilisateur retombera sur le
+/// choix manuel du dossier au premier lancement.
+pub fn migrate_from(old_app_config_dir: &Path, new_app_config_dir: &Path) {
+    if read(new_app_config_dir).is_some() {
+        return;
+    }
+    if let Some(cfg) = read(old_app_config_dir) {
+        let _ = write(new_app_config_dir, &cfg);
+    }
+}

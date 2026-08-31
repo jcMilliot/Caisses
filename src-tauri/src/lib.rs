@@ -32,6 +32,21 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // Migration one-shot : l'identifiant d'app est passé de
+            // `com.xan.caisses` à `com.caisses.app`, ce qui change le dossier
+            // %APPDATA%. On récupère la config (dossier BDD + trigramme) de
+            // l'ancien emplacement pour éviter de redemander à l'utilisateur.
+            if let Ok(new_dir) = app.path().app_config_dir() {
+                if let Some(old_dir) = new_dir
+                    .parent()
+                    .map(|roaming| roaming.join("com.xan.caisses"))
+                {
+                    if old_dir != new_dir && old_dir.is_dir() {
+                        config::migrate_from(&old_dir, &new_dir);
+                        user_config::migrate_from(&old_dir, &new_dir);
+                    }
+                }
+            }
             app.manage(db::Db::empty());
             Ok(())
         })

@@ -140,6 +140,13 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
     } else {
       handleEditLocal(id, { validee });
     }
+    // Valider la caisse mère vide aussi les affiches des caisses filles associées — même
+    // observation "Livré"/"Rapatriée" que la mère, pour qu'elles disparaissent de la section
+    // Demandes d'achats et s'affichent en vert pastel dans le tableau.
+    const observationCascade = demande?.cde_passee_achat_stock ? "Rapatriée" : "Livré";
+    for (const sc of demandeCaisses.filter((c) => c.demande_id === id)) {
+      handleEditDemandeCaisse(sc.id, { observations: observationCascade });
+    }
   }
 
   async function handleCreerDemandeCaisse(demande: Demande) {

@@ -455,73 +455,150 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
 
 ## Prochaines étapes
 
-1. **Tester manuellement en conditions réelles** la nouvelle section Demandes (collage Excel
-   19 colonnes, édition inline, cases à cocher, tri) et la navigation par menu — même limitation
-   que précédemment : pas d'outil d'automation UI dans l'environnement de dev assisté.
-2. Ajouter `@tauri-apps/plugin-dialog` côté JS si on veut remplacer les `window.confirm()`
-   actuels (suppression affaire/caisse/demande, confirmation de déplacement drag & drop) par des
-   dialogues natifs Tauri — le plugin Rust est déjà présent (`tauri-plugin-dialog` dans
-   `Cargo.toml`) mais pas encore utilisé côté frontend.
-3. Définir le contenu de "Caisses en stock" (actuellement un stub).
-4. Définir le contenu et le mode d'envoi de "Demandes d'achats" (génération de l'affiche +
-   envoi par mail, actuellement un stub).
-5. Export/impression d'un récapitulatif d'affaire (explicitement hors v1, mentionné par
-   l'utilisateur pour plus tard).
-6. Icônes de l'app (`src-tauri/icons/`) — actuellement les icônes par défaut de `create-tauri-app`.
-7. Réfléchir à un identifiant d'app plus définitif que `com.xan.caisses` si distribution au-delà
-   de la machine de l'auteur.
-8. **⚠️ Risque connu — dossier BDD réseau partagé** : décision utilisateur (2026-07-30) d'utiliser
-   un dossier réseau partagé pour `caisses.sqlite3` afin que plusieurs postes travaillent sur les
-   mêmes données. SQLite n'est pas conçu pour des écritures concurrentes fiables sur un partage
-   réseau (SMB/CIFS) — verrouillage fichier peu fiable dans ce contexte, risque de corruption
-   silencieuse du fichier en cas d'écritures simultanées depuis deux postes. Accepté
-   temporairement par l'utilisateur en attendant un vrai système de verrouillage applicatif (voir
-   point suivant). **Recommandation en attendant** : éviter d'éditer la même affaire depuis deux
-   postes en même temps, et mettre en place une sauvegarde régulière (voir point 10 ci-dessous).
-9. **Verrouillage par section/affaire (multi-poste)** — **implémenté le 2026-07-30, testé en
-   conditions réelles à deux postes/instances et durci côté backend le 2026-07-31** (voir
-   journal ci-dessus : table `section_lock`, `commands/locks.rs::require_lock`,
-   `hooks/useSectionLock.ts`). Pas d'auto-expiration de la demande de crayon elle-même si le
-   titulaire arrête de poller — à reconsidérer si ça devient gênant en usage réel. Pas de système
-   de droits/permissions par utilisateur (tout titulaire du verrou peut tout faire sur sa
-   ressource) — évolution possible plus tard si le besoin se présente. Si le besoin de temps
-   réel/fiabilité dépasse ce que permet le polling, le bon moment pour introduire le petit
-   serveur HTTP déjà anticipé par la séparation `data/` (cf. section Architecture).
-10. **Sauvegarde régulière de `caisses.sqlite3`** — pas encore mise en place. Tant que le
-    verrouillage par affaire (point 9) n'existe pas et que la base peut vivre sur un dossier
-    réseau partagé (point 8), une copie de sauvegarde à intervalle régulier vers un autre
-    emplacement (pas le même dossier/serveur, pour survivre à une panne du partage lui-même) est
-    nécessaire. Fréquence à définir avec l'utilisateur — pas encore tranché : candidats évidents
-    quotidien ou hebdomadaire selon le volume réel de saisie. Pourrait être un simple script/tâche
-    planifiée Windows dans un premier temps, ou une fonctionnalité intégrée à l'app plus tard
-    (bouton "Sauvegarder maintenant" + copie automatique périodique).
-11. **Idée notée le 2026-07-31 — détection de nom d'affaire déjà existant** : à la saisie d'une
-    ligne (manuelle ou collage Excel) avec un nom d'affaire (colonne `AFFAIRE` de `demande`, ou
-    nom d'affaire dans Simulations) qui correspond à une affaire déjà existante, avertir
-    l'utilisateur ("cette affaire existe déjà, ajouter quand même ?") plutôt que de laisser
-    passer silencieusement. Si l'utilisateur confirme, marquer/indiquer qu'il s'agit bien de la
-    même affaire mais d'une ligne différente (convention déjà utilisée manuellement par
-    l'utilisateur, ex. suffixe `UUSPM01D` pour une variante de `UUSPM01`). Portée : Demandes
-    (texte libre, pas de contrainte d'unicité) et création d'affaire dans Simulations. Pas encore
-    implémenté — à concevoir (comparaison exacte vs approximative du nom, où stocker
-    l'indication de "même affaire, autre ligne").
-12. **Page d'accueil en cards + blocs "caisses à commander/à rapatrier"** — **implémenté le
-    2026-08-03**. Nouvelle route `src/routes/Accueil.tsx` (section `"accueil"`, écran par défaut
-    au démarrage dans `App.tsx`), menu principal sous forme de 4 cards (grille 2×2) au lieu de
-    boutons de navbar ; la navbar classique ne s'affiche plus que sur les autres sections
-    (bouton "← Accueil" ajouté pour y revenir). À droite, séparés par un liseret, deux blocs
-    calculés à partir de `demandesApi.list()` (logique pure dans
-    `src/domain/caissesACommander.ts`) :
-    - **"Caisses à commander cette semaine"** : demandes avec `stock` vide dont la commande doit
-      partir cette semaine calendaire — règle actée avec l'utilisateur : on commande la semaine
-      calendaire précédant celle du picking (fermeture le week-end, donc semaine complète
-      d'avance).
-    - **"Caisses à rapatrier cette semaine"** : demandes avec `stock` renseigné (caisse déjà en
-      stock à faire revenir) — règle : si `date_picking` tombe un lundi, rapatrier la semaine
-      calendaire d'avant ; sinon la semaine calendaire du picking suffit.
-    - **Cas ACHSTOCK non géré pour l'instant** : quand `affaire` contient "ACHSTOCK" (achat de
-      caisses tenues en stock, sans date de picking associée), la ligne est exclue des deux
-      calculs (`estAchstock` dans `caissesACommander.ts`). **À décider plus tard** : comment/où
-      afficher ces lignes-là (pas de date pour les positionner dans le temps).
-    - Ces deux blocs ne modifient ni ne consultent la table `affaire`/`caisse` de Simulations —
-      uniquement `demande`, conformément à la réponse de l'utilisateur sur la source des données.
+### Fait
+
+- **Contenu de "Caisses en stock"** : `src/routes/CaissesStockList.tsx` est un CRUD complet
+  (nom/dimensions/quantité/observations, édition inline, verrouillage, suppression), ce n'est
+  plus un stub. Vérifié le 2026-08-25.
+- **Contenu et génération des affiches "Demandes d'achats"** : `src/routes/DemandesAchatsList.tsx`
+  + `src/components/AfficheCaisseCard.tsx` génèrent les affiches et permettent de les copier
+  (texte/image presse-papiers, `handleCopier`). L'envoi reste un copier-coller manuel dans le
+  mail — voir les points "À faire" sur les affiches ci-dessous qui affinent ce flux. Vérifié le
+  2026-08-25.
+- **Identifiant d'app définitif** : `src-tauri/tauri.conf.json` utilise `"com.caisses.app"`
+  (au lieu de `com.xan.caisses`). Vérifié le 2026-08-25. Ce changement d'identifiant déplace le
+  dossier `%APPDATA%\<identifier>` : au premier démarrage sur la version 0.5.0, `lib.rs::setup()`
+  fait une **migration one-shot** best-effort — si `db-location.json` / `user-identity.json`
+  n'existent pas dans le nouveau dossier mais sont présents dans l'ancien `com.xan.caisses`, ils
+  sont recopiés (`config::migrate_from` / `user_config::migrate_from`). L'ancien dossier n'est
+  jamais modifié ; en cas d'échec on retombe sur le choix manuel du dossier BDD comme au premier
+  lancement.
+- **Verrouillage par section/affaire (multi-poste)** — implémenté le 2026-07-30, testé en
+  conditions réelles à deux postes/instances et durci côté backend le 2026-07-31 (voir journal
+  ci-dessus : table `section_lock`, `commands/locks.rs::require_lock`, `hooks/useSectionLock.ts`).
+  Restes connus listés dans "À faire" (auto-expiration de la demande de crayon, droits par
+  utilisateur).
+- **Page d'accueil en cards + blocs "caisses à commander/à rapatrier"** — implémenté le
+  2026-08-03. Nouvelle route `src/routes/Accueil.tsx` (section `"accueil"`, écran par défaut au
+  démarrage dans `App.tsx`), menu principal sous forme de 4 cards (grille 2×2) au lieu de boutons
+  de navbar ; la navbar classique ne s'affiche plus que sur les autres sections (bouton
+  "← Accueil" ajouté pour y revenir). À droite, séparés par un liseret, deux blocs calculés à
+  partir de `demandesApi.list()` (logique pure dans `src/domain/caissesACommander.ts`) :
+  - **"Caisses à commander cette semaine"** : demandes avec `stock` vide dont la commande doit
+    partir cette semaine calendaire — règle actée avec l'utilisateur : on commande la semaine
+    calendaire précédant celle du picking (fermeture le week-end, donc semaine complète d'avance).
+  - **"Caisses à rapatrier cette semaine"** : demandes avec `stock` renseigné (caisse déjà en
+    stock à faire revenir) — règle : si `date_picking` tombe un lundi, rapatrier la semaine
+    calendaire d'avant ; sinon la semaine calendaire du picking suffit.
+  - Ces deux blocs ne modifient ni ne consultent la table `affaire`/`caisse` de Simulations —
+    uniquement `demande`, conformément à la réponse de l'utilisateur sur la source des données.
+  - Cas ACHSTOCK sur la page d'accueil : toujours exclu de ces deux blocs (`estAchstock` dans
+    `caissesACommander.ts`) — traité différemment dans Demandes d'achats (voir ci-dessous), pas
+    ici (pas de date de picking à positionner dans le temps pour ces lignes).
+- **Multi-caisses et affiches (section Demandes d'achats)** — implémenté le 2026-08-26, vérifié
+  et confirmé par l'utilisateur le 2026-08-28 :
+  - **Validation en cascade caisse mère → caisses filles** : `DemandesList.handleValider` applique
+    aussi `observations = "Livré"/"Rapatriée"` à toutes les sous-caisses (`demande_caisse`) d'une
+    demande mère validée — fonction `estDemandeCaisseValidee()` (`domain/demandeOptions.ts`),
+    réutilise le même mécanisme texte que la mère (pas de nouvelle colonne DB). `construireAffiches`
+    (`domain/affiches.ts`) exclut les sous-caisses validées de la même façon que la mère, et
+    `DemandesTable` colore leur ligne en vert pastel comme la mère.
+  - **Code couleur des affiches** : pastille + bordure gauche colorée sur chaque carte
+    (`AfficheCaisseCard`), reprenant la couleur du rendu HTML de l'affiche (bleu standard / violet
+    4B / rose 4C, `couleurAffiche()`), avec libellé `libelleCategorie()`.
+  - **Icône déroulant multi-caisses grossie** : chevron `▸`/`▾` dans `DemandesTable` passé de 11px
+    à 18px avec plus de padding cliquable.
+  - **Taille des affiches réduite au collage** : gabarit HTML resserré (`max-width` 620px→440px)
+    dans `rendreAfficheHtml`, capture `html-to-image` en `pixelRatio: 1.2`. **Bug corrigé en cours
+    de route** : le conteneur capturé (`apercuRef`) avait un `minWidth: 480` alors que l'affiche
+    fait 440px max — ce vide se retrouvait capturé comme fond hors-cadre une fois collé. Retiré.
+  - **Mesures max 4C** : alerte non bloquante (⚠️ + tooltip) `depassementMesuresMax4C()`
+    (`domain/demandeOptions.ts`, seuils `MESURES_MAX_4C_MM` 2.22 × 0.80 × 0.80 m) sur les colonnes
+    de dimensions dans `DemandesTable`, ligne mère et sous-lignes.
+  - **Texte d'accompagnement mail + mention soudure 4C + regroupement par type** :
+    `texteIntroductionMail()` et `MENTION_SOUDURE_4C` (`domain/affiches.ts`). Un seul "Bonjour,
+    merci de..." en tête de la copie groupée (`DemandesAchatsList.handleCopierSelection`), affiches
+    regroupées par `categorieEnvoi()` dans un ordre fixe standard → 4B → 4C, la mention soudure/
+    fermeture n'apparaît qu'une fois juste avant le bloc 4C (après les autres types s'il y en a).
+    Même logique simplifiée en copie individuelle (`AfficheCaisseCard.handleCopier`).
+  - **Bug de fiabilité corrigé** : `capturerPng` échouait silencieusement (blob raté, absorbé par
+    un `catch` muet) quand appelé juste après le montage d'une carte, avant que le `<img>` du logo
+    (base64 injecté via `dangerouslySetInnerHTML`) n'ait fini de décoder — la copie groupée se
+    retrouvait alors sans aucune image. Corrigé par `attendreImagesDecodees()` (attend
+    `img.decode()` sur les images du conteneur avant capture) + une retentative automatique.
+  - `npx tsc --noEmit` validé après l'ensemble ; aucun fichier Rust touché, pas de migration.
+- **Cas ACHSTOCK dans Demandes d'achats** — implémenté le 2026-08-28. Une demande ACHSTOCK
+  (`estDemandeAchstock()`, `affaire` contient "ACHSTOCK") n'a pas de dimensions à fabriquer et ne
+  génère donc plus de carte d'affiche (exclue dans `construireAffiches`). Elle apparaît à la place
+  dans un panneau dédié "ACHSTOCK — caisses en stock à commander" (`DemandesAchatsList`, liste
+  `demandesAchstockAEnvoyer()`) : une ligne compacte par référence `stock` (`AR_CAISS_XXXXX`),
+  sélection partagée avec les affiches classiques via des clés `achstock:{id}` dans le même Set.
+  À la copie groupée, le bloc ACHSTOCK (`rendreBlocAchstock()` — référence / Qté / Affaire / Délais
+  par ligne) est toujours placé en dernier, précédé de "Ainsi que :" s'il y a aussi des affiches
+  classiques sélectionnées ; sinon l'intro générique bascule sur "Merci de bien vouloir passer
+  commande..." plutôt que "prévoir la fabrication..." (`texteIntroductionMail(qte, seulementAchstock)`).
+- **Tableau Demandes — tri par défaut et filtrage progressif** — implémenté le 2026-08-28.
+  - Tri par défaut `date_picking` décroissante à l'arrivée sur l'écran (`TRI_PAR_DEFAUT` dans
+    `DemandesTable.tsx`), actif tant que l'utilisateur n'a jamais choisi un tri lui-même (son choix,
+    sauvegardé en `localStorage`, reste toujours prioritaire une fois défini).
+  - Filtrage progressif de la sélection dans `ColumnFilterMenu` : taper dans la recherche recale
+    maintenant `selectionLocale` sur les seules valeurs correspondant au filtre courant au fil de
+    la frappe (`changerRecherche()`), sans devoir cliquer "Tout désélectionner" en plus avant de
+    valider.
+
+### À faire
+
+- **Détection de nom d'affaire déjà existant** (idée notée le 2026-07-31) : à la saisie d'une
+  ligne (manuelle ou collage Excel) avec un nom d'affaire (colonne `AFFAIRE` de `demande`, ou nom
+  d'affaire dans Simulations) qui correspond à une affaire déjà existante, avertir l'utilisateur
+  ("cette affaire existe déjà, ajouter quand même ?") plutôt que de laisser passer silencieusement.
+  Si l'utilisateur confirme, marquer/indiquer qu'il s'agit bien de la même affaire mais d'une
+  ligne différente (convention déjà utilisée manuellement par l'utilisateur, ex. suffixe
+  `UUSPM01D` pour une variante de `UUSPM01`). Portée : Demandes (texte libre, pas de contrainte
+  d'unicité) et création d'affaire dans Simulations. Pas encore implémenté — à concevoir
+  (comparaison exacte vs approximative du nom, où stocker l'indication de "même affaire, autre
+  ligne").
+
+*Fiabilité et infrastructure*
+
+- **⚠️ Risque connu — dossier BDD réseau partagé** : décision utilisateur (2026-07-30) d'utiliser
+  un dossier réseau partagé pour `caisses.sqlite3` afin que plusieurs postes travaillent sur les
+  mêmes données. SQLite n'est pas conçu pour des écritures concurrentes fiables sur un partage
+  réseau (SMB/CIFS) — verrouillage fichier peu fiable dans ce contexte, risque de corruption
+  silencieuse du fichier en cas d'écritures simultanées depuis deux postes. Mitigé par le
+  verrouillage applicatif (voir "Fait" ci-dessus), mais pas éliminé. **Recommandation en
+  attendant** : éviter d'éditer la même affaire depuis deux postes en même temps, et mettre en
+  place une sauvegarde régulière (point suivant).
+- **Sauvegarde régulière de `caisses.sqlite3`** — pas encore mise en place. Tant que la base peut
+  vivre sur un dossier réseau partagé (point précédent), une copie de sauvegarde à intervalle
+  régulier vers un autre emplacement (pas le même dossier/serveur, pour survivre à une panne du
+  partage lui-même) est nécessaire. Fréquence à définir avec l'utilisateur — pas encore tranché :
+  candidats évidents quotidien ou hebdomadaire selon le volume réel de saisie. Pourrait être un
+  simple script/tâche planifiée Windows dans un premier temps, ou une fonctionnalité intégrée à
+  l'app plus tard (bouton "Sauvegarder maintenant" + copie automatique périodique).
+- **Verrouillage — restes connus** : pas d'auto-expiration de la demande de crayon elle-même si le
+  titulaire arrête de poller — à reconsidérer si ça devient gênant en usage réel. Pas de système
+  de droits/permissions par utilisateur (tout titulaire du verrou peut tout faire sur sa
+  ressource) — évolution possible plus tard si le besoin se présente. Si le besoin de temps
+  réel/fiabilité dépasse ce que permet le polling, le bon moment pour introduire le petit serveur
+  HTTP déjà anticipé par la séparation `data/` (cf. section Architecture).
+- **Dialogues natifs Tauri** : `@tauri-apps/plugin-dialog` est bien dans `package.json`
+  (dépendance présente côté JS) mais toujours pas branché : `src/data/confirm.ts` utilise encore
+  `window.confirm()` en fallback. Reste à remplacer par les dialogues natifs du plugin
+  (suppression affaire/caisse/demande, confirmation de déplacement drag & drop).
+- **Export/impression d'un récapitulatif d'affaire** (explicitement hors v1, mentionné par
+  l'utilisateur pour plus tard) — toujours pas implémenté, aucune fonctionnalité d'export/print
+  trouvée dans `src/` en dehors de la copie d'affiche.
+- **Icônes de l'app** (`src-tauri/icons/`) — le jeu de fichiers présent correspond aux noms par
+  défaut de `create-tauri-app` (`icon.ico`, `Square*Logo.png`, etc.) ; à confirmer visuellement si
+  des icônes personnalisées ont depuis été déposées sous ces mêmes noms.
+- **Tester manuellement en conditions réelles** la section Demandes (collage Excel 19 colonnes,
+  édition inline, cases à cocher, tri) et la navigation par menu — pas d'outil d'automation UI
+  dans l'environnement de dev assisté.
+
+*Global*
+
+- **Faire un check global du projet** : passe de revue pour repérer les failles de sécurité, le
+  code mort ou à supprimer, et les incohérences à corriger — à planifier une fois les points
+  ci-dessus stabilisés plutôt qu'en parallèle, pour reviewer un état du code qui ne bouge pas sous
+  le pied de la revue.

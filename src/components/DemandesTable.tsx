@@ -2,7 +2,15 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Demande, DemandeCaisse, CaisseStock } from "../domain/types";
 import { dateIsoVersAffichage } from "../domain/dates";
-import { necessiteNimp15, estCaisse4C, contrePlaqueParDefaut, estDemandeValidee, AVERTISSEMENT_MOUSSE_4C } from "../domain/demandeOptions";
+import {
+  necessiteNimp15,
+  estCaisse4C,
+  contrePlaqueParDefaut,
+  estDemandeValidee,
+  estDemandeCaisseValidee,
+  AVERTISSEMENT_MOUSSE_4C,
+  depassementMesuresMax4C,
+} from "../domain/demandeOptions";
 import { PALETTE_CAISSES } from "../domain/palette";
 import ColumnFilterMenu from "./ColumnFilterMenu";
 import TableOptionsMenu from "./TableOptionsMenu";
@@ -52,12 +60,17 @@ type Tri = { colonne: Champ; sens: "asc" | "desc" };
 const CLE_TRI = "caisses:tri:demandes";
 const CLE_FILTRES = "caisses:filtres:demandes";
 
+// Tri par défaut à l'arrivée sur l'écran : date de picking la plus récente en premier, tant que
+// l'utilisateur n'a jamais choisi lui-même un tri (dans ce cas son choix, sauvegardé en
+// localStorage, prime toujours).
+const TRI_PAR_DEFAUT: Tri = { colonne: "date_picking", sens: "desc" };
+
 function chargerTri(): Tri | null {
   try {
     const brut = localStorage.getItem(CLE_TRI);
-    return brut ? (JSON.parse(brut) as Tri) : null;
+    return brut ? (JSON.parse(brut) as Tri) : TRI_PAR_DEFAUT;
   } catch {
-    return null;
+    return TRI_PAR_DEFAUT;
   }
 }
 
@@ -409,6 +422,10 @@ export default function DemandesTable({
         : valeurBrute;
     const largeur = largeurColonne(champ);
     const avertissementMousse = champ === "type_envoi_caisse" && estCaisse4C(demande.type_envoi_caisse) ? AVERTISSEMENT_MOUSSE_4C : undefined;
+    const avertissementMesures4C = CHAMPS_DIM.has(champ)
+      ? depassementMesuresMax4C(demande.type_envoi_caisse, demande.longueur_mm, demande.largeur_mm, demande.hauteur_mm)
+      : undefined;
+    const avertissement = avertissementMousse ?? avertissementMesures4C;
     return (
       <td
         style={{
@@ -423,7 +440,7 @@ export default function DemandesTable({
           fontWeight: champ === "affaire" ? 700 : undefined,
         }}
         className={estNombre ? "mono" : undefined}
-        title={avertissementMousse}
+        title={avertissement}
         onClick={() => !readOnly && !enEdition && setCellEnEdition({ id: demande.id, champ })}
       >
         {enEdition ? (
@@ -441,7 +458,7 @@ export default function DemandesTable({
         ) : (
           <>
             {valeurAffichee}
-            {avertissementMousse && <span style={{ color: "var(--warn-text)", marginLeft: 4 }}>⚠</span>}
+            {avertissement && <span style={{ color: "var(--warn-text)", marginLeft: 4 }}>⚠</span>}
           </>
         )}
       </td>
@@ -628,7 +645,15 @@ export default function DemandesTable({
                           <button
                             onClick={() => onToggleEtendue(d.id)}
                             title={etendue ? "Replier les caisses détaillées" : "Déplier les caisses détaillées"}
-                            style={{ background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 11, color: "var(--text-muted)" }}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              padding: 4,
+                              fontSize: 18,
+                              lineHeight: 1,
+                              color: "var(--text-muted)",
+                            }}
                           >
                             {etendue ? "▾" : "▸"}
                           </button>
@@ -655,7 +680,11 @@ export default function DemandesTable({
                           caissesStock={caissesStock}
                           td={td}
                           readOnly={readOnly}
-                          coloredBackground={PALETTE_CAISSES[index % PALETTE_CAISSES.length]}
+                          coloredBackground={
+                            estDemandeCaisseValidee(sc, d)
+                              ? "var(--success-bg, #d4f4dd)"
+                              : PALETTE_CAISSES[index % PALETTE_CAISSES.length]
+                          }
                           onEdit={(patch) => onEditDemandeCaisse(sc.id, patch)}
                           onDelete={() => onDeleteDemandeCaisse(sc.id)}
                           onSelectStock={(id) => onSelectStockSousLigne(sc.id, id)}
@@ -866,12 +895,15 @@ function SousLigneCaisse({
       : estDate
         ? dateIsoVersAffichage(String(valeurBrute))
         : valeurBrute;
+    const avertissementMesures4C = CHAMPS_DIM_SOUS_LIGNE.has(champSousLigne)
+      ? depassementMesuresMax4C(caisse.type_envoi_caisse, caisse.longueur_mm, caisse.largeur_mm, caisse.hauteur_mm)
+      : undefined;
 
     return (
       <td
         style={{ ...style, cursor: editable ? "text" : "default", padding: enEdition ? 2 : style.padding }}
         className={estNombre ? "mono" : undefined}
-        title={verrouille ? "Repris de la demande — non modifiable ici" : undefined}
+        title={verrouille ? "Repris de la demande — non modifiable ici" : avertissementMesures4C}
         onClick={() => editable && !enEdition && setChampEnEdition(champSousLigne)}
       >
         {enEdition ? (
@@ -897,7 +929,10 @@ function SousLigneCaisse({
             }}
           />
         ) : (
-          valeurAffichee || "—"
+          <>
+            {valeurAffichee || "—"}
+            {avertissementMesures4C && <span style={{ color: "var(--warn-text)", marginLeft: 4 }}>⚠</span>}
+          </>
         )}
       </td>
     );
