@@ -14,7 +14,7 @@
       "Bash(\"/g/Projets/Code/caisses/src-tauri/target/debug/caisses.exe\")",
       "Bash(tasklist)",
       "Bash(powershell.exe -NoProfile -Command \"Get-Process caisses -ErrorAction SilentlyContinue\")",
-      "PowerShell(Get-ChildItem \"$env:APPDATA\\\\com.xan.caisses\" -Recurse)"
+      "PowerShell(Get-ChildItem \"$env:APPDATA\\\\com.caisses.app\" -Recurse)"
     ]
   }
 }

@@ -1,5 +1,5 @@
 import type { Demande, DemandeCaisse } from "./types";
-import { estCaisse4B, estCaisse4C, necessiteNimp15, estDemandeValidee } from "./demandeOptions";
+import { estCaisse4B, estCaisse4C, necessiteNimp15, estDemandeValidee, estDemandeCaisseValidee } from "./demandeOptions";
 import { dateIsoVersAffichage } from "./dates";
 import { PALETTE_CAISSES } from "./palette";
 
@@ -26,6 +26,17 @@ export function categorieEnvoi(typeEnvoiCaisse: string): CategorieEnvoi {
   return "standard";
 }
 
+export function libelleCategorie(typeEnvoiCaisse: string): string {
+  switch (categorieEnvoi(typeEnvoiCaisse)) {
+    case "4c":
+      return "4C";
+    case "4b":
+      return "4B";
+    default:
+      return "Standard";
+  }
+}
+
 export function titreAffiche(typeEnvoiCaisse: string): string {
   const base = "Demande d'Achat Caisse en bois";
   switch (categorieEnvoi(typeEnvoiCaisse)) {
@@ -49,11 +60,19 @@ export function couleurAffiche(typeEnvoiCaisse: string): string {
   }
 }
 
+// Une demande ACHSTOCK (achat de caisses déjà tenues en stock, référence `AR_CAISS_XXXXX` dans
+// le champ `stock`) n'est pas une caisse en bois à fabriquer sur mesure — elle n'a pas de
+// dimensions pertinentes et ne doit jamais générer de carte d'affiche visuelle. Elle n'apparaît
+// que sous forme de bloc texte au moment de la copie groupée (cf. construireBlocAchstock).
+export function estDemandeAchstock(demande: Demande): boolean {
+  return demande.affaire.trim().toUpperCase().includes("ACHSTOCK");
+}
+
 export function construireAffiches(demandes: Demande[], demandeCaisses: DemandeCaisse[]): AfficheCaisse[] {
   const affiches: AfficheCaisse[] = [];
 
   for (const d of demandes) {
-    if (!d.ok_pour_passer_cde || estDemandeValidee(d)) continue;
+    if (!d.ok_pour_passer_cde || estDemandeValidee(d) || estDemandeAchstock(d)) continue;
 
     affiches.push({
       cle: `demande:${d.id}`,
@@ -72,6 +91,7 @@ export function construireAffiches(demandes: Demande[], demandeCaisses: DemandeC
 
     for (const sc of demandeCaisses) {
       if (sc.demande_id !== d.id) continue;
+      if (estDemandeCaisseValidee(sc, d)) continue;
       affiches.push({
         cle: `demande_caisse:${sc.id}`,
         demandeId: d.id,
@@ -110,9 +130,9 @@ function accentAffiche(typeEnvoiCaisse: string): string {
 
 function ligneChamp(label: string, valeur: string, pleineLargeur = false): string {
   return `
-    <td style="padding:10px 14px;vertical-align:top;${pleineLargeur ? "" : "width:50%;"}">
-      <div style="font-size:10.5px;font-weight:700;letter-spacing:0.06em;color:#64748b;text-transform:uppercase;margin-bottom:3px;">${label}</div>
-      <div style="font-size:14px;font-weight:600;color:#0f172a;">${valeur}</div>
+    <td style="padding:7px 10px;vertical-align:top;${pleineLargeur ? "" : "width:50%;"}">
+      <div style="font-size:8.5px;font-weight:700;letter-spacing:0.05em;color:#64748b;text-transform:uppercase;margin-bottom:2px;">${label}</div>
+      <div style="font-size:11px;font-weight:600;color:#0f172a;">${valeur}</div>
     </td>`;
 }
 
@@ -126,16 +146,16 @@ export function rendreAfficheHtml(affiche: AfficheCaisse, demandeur: string, dat
     : "";
 
   return `
-<table role="presentation" style="border-collapse:separate;border-spacing:0;font-family:Calibri,Segoe UI,Arial,sans-serif;color:#0f172a;width:100%;max-width:620px;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.08);">
+<table role="presentation" style="border-collapse:separate;border-spacing:0;font-family:Calibri,Segoe UI,Arial,sans-serif;color:#0f172a;width:100%;max-width:440px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.08);">
   <tr>
     <td style="padding:0;">
-      <table role="presentation" style="border-collapse:collapse;width:100%;background:${couleur};border-bottom:3px solid ${accent};">
+      <table role="presentation" style="border-collapse:collapse;width:100%;background:${couleur};border-bottom:2px solid ${accent};">
         <tr>
-          <td style="padding:14px 16px;width:64px;">${logoImg}</td>
-          <td style="padding:14px 8px;text-align:center;">
-            <div style="font-size:16px;font-weight:800;letter-spacing:-0.01em;color:#0f172a;">${titre}</div>
+          <td style="padding:9px 12px;width:44px;">${logoImg}</td>
+          <td style="padding:9px 6px;text-align:center;">
+            <div style="font-size:12.5px;font-weight:800;letter-spacing:-0.01em;color:#0f172a;">${titre}</div>
           </td>
-          <td style="padding:14px 16px;width:64px;text-align:right;">${logoImg}</td>
+          <td style="padding:9px 12px;width:44px;text-align:right;">${logoImg}</td>
         </tr>
       </table>
     </td>
@@ -175,8 +195,8 @@ export function rendreAfficheHtml(affiche: AfficheCaisse, demandeur: string, dat
   ${
     nimp15
       ? `<tr>
-    <td style="padding:10px 16px;background:#fef2f2;border-top:1px solid #fecaca;">
-      <div style="font-size:12.5px;font-weight:700;color:#b91c1c;text-align:center;">
+    <td style="padding:7px 12px;background:#fef2f2;border-top:1px solid #fecaca;">
+      <div style="font-size:10.5px;font-weight:700;color:#b91c1c;text-align:center;">
         Joindre un certificat lors de la livraison
       </div>
     </td>
@@ -184,6 +204,40 @@ export function rendreAfficheHtml(affiche: AfficheCaisse, demandeur: string, dat
       : ""
   }
 </table>`.trim();
+}
+
+// Texte d'introduction générique inséré une seule fois en tête du mail, avant les affiches (qui
+// peuvent être de plusieurs types en cas de copie groupée). Si la sélection ne contient que des
+// lignes ACHSTOCK (caisses déjà en stock, rien à fabriquer), le texte parle de commande plutôt
+// que de fabrication.
+export function texteIntroductionMail(quantiteCaisses: number, seulementAchstock = false): string {
+  const pluriel = quantiteCaisses > 1;
+  const verbe = seulementAchstock
+    ? `de bien vouloir passer commande ${pluriel ? "des caisses suivantes" : "de la caisse suivante"}`
+    : `de bien vouloir prévoir la fabrication ${pluriel ? "des caisses suivantes" : "de la caisse suivante"}`;
+  return [`Bonjour,`, ``, `Merci ${verbe} :`].join("\n");
+}
+
+// Mention de prestation à ajouter uniquement pour les caisses 4C — positionnée après les
+// affiches des autres types s'il y en a, sinon juste après l'introduction (jamais répétée par
+// caisse : une seule fois pour l'ensemble du groupe 4C copié).
+export const MENTION_SOUDURE_4C = "Avec prestation de soudure et fermeture de la caisse.";
+
+// Une demande ACHSTOCK n'a pas de carte d'affiche (cf. estDemandeAchstock) : elle n'apparaît
+// dans le mail copié que sous cette forme texte, un bloc par référence AR_CAISS_XXXXX
+// (colonne `stock`), réutilisant les mêmes critères de sélection que les affiches normales
+// (case "OK pour passer cde" cochée, demande non déjà validée).
+export function demandesAchstockAEnvoyer(demandes: Demande[]): Demande[] {
+  return demandes.filter((d) => d.ok_pour_passer_cde && !estDemandeValidee(d) && estDemandeAchstock(d));
+}
+
+export function rendreBlocAchstock(demande: Demande): string {
+  return [
+    demande.stock.trim() || "—",
+    `Qté : ${demande.quantite}`,
+    `Affaire : ${demande.affaire}`,
+    `Délais : ${dateIsoVersAffichage(demande.date_demandee_s2c) || demande.date_demandee_s2c || "—"}`,
+  ].join("\n");
 }
 
 export function rendreAfficheTexte(affiche: AfficheCaisse, demandeur: string, dateDemande: string): string {

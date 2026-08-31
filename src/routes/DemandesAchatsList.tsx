@@ -5,7 +5,15 @@ import { locksApi } from "../data/locks";
 import { useSectionLock } from "../hooks/useSectionLock";
 import LockBanner from "../components/LockBanner";
 import AfficheCaisseCard, { type AfficheCaisseCardHandle } from "../components/AfficheCaisseCard";
-import { construireAffiches } from "../domain/affiches";
+import {
+  construireAffiches,
+  categorieEnvoi,
+  texteIntroductionMail,
+  MENTION_SOUDURE_4C,
+  demandesAchstockAEnvoyer,
+  rendreBlocAchstock,
+} from "../domain/affiches";
+import type { AfficheCaisse, CategorieEnvoi } from "../domain/affiches";
 import type { Demande, DemandeCaisse } from "../domain/types";
 
 interface Props {
@@ -52,6 +60,16 @@ export default function DemandesAchatsList({ trigramme }: Props) {
     [demandes, demandeCaisses, envoyees],
   );
 
+  // ACHSTOCK n'a pas de carte d'affiche (pas de dimensions à fabriquer) — juste une ligne
+  // texte par référence AR_CAISS_XXXXX, avec ses propres clés de sélection dans le même Set
+  // que les affiches classiques pour partager "Tout sélectionner"/"Copier la sélection".
+  const lignesAchstock = useMemo(
+    () => demandesAchstockAEnvoyer(demandes).filter((d) => !envoyees.has(`achstock:${d.id}`)),
+    [demandes, envoyees],
+  );
+  const clesAchstock = useMemo(() => lignesAchstock.map((d) => `achstock:${d.id}`), [lignesAchstock]);
+  const toutesLesCles = useMemo(() => [...affiches.map((a) => a.cle), ...clesAchstock], [affiches, clesAchstock]);
+
   async function handleContrePlaqueChange(demandeId: number, demandeCaisseId: number | null, valeur: boolean) {
     if (demandeCaisseId === null) {
       const d = demandes.find((x) => x.id === demandeId);
@@ -86,7 +104,7 @@ export default function DemandesAchatsList({ trigramme }: Props) {
   }
 
   function toutSelectionner() {
-    setSelection(new Set(affiches.map((a) => a.cle)));
+    setSelection(new Set(toutesLesCles));
   }
 
   function toutDeselectionner() {
@@ -103,35 +121,93 @@ export default function DemandesAchatsList({ trigramme }: Props) {
   }
 
   async function handleCopierSelection() {
-    const clesSelectionnees = affiches.filter((a) => selection.has(a.cle)).map((a) => a.cle);
-    if (clesSelectionnees.length === 0) return;
+    const affichesSelectionnees = affiches.filter((a) => selection.has(a.cle));
+    const achstockSelectionnees = lignesAchstock.filter((d) => selection.has(`achstock:${d.id}`));
+    if (affichesSelectionnees.length === 0 && achstockSelectionnees.length === 0) return;
     setCopieGroupee(true);
     try {
-      const images: string[] = [];
-      for (const cle of clesSelectionnees) {
-        const handle = cardsRef.current.get(cle);
-        if (!handle) continue;
-        const blob = await handle.capturerPng();
-        if (!blob) continue;
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-        images.push(dataUrl);
+      // Regroupées par type de caisse (standard/4B/4C) avant collage, ordre fixe : les 4C
+      // (avec la mention soudure/fermeture) apparaissent toujours en dernier. Un seul
+      // "Bonjour, merci de..." en tête pour l'ensemble de la sélection, pas un par groupe.
+      const ORDRE_CATEGORIES: CategorieEnvoi[] = ["standard", "4b", "4c"];
+      const groupes = new Map<CategorieEnvoi, AfficheCaisse[]>();
+      for (const a of affichesSelectionnees) {
+        const cat = categorieEnvoi(a.typeEnvoiCaisse);
+        const groupe = groupes.get(cat) ?? [];
+        groupe.push(a);
+        groupes.set(cat, groupe);
       }
-      if (images.length === 0) return;
 
-      const html = images
-        .map((src) => `<img src="${src}" alt="" style="display:block;max-width:100%;margin:0 0 16px;" />`)
-        .join("\n");
-      const texte = `${images.length} affiche(s) — voir les images ci-dessus.`;
+      const versHtml = (t: string) =>
+        t
+          .split("\n")
+          .map((ligne) => `<div>${ligne || "&nbsp;"}</div>`)
+          .join("");
+
+      const intro = texteIntroductionMail(
+        affichesSelectionnees.length + achstockSelectionnees.length,
+        affichesSelectionnees.length === 0,
+      );
+      const blocsHtml: string[] = [versHtml(intro)];
+      const blocsTexte: string[] = [intro];
+      let auMoinsUnBloc = false;
+
+      for (const cat of ORDRE_CATEGORIES) {
+        const groupe = groupes.get(cat);
+        if (!groupe) continue;
+        const images: string[] = [];
+        for (const a of groupe) {
+          const handle = cardsRef.current.get(a.cle);
+          if (!handle) continue;
+          const blob = await handle.capturerPng();
+          if (!blob) continue;
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          images.push(dataUrl);
+        }
+        if (images.length === 0) continue;
+        auMoinsUnBloc = true;
+
+        // La mention 4C est ajoutée une seule fois, juste avant les images de ce groupe —
+        // comme le 4C est toujours le dernier groupe traité, elle suit les images des autres
+        // types s'il y en a, ou l'intro directement sinon.
+        if (cat === "4c") {
+          blocsHtml.push(versHtml(MENTION_SOUDURE_4C));
+          blocsTexte.push(MENTION_SOUDURE_4C);
+        }
+
+        const imagesHtml = images
+          .map((src) => `<img src="${src}" alt="" style="display:block;max-width:100%;margin:0 0 16px;" />`)
+          .join("\n");
+        blocsHtml.push(`<div style="margin:12px 0 16px;">${imagesHtml}</div>`);
+        blocsTexte.push(`${images.length} affiche(s) — voir les images ci-dessus.`);
+      }
+
+      // ACHSTOCK toujours en dernier, après les affiches classiques (les 4C compris). S'il y a
+      // déjà eu un bloc avant (affiches normales), on l'introduit par "Ainsi que" ; sinon la
+      // sélection ne contient que de l'ACHSTOCK et l'intro générique suffit déjà.
+      if (achstockSelectionnees.length > 0) {
+        if (auMoinsUnBloc) {
+          const ainsiQue = "Ainsi que :";
+          blocsHtml.push(versHtml(ainsiQue));
+          blocsTexte.push(ainsiQue);
+        }
+        auMoinsUnBloc = true;
+        const blocsAchstockTexte = achstockSelectionnees.map((d) => rendreBlocAchstock(d));
+        blocsHtml.push(blocsAchstockTexte.map((b) => `<div style="margin:0 0 14px;">${versHtml(b)}</div>`).join("\n"));
+        blocsTexte.push(blocsAchstockTexte.join("\n\n"));
+      }
+
+      if (!auMoinsUnBloc) return;
 
       await navigator.clipboard.write([
         new ClipboardItem({
-          "text/html": new Blob([html], { type: "text/html" }),
-          "text/plain": new Blob([texte], { type: "text/plain" }),
+          "text/html": new Blob([blocsHtml.join("\n")], { type: "text/html" }),
+          "text/plain": new Blob([blocsTexte.join("\n\n")], { type: "text/plain" }),
         }),
       ]);
     } finally {
@@ -160,12 +236,12 @@ export default function DemandesAchatsList({ trigramme }: Props) {
           <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Affiches à envoyer</h1>
         </div>
 
-        {affiches.length > 0 && (
+        {toutesLesCles.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
               {selection.size > 0 ? `${selection.size} sélectionnée(s)` : ""}
             </span>
-            <button className="btn btn-sm" onClick={toutSelectionner} disabled={selection.size === affiches.length}>
+            <button className="btn btn-sm" onClick={toutSelectionner} disabled={selection.size === toutesLesCles.length}>
               Tout sélectionner
             </button>
             <button className="btn btn-sm" onClick={toutDeselectionner} disabled={selection.size === 0}>
@@ -208,28 +284,62 @@ export default function DemandesAchatsList({ trigramme }: Props) {
 
       {loading ? (
         <p style={{ color: "var(--text-muted)" }}>Chargement…</p>
-      ) : affiches.length === 0 ? (
+      ) : toutesLesCles.length === 0 ? (
         <div className="panel" style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-muted)" }}>
           <p style={{ margin: 0 }}>Aucune affiche à envoyer pour l'instant.</p>
         </div>
       ) : (
-        affiches.map((a) => (
-          <AfficheCaisseCard
-            key={a.cle}
-            ref={(handle) => {
-              if (handle) cardsRef.current.set(a.cle, handle);
-              else cardsRef.current.delete(a.cle);
-            }}
-            affiche={a}
-            trigrammesConnus={trigrammesConnus}
-            trigrammeParDefaut={trigramme}
-            readOnly={readOnly}
-            selectionnee={selection.has(a.cle)}
-            onToggleSelection={(v) => handleToggleSelection(a.cle, v)}
-            onContrePlaqueChange={(v) => handleContrePlaqueChange(a.demandeId, a.demandeCaisseId, v)}
-            onMarqueeEnvoyee={() => handleMarqueeEnvoyee(a.cle)}
-          />
-        ))
+        <>
+          {affiches.map((a) => (
+            <AfficheCaisseCard
+              key={a.cle}
+              ref={(handle) => {
+                if (handle) cardsRef.current.set(a.cle, handle);
+                else cardsRef.current.delete(a.cle);
+              }}
+              affiche={a}
+              trigrammesConnus={trigrammesConnus}
+              trigrammeParDefaut={trigramme}
+              readOnly={readOnly}
+              selectionnee={selection.has(a.cle)}
+              onToggleSelection={(v) => handleToggleSelection(a.cle, v)}
+              onContrePlaqueChange={(v) => handleContrePlaqueChange(a.demandeId, a.demandeCaisseId, v)}
+              onMarqueeEnvoyee={() => handleMarqueeEnvoyee(a.cle)}
+            />
+          ))}
+
+          {lignesAchstock.length > 0 && (
+            <div className="panel" style={{ padding: 16, marginBottom: 18 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 10 }}>
+                ACHSTOCK — caisses en stock à commander
+              </div>
+              {lignesAchstock.map((d) => {
+                const cle = `achstock:${d.id}`;
+                return (
+                  <label
+                    key={cle}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", cursor: "pointer", fontSize: 13 }}
+                  >
+                    <input type="checkbox" checked={selection.has(cle)} onChange={(e) => handleToggleSelection(cle, e.target.checked)} />
+                    <span style={{ fontWeight: 600 }}>{d.stock.trim() || "—"}</span>
+                    <span style={{ color: "var(--text-muted)" }}>
+                      Qté {d.quantite} · {d.affaire}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      style={{ marginLeft: "auto" }}
+                      disabled={readOnly}
+                      onClick={() => handleMarqueeEnvoyee(cle)}
+                    >
+                      Marquée comme envoyée
+                    </button>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

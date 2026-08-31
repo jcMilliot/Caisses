@@ -34,6 +34,20 @@ export default function ColumnFilterMenu({ valeurs, selection, onApply, triActif
     return valeurs.filter((v) => v.toLowerCase().includes(q));
   }, [valeurs, recherche]);
 
+  function changerRecherche(q: string) {
+    setRecherche(q);
+    // Au fur et à mesure de la frappe, la sélection se recale sur les valeurs qui correspondent
+    // au filtre courant — sans ça, taper une recherche ne fait que masquer visuellement les
+    // autres valeurs sans les désélectionner, et valider applique quand même "tout" en arrière-
+    // plan (il fallait cliquer "Tout désélectionner" en plus pour ne garder que le résultat).
+    const query = q.trim().toLowerCase();
+    if (!query) {
+      setSelectionLocale(new Set(valeurs));
+      return;
+    }
+    setSelectionLocale(new Set(valeurs.filter((v) => v.toLowerCase().includes(query))));
+  }
+
   function toggleValeur(v: string) {
     setSelectionLocale((prev) => {
       const next = new Set(prev);
@@ -96,7 +110,7 @@ export default function ColumnFilterMenu({ valeurs, selection, onApply, triActif
         <input
           autoFocus
           value={recherche}
-          onChange={(e) => setRecherche(e.target.value)}
+          onChange={(e) => changerRecherche(e.target.value)}
           placeholder="Rechercher…"
           style={{
             width: "100%",

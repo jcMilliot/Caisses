@@ -1,7 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { toBlob } from "html-to-image";
 import type { AfficheCaisse } from "../domain/affiches";
-import { rendreAfficheHtml, rendreAfficheTexte } from "../domain/affiches";
+import { rendreAfficheHtml, rendreAfficheTexte, texteIntroductionMail, MENTION_SOUDURE_4C, couleurAffiche, libelleCategorie } from "../domain/affiches";
+import { estCaisse4C } from "../domain/demandeOptions";
 import logoUrl from "../assets/logo.png";
 
 interface Props {
@@ -43,6 +44,16 @@ function chargerLogoDataUrl(): Promise<string> {
   return logoDataUrlPromise;
 }
 
+// html-to-image capture le DOM tel quel — si une <img> (le logo, injecté en base64 via
+// dangerouslySetInnerHTML) n'a pas fini de décoder au moment du snapshot, le rendu est vide ou
+// l'appel échoue. decode() attend que chaque image soit prête à être peinte.
+async function attendreImagesDecodees(conteneur: HTMLElement): Promise<void> {
+  const images = Array.from(conteneur.querySelectorAll("img"));
+  await Promise.all(
+    images.map((img) => (img.complete ? Promise.resolve() : img.decode().catch(() => undefined))),
+  );
+}
+
 const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function AfficheCaisseCard(
   { affiche, trigrammesConnus, trigrammeParDefaut, selectionnee, onToggleSelection, onContrePlaqueChange, onMarqueeEnvoyee, readOnly },
   ref,
@@ -66,24 +77,50 @@ const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function Af
   useImperativeHandle(ref, () => ({
     capturerPng: async () => {
       if (!apercuRef.current) return null;
-      try {
-        return await toBlob(apercuRef.current, { pixelRatio: 2 });
-      } catch {
-        return null;
+      await attendreImagesDecodees(apercuRef.current);
+      // html-to-image échoue parfois silencieusement (ou produit un blob null) au tout premier
+      // appel après montage même une fois les images décodées — on retente une fois avant
+      // d'abandonner, plutôt que de renvoyer null direct et forcer l'utilisateur à recliquer
+      // "Copier" pour que ça marche.
+      for (let tentative = 0; tentative < 2; tentative++) {
+        try {
+          const blob = await toBlob(apercuRef.current, { pixelRatio: 1.2 });
+          if (blob) return blob;
+        } catch {
+          // on retente ci-dessous, ou on abandonne si c'était la dernière tentative
+        }
       }
+      return null;
     },
   }));
 
   async function handleCopier() {
-    const texte = rendreAfficheTexte(affiche, demandeur, dateDemande);
+    const intro = texteIntroductionMail(1);
+    const est4C = estCaisse4C(affiche.typeEnvoiCaisse);
+    // Une seule caisse copiée : s'il s'agit d'une 4C, la mention suit directement l'intro
+    // puisqu'il n'y a pas d'affiche d'un autre type avant elle.
+    const texte = [intro, ...(est4C ? [MENTION_SOUDURE_4C] : []), rendreAfficheTexte(affiche, demandeur, dateDemande)].join("\n\n");
 
     if (apercuRef.current) {
       try {
-        const blob = await toBlob(apercuRef.current, { pixelRatio: 2 });
+        await attendreImagesDecodees(apercuRef.current);
+        const blob = await toBlob(apercuRef.current, { pixelRatio: 1.2 });
         if (blob) {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          const versHtml = (t: string) =>
+            t
+              .split("\n")
+              .map((ligne) => `<div>${ligne || "&nbsp;"}</div>`)
+              .join("");
+          const html = `${versHtml(intro)}${est4C ? versHtml(MENTION_SOUDURE_4C) : ""}<img src="${dataUrl}" alt="" style="display:block;max-width:100%;margin-top:12px;" />`;
           await navigator.clipboard.write([
             new ClipboardItem({
-              "image/png": blob,
+              "text/html": new Blob([html], { type: "text/html" }),
               "text/plain": new Blob([texte], { type: "text/plain" }),
             }),
           ]);
@@ -101,6 +138,8 @@ const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function Af
     setTimeout(() => setCopie(false), 2000);
   }
 
+  const couleur = couleurAffiche(affiche.typeEnvoiCaisse);
+
   return (
     <div
       className="panel"
@@ -111,6 +150,7 @@ const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function Af
         gap: 28,
         flexWrap: "wrap",
         borderRadius: 16,
+        borderLeft: `5px solid ${couleur}`,
         outline: selectionnee ? "2px solid var(--accent)" : undefined,
         outlineOffset: -2,
       }}
@@ -122,6 +162,21 @@ const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function Af
             {affiche.affaire}
           </span>
         </label>
+
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 11,
+            fontWeight: 700,
+            color: "var(--text-muted)",
+            width: "fit-content",
+          }}
+        >
+          <span style={{ width: 10, height: 10, borderRadius: "50%", background: couleur, border: "1px solid rgba(0,0,0,0.12)" }} />
+          {libelleCategorie(affiche.typeEnvoiCaisse)}
+        </span>
 
         <div>
           <label style={labelStyle}>Demandeur</label>
@@ -174,7 +229,7 @@ const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function Af
       <div style={{ flex: 1, minWidth: 380, overflowX: "auto" }}>
         <div
           ref={apercuRef}
-          style={{ display: "inline-block", minWidth: 480 }}
+          style={{ display: "inline-block" }}
           dangerouslySetInnerHTML={{ __html: rendreAfficheHtml(affiche, demandeur, dateDemande, logoDataUrl) }}
         />
       </div>

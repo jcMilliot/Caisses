@@ -1,7 +1,7 @@
 // Valeurs prédéfinies proposées dans les champs de la section Demandes. Chaque liste inclut
 // une option "Autre" en saisie libre côté UI (pas ici — voir SelectOuAutre).
 
-import type { Demande } from "./types";
+import type { Demande, DemandeCaisse } from "./types";
 
 export const TYPES_ENVOI_CAISSE = ["STANDARD", "STANDARD (4B)", "STANDARD (4C)"];
 
@@ -35,6 +35,26 @@ export function necessiteNimp15(typeEnvoiCaisse: string): boolean {
 export const AVERTISSEMENT_MOUSSE_4C =
   "Attention, mousse présente, prévoir 5cm de plus sur les côtés et sur la hauteur.";
 
+// Mesures max pour une caisse 4C : 2.22 × 0.80 × 0.80 m. La longueur (2.22 m) est une limite
+// informative — dépassable si besoin — contrairement à largeur/hauteur qui restent des maximums
+// physiques stricts. Dans les deux cas on se contente d'avertir (pas de blocage de saisie).
+export const MESURES_MAX_4C_MM = { longueur: 2220, largeur: 800, hauteur: 800 };
+
+export function depassementMesuresMax4C(
+  typeEnvoiCaisse: string,
+  longueurMm: number,
+  largeurMm: number,
+  hauteurMm: number,
+): string | undefined {
+  if (!estCaisse4C(typeEnvoiCaisse)) return undefined;
+  const depassements: string[] = [];
+  if (longueurMm > MESURES_MAX_4C_MM.longueur) depassements.push("longueur");
+  if (largeurMm > MESURES_MAX_4C_MM.largeur) depassements.push("largeur");
+  if (hauteurMm > MESURES_MAX_4C_MM.hauteur) depassements.push("hauteur");
+  if (depassements.length === 0) return undefined;
+  return `Mesure(s) au-delà du maximum habituel pour une caisse 4C (2.22 × 0.80 × 0.80 m) : ${depassements.join(", ")}.`;
+}
+
 // Le contre-plaqué est systématiquement requis pour STANDARD et 4B ; le 4C (housse soudée) ne
 // l'impose pas automatiquement, donc reste décoché par défaut et à la discrétion de l'utilisateur.
 export function contrePlaqueParDefaut(typeEnvoiCaisse: string): boolean {
@@ -48,4 +68,14 @@ export function contrePlaqueParDefaut(typeEnvoiCaisse: string): boolean {
 export function estDemandeValidee(d: Demande): boolean {
   const obs = d.observations.trim().toLowerCase();
   return d.validee || obs.includes("livrée") || obs.includes("livree") || obs.includes("rapatriée") || obs.includes("rapatriee");
+}
+
+// Une sous-caisse (demande_caisse) n'a pas sa propre colonne `validee` — elle est considérée
+// validée soit par sa propre observation (même convention que la demande mère), soit parce que
+// la demande mère qui la porte a été validée (cascade : valider la mère vide aussi les affiches
+// des filles, cf. DemandesList.handleValiderCascade).
+export function estDemandeCaisseValidee(c: DemandeCaisse, demandeMere: Demande | undefined): boolean {
+  const obs = c.observations.trim().toLowerCase();
+  const obsValidee = obs.includes("livrée") || obs.includes("livree") || obs.includes("rapatriée") || obs.includes("rapatriee");
+  return obsValidee || (demandeMere ? estDemandeValidee(demandeMere) : false);
 }
