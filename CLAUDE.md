@@ -68,17 +68,27 @@ de cache qu'un stockage dénormalisé introduirait.
 
 ```
 src-tauri/src/
-  main.rs        → point d'entrée, appelle lib.rs::run()
-  lib.rs         → setup Tauri, enregistrement des commandes, init DB au démarrage
-  db.rs          → ouverture connexion SQLite + runner de migrations versionnées au démarrage
-  models.rs      → structs serde partagées (Affaire, Caisse, Article, NewArticle, Demande, NewDemande)
+  main.rs           → point d'entrée, appelle lib.rs::run()
+  lib.rs            → setup Tauri, enregistrement des commandes, migration one-shot de config, init DB
+  db.rs             → ouverture connexion SQLite + runner de migrations versionnées au démarrage
+  config.rs         → db-location.json (dossier BDD) + migrate_from (récup depuis ancien identifiant)
+  user_config.rs    → user-identity.json (trigramme) + migrate_from
+  models.rs         → structs serde partagées (Affaire, Caisse, Article, NewArticle, Demande,
+                      NewDemande, CaisseStock, DemandeCaisse, section_lock…)
   commands/
-    affaires.rs  → CRUD affaire
-    caisses.rs   → CRUD caisse
-    articles.rs  → CRUD article + bulk_create_articles (collage Excel) + assign_articles
-    demandes.rs  → CRUD demande + bulk_create_demandes (collage Excel), table indépendante
-                   (pas de FK vers affaire — le champ `affaire` est juste un texte libre,
-                   la section Demandes ne référence pas les affaires de Simulations)
+    affaires.rs       → CRUD affaire
+    caisses.rs        → CRUD caisse (+ type_envoi_caisse, contre_plaque, link_caisse_demande_caisse)
+    articles.rs       → CRUD article + bulk_create_articles (collage Excel) + assign_articles
+    demandes.rs       → CRUD demande + bulk_create_demandes (collage Excel) + set_demande_validee,
+                        table indépendante (pas de FK vers affaire — `affaire` = texte libre)
+    demande_caisse.rs → CRUD sous-caisses d'une demande (multi-caisses par demande)
+    caisse_stock.rs   → CRUD caisses en stock + transfer + set_caisse_stock_validee
+    locks.rs          → verrouillage applicatif multi-poste (acquire/release/heartbeat/
+                        request_pen/respond_pen_request/list_locks + require_lock)
+    options_liste.rs  → valeurs personnalisées ajoutées aux listes déroulantes Demandes
+                        (moteurs / module_lineaire / terminaux) — list/create/delete
+    setup.rs          → get_db_status / choose_db_folder / set_db_folder / init_db
+    user.rs           → get_user_status / set_trigramme
 ```
 
 **Système de migrations versionnées** (`db.rs`) : chaque fichier `migrations/000N_*.sql` est
@@ -90,6 +100,10 @@ fois chacune. **Pour toute évolution de schéma : créer un nouveau fichier
 migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.** Ce système a
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
+
+État au 2026-08-31 : migrations `0001` à `0016` (dernière : `0016_add_option_liste.sql`).
+Le dossier `migrations/` est **à la racine du repo** (pas sous `src-tauri/`) — `db.rs` y accède
+via `include_str!("../../migrations/…")`.
 
 **Convention de nommage des paramètres de commande** : Tauri convertit automatiquement les noms
 de paramètres Rust `snake_case` en `camelCase` côté JS (`seuil_defaut` → `seuilDefaut`). Ça ne
@@ -106,6 +120,9 @@ caisse (id, affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm,
         seuil_pct REAL NULL,  -- NULL = hérite du seuil_defaut de l'affaire
         couleur TEXT,         -- hex pastel, attribuée auto à la création (palette round-robin),
                                -- modifiable via un sélecteur visuel dans CaisseCard
+        type_envoi_caisse TEXT,       -- ajouté 0014 (standard / 4B / 4C…)
+        demande_caisse_id INTEGER NULL,  -- 0014, lien vers une sous-caisse de demande
+        caisse_stock_id   INTEGER NULL,  -- 0011, lien vers une caisse en stock
         ordre)
 
 article (id, affaire_id, caisse_id NULL,  -- NULL = non assigné, ON DELETE SET NULL
@@ -122,11 +139,35 @@ demande (id,  -- table indépendante, pas de FK — section "Demandes" du menu p
          date_picking, date_demandee_s2c,        -- dates saisies en texte libre (pas de type DATE)
          moteurs, module_lineaire, terminaux, traitement, informations_supp,
          cde_passee_affaire BOOL, cde_passee_achat_stock BOOL,
+         validee BOOL,          -- 0005, demande validée (mécanisme "Livré/Rapatriée")
+         contre_plaque BOOL,    -- 0015
+         caisse_stock_id INTEGER NULL,  -- 0011
          observations, ordre)
+
+demande_caisse (id, demande_id NOT NULL REFERENCES demande ON DELETE CASCADE,  -- 0008
+         -- sous-caisses d'une demande (multi-caisses par demande) ; mêmes colonnes que `demande`
+         nom, type_envoi_caisse, type_ouverture, stock, traitement,
+         date_picking, date_demandee_s2c, quantite,
+         longueur_mm, largeur_mm, hauteur_mm, poids_kg,
+         moteurs, module_lineaire, informations_supp, observations,
+         cde_passee_affaire BOOL, cde_passee_achat_stock BOOL, contre_plaque BOOL,
+         caisse_stock_id INTEGER NULL, ordre)
+
+caisse_stock (id, nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observations,  -- 0006
+         affaire_id INTEGER NULL REFERENCES affaire ON DELETE SET NULL,
+         validee BOOL,                    -- 0012
+         demandeur, demande_le, demande_statut,  -- 0012, 'aucune'|'en_attente'|… (réaffectation)
+         demande_affaire_cible_id INTEGER NULL, demande_cible_id INTEGER NULL,  -- 0013
+         ordre, date_creation)
 
 section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" | "affaire:{id}"
               titulaire, acquis_le, dernier_battement,  -- trigramme + horodatages
               demandeur NULL, demande_le NULL, demande_statut)  -- 'aucune'|'en_attente'|'refusee'
+
+option_liste (id, liste TEXT, valeur TEXT, ordre, UNIQUE(liste, valeur))  -- 0016
+         -- valeurs ajoutées par l'utilisateur aux listes déroulantes de la section Demandes ;
+         -- `liste` ∈ 'moteurs' | 'module_lineaire' | 'terminaux'. Les valeurs de base restent
+         -- codées en dur (src/domain/demandeOptions.ts), la table ne porte que les ajouts.
 ```
 
 Note sur `section_lock` (verrouillage applicatif multi-poste, cf. journal 2026-07-30) : table
@@ -504,8 +545,11 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
     (`domain/affiches.ts`) exclut les sous-caisses validées de la même façon que la mère, et
     `DemandesTable` colore leur ligne en vert pastel comme la mère.
   - **Code couleur des affiches** : pastille + bordure gauche colorée sur chaque carte
-    (`AfficheCaisseCard`), reprenant la couleur du rendu HTML de l'affiche (bleu standard / violet
-    4B / rose 4C, `couleurAffiche()`), avec libellé `libelleCategorie()`.
+    (`AfficheCaisseCard`), reprenant la couleur du rendu HTML de l'affiche (`couleurAffiche()`),
+    avec libellé `libelleCategorie()`. Couleurs fixées avec l'utilisateur le 2026-08-31
+    (`COULEUR_AFFICHE` dans `domain/affiches.ts`) : Standard `#99ccff`, 4B `#dbf9e7`, 4C
+    `#a7e0e0` ; `accentAffiche()` (bordure basse de l'en-tête HTML) réaligné sur des teintes plus
+    soutenues des mêmes couleurs.
   - **Icône déroulant multi-caisses grossie** : chevron `▸`/`▾` dans `DemandesTable` passé de 11px
     à 18px avec plus de padding cliquable.
   - **Taille des affiches réduite au collage** : gabarit HTML resserré (`max-width` 620px→440px)
@@ -546,18 +590,85 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
     la frappe (`changerRecherche()`), sans devoir cliquer "Tout désélectionner" en plus avant de
     valider.
 
+- **Section Demandes — édition inline, sous-caisses en brouillon, listes déroulantes, options
+  personnalisées** — implémenté le 2026-08-31 (`DemandesTable.tsx`, `DemandesList.tsx`,
+  `App.tsx`, back `commands/options_liste.rs` + migration `0016`) :
+  - **Triangle 4C** : le ⚠ de `depassementMesuresMax4C` s'affiche en rouge (`--danger-text`,
+    ~+2px) au lieu d'orange, pour le distinguer de l'avertissement mousse 4C.
+  - **Pop-up « quitter sans enregistrer ? »** : `DemandesList` remonte `modifie` à `App` via
+    `onDirtyChange` ; `App.confirmerSortieDemandes()` intercepte navigation menu / « ← Accueil »
+    / « Simuler l'affaire » quand des modifs sont en cours (le garde `beforeunload` natif reste).
+  - **Option « Tableau inversé »** (menu Options, `localStorage` `caisses:inverse:demandes`) :
+    anciens en haut / récents en bas + scroll auto en bas à l'activation ; n'affecte que
+    l'ordre d'affichage (la liste triée est juste retournée).
+  - **Sous-caisses créables avant enregistrement** : sur une demande brouillon (`id < 0`),
+    « Créer une nouvelle caisse » ajoute une sous-caisse **brouillon** (id temporaire négatif,
+    `demande_id` = id temporaire de la mère) ; `handleEnregistrer` les persiste après
+    `bulkCreate` en reliant chaque id temporaire à l'id réel (mapping par ordre). Annuler /
+    supprimer la mère retire ses sous-caisses brouillon. Le flag `modifie` en tient compte.
+  - **Listes déroulantes à l'édition inline** (`EditableCellSelect`) : clic sur une cellule de
+    `type_envoi_caisse` / `type_ouverture` / `moteurs` / `module_lineaire` / `terminaux` /
+    `traitement` (ligne mère) ou leurs équivalents sur sous-ligne → liste des choix + « Autre… »
+    (bascule en saisie libre). La valeur courante hors-liste est toujours proposée.
+  - **Ajout de valeurs aux listes** : bouton « Ajouter une référence » en tête de la section
+    (`AjouterOptionDialog`) → choix de la colonne (Moteurs / Module linéaire / Terminaux) + nom.
+    Stocké en base (`option_liste`, `optionsListeApi`), fusionné aux valeurs de base par
+    `optionsListe()` (`demandeOptions.ts`). `AjouterDemandesDialog` n'a pas été mis à jour pour
+    ces options (ne montre que les valeurs de base — l'ajout se fait à l'édition inline).
+  - **Menu contextuel recadré** (`positionMenuContextuel`) : ne déborde plus en bas/droite de
+    l'écran ; + 80px de marge sous le tableau.
+
+- **Section Simulations — dimensions max par caisse, bandeau sticky, ergonomie tableau** —
+  implémenté le 2026-08-31 (`ArticlesTable.tsx`, `AffaireDetail.tsx`, `CaisseCard.tsx`,
+  `domain/calculs.ts` + `types.ts`) :
+  - **Surlignage « dimension max » de l'affaire** (`idArticleMaxParChamp`, inchangé quant à la
+    portée : max sur *toute l'affaire*, pas par caisse) : la cellule max est désormais rendue
+    avec un badge plein `--accent` / texte blanc + gras (au lieu du léger fond `--accent-soft`),
+    lisible même sur une ligne colorée.
+  - **Dim. max articles sur la `CaisseCard`** : `CaisseCalculee` porte `dim1MaxMm/dim2MaxMm/
+    dim3MaxMm` (`calculerCaisse`, calculés depuis les articles assignés), affichés en ligne
+    « Dim. max articles (L×l×H) » — recalculés à chaque assignation/édition via `useAffaire`.
+    C'est là (et pas dans le tableau) qu'on met en évidence le max par caisse.
+  - **Lignes teintées = couleur exacte de la caisse** : une ligne d'article assigné prend
+    `caisseAssignee.couleur` telle quelle (avant : `color-mix(... 55%, white)`).
+  - **En-têtes de tableau sticky** : le conteneur d'articles (`AffaireDetail`) passe à
+    `maxHeight: calc(100vh - 190px)` pour redevenir une vraie zone de scroll interne — sans ça
+    c'était la page qui scrollait et le `<thead>` sticky (`top: 0`, `zIndex: 2`) sortait du
+    viewport avec elle.
+  - **Bandeau récap sticky** : `RecapAffaireBandeau` en `position: sticky; top: 46` (sous la
+    navbar) ; panneau caisses de droite à `top: 120` / `maxHeight: calc(100vh - 140px)`.
+  - **Tableau élargi** : `maxWidth` du conteneur `AffaireDetail` 1400 → 1600.
+  - **Suffixe « (mm) »** sur les en-têtes `Dim1 (mm)` / `Dim2 (mm)` / `Dim3 (mm)`.
+
+- **Détection de nom d'affaire déjà existant** — implémenté le 2026-08-31
+  (`domain/demandeOptions.ts` : `memeNomAffaire()` comparaison **exacte** trim + casse —
+  `UUSPM01D` ≠ `UUSPM010`, les variantes portent toujours un suffixe assumé ;
+  `demandesActivesPourAffaire()` = demandes de même nom **non validées**) :
+  - Demandes : `DemandesList.confirmerAffairesDejaPresentes()` avertit avant d'ajouter des
+    lignes (`AjouterDemandesDialog`) ou de coller depuis Excel (`PasteImportZoneDemandes`) si
+    une demande **non validée** porte déjà le même nom. L'utilisateur confirme → ligne
+    distincte ajoutée ; annule → dialogue/collage conservé (les deux composants renvoient
+    `false` pour rester ouverts).
+  - Simulations : `AffairesList.handleCreate()` avertit si une affaire du même nom existe déjà.
+  - `AffaireDetail` : la synchro « ajouter/répercuter une caisse dans la demande » ne se
+    déclenche plus si la demande de même nom est **validée** (close) — `demandeParente` filtre
+    sur `!estDemandeValidee`.
+
 ### À faire
 
-- **Détection de nom d'affaire déjà existant** (idée notée le 2026-07-31) : à la saisie d'une
-  ligne (manuelle ou collage Excel) avec un nom d'affaire (colonne `AFFAIRE` de `demande`, ou nom
-  d'affaire dans Simulations) qui correspond à une affaire déjà existante, avertir l'utilisateur
-  ("cette affaire existe déjà, ajouter quand même ?") plutôt que de laisser passer silencieusement.
-  Si l'utilisateur confirme, marquer/indiquer qu'il s'agit bien de la même affaire mais d'une
-  ligne différente (convention déjà utilisée manuellement par l'utilisateur, ex. suffixe
-  `UUSPM01D` pour une variante de `UUSPM01`). Portée : Demandes (texte libre, pas de contrainte
-  d'unicité) et création d'affaire dans Simulations. Pas encore implémenté — à concevoir
-  (comparaison exacte vs approximative du nom, où stocker l'indication de "même affaire, autre
-  ligne").
+*Section Demandes (`DemandesList` / `DemandesTable`)*
+
+- **Outil « Gérer les références connues »** : bouton en tête de section qui ouvre un
+  gestionnaire des valeurs des listes déroulantes du tableau (colonnes Moteurs / Module
+  linéaire / Terminaux, table `option_liste`). Il doit reprendre/absorber le bouton
+  « Ajouter une référence » actuel (`AjouterOptionDialog`) et permettre en plus : **modifier**
+  une référence existante (renommer une valeur), **supprimer une ou plusieurs** références en
+  une fois (sélection multiple). À décider : le renommage doit-il répercuter la nouvelle valeur
+  sur les lignes de `demande` / `demande_caisse` qui portent l'ancienne (probablement oui,
+  sinon la valeur renommée disparaît des listes mais reste orpheline dans les lignes) → sans
+  doute une commande Rust `rename_option_liste` qui fait aussi l'`UPDATE` des colonnes
+  concernées. Portée : ne concerne que les valeurs *personnalisées* (les valeurs de base
+  codées en dur dans `demandeOptions.ts` ne sont ni modifiables ni supprimables).
 
 *Fiabilité et infrastructure*
 

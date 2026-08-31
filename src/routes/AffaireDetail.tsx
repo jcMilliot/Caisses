@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAffaire } from "../hooks/useAffaire";
 import { calculerRecapAffaire } from "../domain/calculs";
-import { estCaisse4C, contrePlaqueParDefaut } from "../domain/demandeOptions";
+import { estCaisse4C, contrePlaqueParDefaut, estDemandeValidee, memeNomAffaire } from "../domain/demandeOptions";
 import type { Article, Demande, DemandeCaisse, NewDemandeCaisse } from "../domain/types";
 import { usePointerDrag } from "../hooks/usePointerDrag";
 import { useSectionLock } from "../hooks/useSectionLock";
@@ -57,7 +57,12 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
     demandeCaisseApi.listAll().then(setDemandeCaissesLiees);
     demandesApi
       .list()
-      .then((toutes) => toutes.find((d) => d.affaire.trim().toLowerCase() === affaire?.nom.trim().toLowerCase()) ?? null)
+      .then((toutes) => {
+        // On ne propose la synchro « ajouter/répercuter dans la demande » que si une demande
+        // NON validée porte ce nom d'affaire — une demande déjà validée est close, on n'y touche pas.
+        if (!affaire) return null;
+        return toutes.find((d) => memeNomAffaire(d.affaire, affaire.nom) && !estDemandeValidee(d)) ?? null;
+      })
       .then(setDemandeParente);
   }, [affaire?.nom]);
 
@@ -149,7 +154,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
     <section
       style={
         caissesPosition === "droite"
-          ? { width: 300, flexShrink: 0, position: "sticky", top: 24, maxHeight: "calc(100vh - 48px)", overflowY: "auto" }
+          ? { width: 300, flexShrink: 0, position: "sticky", top: 120, maxHeight: "calc(100vh - 140px)", overflowY: "auto" }
           : { marginBottom: 28 }
       }
     >
@@ -295,7 +300,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
         </div>
       </div>
 
-      <div ref={conteneurArticlesRef} className="panel" style={{ padding: "4px 12px", overflow: "auto", maxHeight: "calc(100vh - 48px)" }}>
+      <div ref={conteneurArticlesRef} className="panel" style={{ padding: "0 12px", overflow: "auto", maxHeight: "calc(100vh - 190px)" }}>
         <ArticlesTable
           affaireId={affaireId}
           articles={articles}
@@ -314,7 +319,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
   );
 
   return (
-    <div style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 24px 60px" }}>
+    <div style={{ maxWidth: 1600, margin: "0 auto", padding: "28px 24px 60px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24, paddingBottom: 18, borderBottom: "1px solid var(--border)" }}>
         <button className="btn btn-sm" onClick={onBack}>
           ← Affaires
@@ -426,6 +431,11 @@ function RecapAffaireBandeau({ articles, aUneCaisse4C }: { articles: Article[]; 
         border: "1px solid var(--border)",
         borderRadius: "var(--radius)",
         fontSize: 13,
+        // Se cale juste sous la barre de navigation principale (sticky, ~46px) pendant le scroll.
+        position: "sticky",
+        top: 46,
+        zIndex: 20,
+        flexWrap: "wrap",
       }}
     >
       <RecapValeur label="Longueur max" valeur={`${(recap.dim1MaxMm / 1000).toFixed(2)} m`} />

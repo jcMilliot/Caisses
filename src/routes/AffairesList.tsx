@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { affairesApi } from "../data/affaires";
 import { locksApi } from "../data/locks";
-import { confirmerSuppression } from "../data/confirm";
+import { confirmerSuppression, confirmerAction } from "../data/confirm";
+import { memeNomAffaire } from "../domain/demandeOptions";
 import type { Affaire, SectionLock } from "../domain/types";
 
 interface Props {
@@ -42,6 +43,13 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!nom.trim()) return;
+    if (affaires.some((a) => memeNomAffaire(a.nom, nom))) {
+      const ok = await confirmerAction(
+        `Une affaire « ${nom.trim()} » existe déjà. En créer une seconde du même nom ?`,
+        "Affaire déjà existante",
+      );
+      if (!ok) return;
+    }
     const affaire = await affairesApi.create(nom.trim(), seuilDefaut);
     setNom("");
     setSeuilDefaut(70);

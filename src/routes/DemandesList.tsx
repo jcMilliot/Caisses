@@ -4,20 +4,58 @@ import { demandeCaisseApi } from "../data/demandeCaisse";
 import { caisseStockApi } from "../data/caisseStock";
 import { affairesApi } from "../data/affaires";
 import { caissesApi } from "../data/caisses";
+import { optionsListeApi } from "../data/optionsListe";
 import DemandesTable from "../components/DemandesTable";
 import PasteImportZoneDemandes from "../components/PasteImportZoneDemandes";
 import AjouterDemandesDialog from "../components/AjouterDemandesDialog";
+import AjouterOptionDialog from "../components/AjouterOptionDialog";
 import LockBanner from "../components/LockBanner";
 import { useSectionLock } from "../hooks/useSectionLock";
 import { confirmerSuppression, confirmerAction } from "../data/confirm";
 import { estArCaiss } from "../domain/caisseStock";
-import { contrePlaqueParDefaut } from "../domain/demandeOptions";
-import type { Demande, NewDemande, DemandeCaisse, NewDemandeCaisse, CaisseStock } from "../domain/types";
+import { contrePlaqueParDefaut, demandesActivesPourAffaire } from "../domain/demandeOptions";
+import type { Demande, NewDemande, DemandeCaisse, NewDemandeCaisse, CaisseStock, OptionListe, ListeOption } from "../domain/types";
 
 let prochainIdTemporaire = -1;
 
 function versDemande(n: NewDemande, id: number): Demande {
   return { ...n, id, validee: false, ordre: 0 };
+}
+
+// Sous-caisse brouillon (créée sur une demande pas encore enregistrée) : id temporaire négatif,
+// `demande_id` = l'id temporaire de sa mère. Résolue en base au moment de l'enregistrement, une
+// fois la mère créée et son vrai id connu.
+function nouvelleSousCaisseBrouillon(demande: Demande, id: number): DemandeCaisse {
+  return {
+    id,
+    demande_id: demande.id,
+    nom: demande.affaire,
+    type_envoi_caisse: demande.type_envoi_caisse,
+    type_ouverture: "",
+    stock: "",
+    date_picking: demande.date_picking,
+    date_demandee_s2c: demande.date_demandee_s2c,
+    traitement: demande.traitement,
+    quantite: 1,
+    moteurs: "",
+    module_lineaire: "",
+    informations_supp: "",
+    observations: "",
+    cde_passee_affaire: demande.cde_passee_affaire,
+    cde_passee_achat_stock: demande.cde_passee_achat_stock,
+    longueur_mm: 0,
+    largeur_mm: 0,
+    hauteur_mm: 0,
+    poids_kg: 0,
+    contre_plaque: contrePlaqueParDefaut(demande.type_envoi_caisse),
+    ordre: 0,
+    caisse_stock_id: null,
+  };
+}
+
+function sousCaisseSansId(c: DemandeCaisse, demandeIdReel: number): NewDemandeCaisse {
+  const { id: _id, ordre: _ordre, ...base } = c;
+  return { ...base, demande_id: demandeIdReel };
 }
 
 function sansId(d: Demande, patch: Partial<Demande>): NewDemande {
@@ -28,9 +66,12 @@ function sansId(d: Demande, patch: Partial<Demande>): NewDemande {
 interface Props {
   onSimulerAffaire: (demande: Demande) => void;
   trigramme: string;
+  // Remonte l'état "modifications non enregistrées" à App, qui s'en sert pour demander
+  // confirmation avant de quitter la section (menu, bouton Accueil, « Simuler l'affaire »).
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
+export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChange }: Props) {
   const lock = useSectionLock("demandes", trigramme);
   const readOnly = lock.status !== "held";
   const [demandes, setDemandes] = useState<Demande[]>([]);
@@ -39,27 +80,47 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
   // édition, pour éviter les allers-retours réseau à chaque frappe/coche).
   const [brouillon, setBrouillon] = useState<Demande[]>([]);
   const [demandeCaisses, setDemandeCaisses] = useState<DemandeCaisse[]>([]);
+  // Référence serveur des sous-caisses, pour détecter les sous-caisses brouillon (id < 0) créées
+  // sur une demande pas encore enregistrée — les seules à persister dans handleEnregistrer.
+  const [demandeCaissesServeur, setDemandeCaissesServeur] = useState<DemandeCaisse[]>([]);
   const [caissesStock, setCaissesStock] = useState<CaisseStock[]>([]);
+  const [optionsPersonnalisees, setOptionsPersonnalisees] = useState<OptionListe[]>([]);
   const [lignesEtendues, setLignesEtendues] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [enregistrement, setEnregistrement] = useState(false);
   const [importOuvert, setImportOuvert] = useState(false);
   const [ajoutOuvert, setAjoutOuvert] = useState(false);
+  const [ajoutOptionOuvert, setAjoutOptionOuvert] = useState(false);
   const brouillonRef = useRef(brouillon);
   brouillonRef.current = brouillon;
   const demandesRef = useRef(demandes);
   demandesRef.current = demandes;
 
-  const modifie = JSON.stringify(brouillon) !== JSON.stringify(demandes);
+  const sousCaissesBrouillon = demandeCaisses.some((c) => c.id < 0);
+  const modifie = JSON.stringify(brouillon) !== JSON.stringify(demandes) || sousCaissesBrouillon;
+  const modifieRef = useRef(modifie);
+  modifieRef.current = modifie;
+
+  useEffect(() => {
+    onDirtyChange?.(modifie);
+    return () => onDirtyChange?.(false);
+  }, [modifie, onDirtyChange]);
 
   async function reload() {
     setLoading(true);
     try {
-      const [d, dc, cs] = await Promise.all([demandesApi.list(), demandeCaisseApi.listAll(), caisseStockApi.list()]);
+      const [d, dc, cs, opts] = await Promise.all([
+        demandesApi.list(),
+        demandeCaisseApi.listAll(),
+        caisseStockApi.list(),
+        optionsListeApi.list(),
+      ]);
       setDemandes(d);
       setBrouillon(d);
       setDemandeCaisses(dc);
+      setDemandeCaissesServeur(dc);
       setCaissesStock(cs);
+      setOptionsPersonnalisees(opts);
     } finally {
       setLoading(false);
     }
@@ -71,7 +132,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
 
   useEffect(() => {
     function onBeforeUnload(e: BeforeUnloadEvent) {
-      if (JSON.stringify(brouillonRef.current) !== JSON.stringify(demandesRef.current)) {
+      if (modifieRef.current) {
         e.preventDefault();
         e.returnValue = "";
       }
@@ -80,14 +141,40 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
-  async function handleImport(nouvelles: NewDemande[]) {
+  // Vérifie si l'une des nouvelles lignes porte un nom d'affaire déjà présent (non validé) dans
+  // le tableau. Si oui, demande confirmation. Compare aussi contre le brouillon en cours pour
+  // les ajouts multiples successifs. Retourne false si l'utilisateur annule.
+  async function confirmerAffairesDejaPresentes(nouvelles: NewDemande[]): Promise<boolean> {
+    const existantes = [...demandes, ...brouillonRef.current];
+    const doublons = [
+      ...new Set(
+        nouvelles
+          .map((n) => n.affaire.trim())
+          .filter((nom) => nom !== "" && demandesActivesPourAffaire(nom, existantes).length > 0),
+      ),
+    ];
+    if (doublons.length === 0) return true;
+    const liste = doublons.map((n) => `« ${n} »`).join(", ");
+    return confirmerAction(
+      doublons.length === 1
+        ? `Une demande non validée existe déjà pour l'affaire ${liste}. L'ajouter quand même comme ligne distincte ?`
+        : `Des demandes non validées existent déjà pour les affaires : ${liste}. Les ajouter quand même comme lignes distinctes ?`,
+      "Affaire déjà présente",
+    );
+  }
+
+  async function handleImport(nouvelles: NewDemande[]): Promise<boolean> {
+    if (!(await confirmerAffairesDejaPresentes(nouvelles))) return false;
     // Le collage Excel reste un import immédiat (gros volume, distinct des éditions manuelles).
     await demandesApi.bulkCreate(nouvelles, trigramme);
     await reload();
+    return true;
   }
 
-  function handleAjouterLignes(nouvelles: NewDemande[]) {
+  async function handleAjouterLignes(nouvelles: NewDemande[]): Promise<boolean> {
+    if (!(await confirmerAffairesDejaPresentes(nouvelles))) return false;
     setBrouillon((prev) => [...prev, ...nouvelles.map((n) => versDemande(n, prochainIdTemporaire--))]);
+    return true;
   }
 
   function handleEditLocal(id: number, patch: Partial<Demande>) {
@@ -118,8 +205,10 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
   async function handleDelete(id: number, affaire: string) {
     if (!(await confirmerSuppression(`Supprimer la demande « ${affaire} » ?`))) return;
     if (id < 0) {
-      // Ligne ajoutée localement, pas encore en base : la retirer suffit.
+      // Ligne ajoutée localement, pas encore en base : la retirer suffit, avec ses éventuelles
+      // sous-caisses brouillon.
       setBrouillon((prev) => prev.filter((d) => d.id !== id));
+      setDemandeCaisses((prev) => prev.filter((c) => c.demande_id !== id));
       return;
     }
     await supprimerCaisseLieeSiConfirmee(affaire, null);
@@ -150,29 +239,14 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
   }
 
   async function handleCreerDemandeCaisse(demande: Demande) {
-    const nouvelle: NewDemandeCaisse = {
-      demande_id: demande.id,
-      nom: demande.affaire,
-      type_envoi_caisse: demande.type_envoi_caisse,
-      type_ouverture: "",
-      stock: "",
-      date_picking: demande.date_picking,
-      date_demandee_s2c: demande.date_demandee_s2c,
-      traitement: demande.traitement,
-      quantite: 1,
-      moteurs: "",
-      module_lineaire: "",
-      informations_supp: "",
-      observations: "",
-      cde_passee_affaire: demande.cde_passee_affaire,
-      cde_passee_achat_stock: demande.cde_passee_achat_stock,
-      longueur_mm: 0,
-      largeur_mm: 0,
-      hauteur_mm: 0,
-      poids_kg: 0,
-      contre_plaque: contrePlaqueParDefaut(demande.type_envoi_caisse),
-      caisse_stock_id: null,
-    };
+    // Demande pas encore enregistrée (id temporaire) : la sous-caisse est créée en brouillon
+    // local, elle sera persistée au moment de l'enregistrement (handleEnregistrer).
+    if (demande.id < 0) {
+      setDemandeCaisses((prev) => [...prev, nouvelleSousCaisseBrouillon(demande, prochainIdTemporaire--)]);
+      setLignesEtendues((prev) => new Set(prev).add(demande.id));
+      return;
+    }
+    const nouvelle = sousCaisseSansId(nouvelleSousCaisseBrouillon(demande, 0), demande.id);
     const creee = await demandeCaisseApi.create(nouvelle, trigramme);
     setDemandeCaisses((prev) => [...prev, creee]);
     setLignesEtendues((prev) => new Set(prev).add(demande.id));
@@ -181,6 +255,11 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
   async function handleEditDemandeCaisse(id: number, patch: Partial<DemandeCaisse>) {
     const existante = demandeCaisses.find((c) => c.id === id);
     if (!existante) return;
+    // Sous-caisse brouillon (id négatif) : édition purement locale jusqu'à l'enregistrement.
+    if (id < 0) {
+      setDemandeCaisses((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+      return;
+    }
     const { id: _id, ordre: _ordre, ...base } = existante;
     await demandeCaisseApi.update(id, { ...base, ...patch }, trigramme);
     setDemandeCaisses((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
@@ -188,6 +267,10 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
 
   async function handleDeleteDemandeCaisse(id: number) {
     if (!(await confirmerSuppression("Supprimer cette caisse détaillée ?"))) return;
+    if (id < 0) {
+      setDemandeCaisses((prev) => prev.filter((c) => c.id !== id));
+      return;
+    }
     const sousLigne = demandeCaisses.find((c) => c.id === id);
     const demandeParente = sousLigne ? demandes.find((d) => d.id === sousLigne.demande_id) : undefined;
     if (demandeParente) await supprimerCaisseLieeSiConfirmee(demandeParente.affaire, id);
@@ -285,10 +368,20 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
       });
 
       if (aCreer.length > 0) {
-        await demandesApi.bulkCreate(
+        // bulkCreate renvoie les demandes créées dans l'ordre d'entrée : on relie chaque id
+        // temporaire à son id réel pour persister ensuite les sous-caisses brouillon.
+        const creees = await demandesApi.bulkCreate(
           aCreer.map(({ id: _id, ordre: _ordre, validee: _validee, ...n }) => n),
           trigramme,
         );
+        for (let i = 0; i < aCreer.length; i++) {
+          const idReel = creees[i]?.id;
+          if (idReel === undefined) continue;
+          const sousCaisses = demandeCaisses.filter((c) => c.demande_id === aCreer[i].id);
+          for (const sc of sousCaisses) {
+            await demandeCaisseApi.create(sousCaisseSansId(sc, idReel), trigramme);
+          }
+        }
       }
       for (const d of aModifier) {
         const { id, ordre: _ordre, validee, ...n } = d;
@@ -316,6 +409,17 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
 
   function handleAnnuler() {
     setBrouillon(demandes);
+    setDemandeCaisses(demandeCaissesServeur);
+  }
+
+  async function handleAjouterOption(liste: ListeOption, valeur: string) {
+    const creee = await optionsListeApi.create(liste, valeur, trigramme);
+    setOptionsPersonnalisees((prev) => (prev.some((o) => o.id === creee.id) ? prev : [...prev, creee]));
+  }
+
+  async function handleSupprimerOption(id: number) {
+    await optionsListeApi.delete(id, trigramme);
+    setOptionsPersonnalisees((prev) => prev.filter((o) => o.id !== id));
   }
 
   return (
@@ -339,6 +443,9 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
           </button>
           <button className="btn" onClick={() => setImportOuvert(true)} disabled={readOnly}>
             Coller depuis Excel
+          </button>
+          <button className="btn" onClick={() => setAjoutOptionOuvert(true)} disabled={readOnly}>
+            Ajouter une référence
           </button>
           <button className="btn btn-primary" disabled={!modifie || enregistrement || readOnly} onClick={handleEnregistrer}>
             {enregistrement ? "Enregistrement…" : "Enregistrer"}
@@ -376,6 +483,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
             onDelete={handleDelete}
             onValider={handleValider}
             onSimulerAffaire={onSimulerAffaire}
+            optionsPersonnalisees={optionsPersonnalisees}
             readOnly={readOnly}
           />
         </div>
@@ -384,6 +492,14 @@ export default function DemandesList({ onSimulerAffaire, trigramme }: Props) {
       {importOuvert && <PasteImportZoneDemandes onImport={handleImport} onClose={() => setImportOuvert(false)} />}
       {ajoutOuvert && (
         <AjouterDemandesDialog caissesStock={caissesStock} onAjouter={handleAjouterLignes} onClose={() => setAjoutOuvert(false)} />
+      )}
+      {ajoutOptionOuvert && (
+        <AjouterOptionDialog
+          optionsPersonnalisees={optionsPersonnalisees}
+          onAjouter={handleAjouterOption}
+          onSupprimer={handleSupprimerOption}
+          onClose={() => setAjoutOptionOuvert(false)}
+        />
       )}
     </div>
   );

@@ -14,6 +14,8 @@ interface Props<T extends string> {
   onChangeCompact: (compact: boolean) => void;
   masquerValidees: boolean;
   onChangeMasquerValidees: (masquer: boolean) => void;
+  inverse?: boolean;
+  onChangeInverse?: (inverse: boolean) => void;
 }
 
 export default function TableOptionsMenu<T extends string>({
@@ -24,6 +26,8 @@ export default function TableOptionsMenu<T extends string>({
   onChangeCompact,
   masquerValidees,
   onChangeMasquerValidees,
+  inverse,
+  onChangeInverse,
 }: Props<T>) {
   const [ouvert, setOuvert] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -78,6 +82,12 @@ export default function TableOptionsMenu<T extends string>({
               <input type="checkbox" checked={separationMarquee} onChange={(e) => setSeparationMarquee(e.target.checked)} />
               Séparation des lignes plus marquée
             </label>
+            {onChangeInverse && (
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={inverse ?? false} onChange={(e) => onChangeInverse(e.target.checked)} />
+                Tableau inversé (anciens en haut, saisie en bas)
+              </label>
+            )}
           </div>
 
           <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--text-muted)" }}>

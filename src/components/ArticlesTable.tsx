@@ -100,8 +100,9 @@ export default function ArticlesTable({
     }
   }
 
-  // Identifie, pour chaque colonne de dimension, le premier article portant la valeur la plus
-  // haute — pour surligner visuellement quelle case correspond au maximum de chaque dimension.
+  // Pour chaque colonne de dimension, l'id du premier article portant la valeur la plus haute
+  // *de toute l'affaire* — pour surligner la case correspondant au maximum de chaque dimension.
+  // (Le max par caisse est mis en évidence ailleurs, dans les CaisseCard.)
   const idArticleMaxParChamp = useMemo(() => {
     const champs: ("dim1_mm" | "dim2_mm" | "dim3_mm")[] = ["dim1_mm", "dim2_mm", "dim3_mm"];
     const result: Partial<Record<Champ, number>> = {};
@@ -203,11 +204,10 @@ export default function ArticlesTable({
           textAlign: align,
           cursor: editable ? "text" : "default",
           padding: enEdition ? 2 : tdStyle.padding,
-          background: estMax ? "var(--accent-soft)" : undefined,
-          fontWeight: estMax ? 700 : undefined,
+          fontWeight: estMax ? 800 : undefined,
         }}
         className={estNombre ? "mono" : undefined}
-        title={estMax ? "Valeur maximale de la colonne pour cette affaire" : undefined}
+        title={estMax ? "Dimension maximale de l'affaire pour cette colonne" : undefined}
         onClick={() => editable && !enEdition && setCellEnEdition({ id: article.id, champ })}
       >
         {enEdition ? (
@@ -218,6 +218,19 @@ export default function ArticlesTable({
             onCommit={(v) => sauvegarderChamp(article, champ, v)}
             onCancel={() => setCellEnEdition(null)}
           />
+        ) : estMax ? (
+          <span
+            style={{
+              display: "inline-block",
+              padding: "1px 6px",
+              borderRadius: 4,
+              background: "var(--accent)",
+              color: "#fff",
+              fontWeight: 800,
+            }}
+          >
+            {valeurAffichee}
+          </span>
         ) : (
           valeurAffichee
         )}
@@ -231,8 +244,8 @@ export default function ArticlesTable({
     const valeursDistinctes = [...new Set(articles.map((a) => valeurTexte(a, colonne)))].sort((a, b) => a.localeCompare(b));
     const selection = filtres[colonne] ? new Set(filtres[colonne]) : null;
     return (
-      <th style={{ ...thStyle, textAlign: align, position: "relative" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: align === "right" ? "flex-end" : "flex-start", gap: 4 }}>
+      <th style={{ ...thStyle, textAlign: align }}>
+        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: align === "right" ? "flex-end" : "flex-start", gap: 4 }}>
           <span style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleTri(colonne)}>
             {label}
             <span style={{ marginLeft: 4, opacity: actif ? 1 : 0.25 }}>{actif ? (tri!.sens === "asc" ? "▲" : "▼") : "▲"}</span>
@@ -300,9 +313,9 @@ export default function ArticlesTable({
           {thTriable("ar", "AR")}
           {thTriable("reference", "Réf. fourn.")}
           {thTriable("designation", "Désignation")}
-          {thTriable("dim1_mm", "Dim1", "right")}
-          {thTriable("dim2_mm", "Dim2", "right")}
-          {thTriable("dim3_mm", "Dim3", "right")}
+          {thTriable("dim1_mm", "Dim1 (mm)", "right")}
+          {thTriable("dim2_mm", "Dim2 (mm)", "right")}
+          {thTriable("dim3_mm", "Dim3 (mm)", "right")}
           {thTriable("poids_unitaire_kg", "Poids u. (kg)", "right")}
           {thTriable("quantite", "Qté", "right")}
           {thTriable("volume", "Vol. u. (m³)", "right")}
@@ -330,7 +343,7 @@ export default function ArticlesTable({
                   background: selectedIds.has(a.id)
                     ? "var(--accent-soft-strong)"
                     : caisseAssignee
-                      ? `color-mix(in srgb, ${caisseAssignee.couleur} 55%, white)`
+                      ? caisseAssignee.couleur
                       : undefined,
                 }}
               >
@@ -445,7 +458,6 @@ function EditableCellInput({
 
 const thStyle: React.CSSProperties = {
   padding: "9px 8px",
-  borderBottom: "2px solid var(--row-border-color)",
   borderRight: "1px solid var(--row-border-color)",
   fontSize: 11,
   fontWeight: 700,
@@ -454,7 +466,10 @@ const thStyle: React.CSSProperties = {
   position: "sticky",
   top: 0,
   background: "var(--bg-panel)",
-  zIndex: 1,
+  // Trait de séparation posé en box-shadow (rendu par-dessus, pas de couture sous-pixel comme
+  // avec un border-bottom au bord d'un élément sticky, où l'on voyait défiler un liseré).
+  boxShadow: "0 2px 0 var(--row-border-color)",
+  zIndex: 3,
 };
 const tdStyle: React.CSSProperties = {
   padding: "6px 8px",
