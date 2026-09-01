@@ -195,6 +195,9 @@ export interface SectionLock {
   demande_le: string | null;
   demande_statut: "aucune" | "en_attente" | "refusee";
   expire: boolean;
+  // Demande de crayon restée sans réponse >= 90 s avec un titulaire lui aussi silencieux
+  // depuis >= 90 s : le demandeur peut reprendre la main (claim_expired_pen).
+  demande_expiree: boolean;
 }
 
 export interface CaisseCalculee extends Caisse {

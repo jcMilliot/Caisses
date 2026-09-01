@@ -18,8 +18,15 @@ pub fn require_lock(conn: &rusqlite::Connection, section_key: &str, trigramme: &
     }
 }
 
+// `expire` : verrou inactif depuis >= 5 min (aucun battement renouvelé), donc reprenable.
+// `demande_expiree` : demande de crayon restée `en_attente` depuis >= 90 s ALORS QUE le
+// titulaire ne bat plus non plus depuis >= 90 s — il est considéré injoignable, le demandeur
+// peut reprendre la main automatiquement (cf. claim_expired_pen) sans attendre les 5 min.
 const SELECT_COLS: &str = "section_key, titulaire, acquis_le, dernier_battement, demandeur, demande_le, demande_statut,
-    (julianday('now') - julianday(dernier_battement)) * 1440 >= 5 AS expire";
+    (julianday('now') - julianday(dernier_battement)) * 1440 >= 5 AS expire,
+    (demande_statut = 'en_attente'
+        AND (julianday('now') - julianday(demande_le)) * 86400 >= 90
+        AND (julianday('now') - julianday(dernier_battement)) * 86400 >= 90) AS demande_expiree";
 
 fn map_row(row: &rusqlite::Row) -> rusqlite::Result<SectionLock> {
     Ok(SectionLock {
@@ -31,6 +38,7 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<SectionLock> {
         demande_le: row.get(5)?,
         demande_statut: row.get(6)?,
         expire: row.get(7)?,
+        demande_expiree: row.get(8)?,
     })
 }
 
@@ -108,6 +116,33 @@ pub fn request_pen(db: State<Db>, section_key: String, trigramme: String) -> Res
         )
         .map_err(|e| e.to_string())?;
     Ok(affected > 0)
+}
+
+/// Le demandeur reprend la main quand sa demande de crayon est restée sans réponse assez
+/// longtemps et que le titulaire est injoignable (cf. `demande_expiree` dans SELECT_COLS).
+/// Atomique : l'UPDATE ne passe que si toutes les conditions tiennent au moment de l'écriture.
+/// Renvoie l'état du verrou après tentative (que la reprise ait eu lieu ou non).
+#[tauri::command]
+pub fn claim_expired_pen(db: State<Db>, section_key: String, trigramme: String) -> Result<SectionLock, String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    conn.execute(
+        "UPDATE section_lock SET
+             titulaire = ?2,
+             acquis_le = datetime('now'),
+             dernier_battement = datetime('now'),
+             demandeur = NULL, demande_le = NULL, demande_statut = 'aucune'
+         WHERE section_key = ?1
+           AND demandeur = ?2
+           AND demande_statut = 'en_attente'
+           AND (julianday('now') - julianday(demande_le)) * 86400 >= 90
+           AND (julianday('now') - julianday(dernier_battement)) * 86400 >= 90",
+        rusqlite::params![section_key, trigramme],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let sql = format!("SELECT {} FROM section_lock WHERE section_key = ?1", SELECT_COLS);
+    conn.query_row(&sql, [&section_key], map_row).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

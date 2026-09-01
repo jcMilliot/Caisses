@@ -85,8 +85,10 @@ src-tauri/src/
     caisse_stock.rs   → CRUD caisses en stock + transfer + set_caisse_stock_validee
     locks.rs          → verrouillage applicatif multi-poste (acquire/release/heartbeat/
                         request_pen/respond_pen_request/list_locks + require_lock)
-    options_liste.rs  → valeurs personnalisées ajoutées aux listes déroulantes Demandes
-                        (moteurs / module_lineaire / terminaux) — list/create/delete
+    options_liste.rs  → valeurs personnalisées des listes déroulantes Demandes (moteurs /
+                        module_lineaire / terminaux) — list/create/rename/count_usage/delete ;
+                        rename_option_liste répercute la nouvelle valeur sur demande /
+                        demande_caisse (transaction)
     setup.rs          → get_db_status / choose_db_folder / set_db_folder / init_db
     user.rs           → get_user_status / set_trigramme
 ```
@@ -101,7 +103,11 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-08-31 : migrations `0001` à `0016` (dernière : `0016_add_option_liste.sql`).
+État au 2026-09-01 : migrations `0001` à `0018` (dernière : `0018_seed_modules_lineaires.sql`).
+Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
+triées côté frontend par `demandeOptions.ts::comparerOption` (quantité de tête puis n° de
+référence, ex. `1 MOTEUR` < `2 MOTEURS` < `10 MOTEURS` ; `1 FESTO 426` < `1 FESTO 485` <
+`2 FESTO 494`). Vaut aussi pour les valeurs ajoutées ensuite via « Gérer les références ».
 Le dossier `migrations/` est **à la racine du repo** (pas sous `src-tauri/`) — `db.rs` y accède
 via `include_str!("../../migrations/…")`.
 
@@ -164,10 +170,15 @@ section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" 
               titulaire, acquis_le, dernier_battement,  -- trigramme + horodatages
               demandeur NULL, demande_le NULL, demande_statut)  -- 'aucune'|'en_attente'|'refusee'
 
-option_liste (id, liste TEXT, valeur TEXT, ordre, UNIQUE(liste, valeur))  -- 0016
-         -- valeurs ajoutées par l'utilisateur aux listes déroulantes de la section Demandes ;
-         -- `liste` ∈ 'moteurs' | 'module_lineaire' | 'terminaux'. Les valeurs de base restent
-         -- codées en dur (src/domain/demandeOptions.ts), la table ne porte que les ajouts.
+option_liste (id, liste TEXT, valeur TEXT, ordre, UNIQUE(liste, valeur))  -- 0016 + seed 0017
+         -- valeurs des listes déroulantes de la section Demandes ; `liste` ∈ 'moteurs' |
+         -- 'module_lineaire' | 'terminaux'. Depuis 0017 TOUT vit ici (les anciennes valeurs
+         -- "de base" 1..10 MOTEURS / TERMINAUX y ont été seedées) — plus de socle codé en dur,
+         -- tout est modifiable / supprimable via l'outil « Gérer les références ».
+         -- 0017 seede moteurs (1..10) + terminaux (1..10) ; 0018 seede `module_lineaire`
+         -- (18 modules FESTO fournis le 2026-09-01, libellé complet avec dimensions
+         -- informatives entre parenthèses). Migration séparée car 0017 était déjà appliquée
+         -- sur les bases de dev sans ces valeurs.
 ```
 
 Note sur `section_lock` (verrouillage applicatif multi-poste, cf. journal 2026-07-30) : table
@@ -176,6 +187,11 @@ affaire précise pour Simulations). Pas de colonne d'expiration stockée — cal
 SQL par comparaison de `dernier_battement` à `datetime('now', '-5 minutes')`, pour rester
 indépendante de l'horloge d'un poste en particulier au moment de l'écriture. Une ligne n'existe
 que si la section a déjà été verrouillée au moins une fois (absence de ligne == libre).
+Depuis le 2026-09-01, `SELECT_COLS` expose aussi `demande_expiree` : une demande de crayon
+restée `en_attente` >= 90 s ALORS QUE le titulaire ne bat plus non plus depuis >= 90 s → le
+demandeur reprend la main automatiquement via `claim_expired_pen` (`useSectionLock` l'appelle au
+tick de poll suivant), sans attendre les 5 min d'expiration du verrou. Les 90 s laissent à un
+titulaire réellement présent le temps de voir la bannière et de répondre.
 
 Note sur `demande` : reprend les colonnes du fichier Excel de suivi existant. Les booléens
 (`ok_pour_passer_cde`, `cde_passee_affaire`, `cde_passee_achat_stock`) sont stockés en
@@ -610,11 +626,21 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
     `type_envoi_caisse` / `type_ouverture` / `moteurs` / `module_lineaire` / `terminaux` /
     `traitement` (ligne mère) ou leurs équivalents sur sous-ligne → liste des choix + « Autre… »
     (bascule en saisie libre). La valeur courante hors-liste est toujours proposée.
-  - **Ajout de valeurs aux listes** : bouton « Ajouter une référence » en tête de la section
-    (`AjouterOptionDialog`) → choix de la colonne (Moteurs / Module linéaire / Terminaux) + nom.
-    Stocké en base (`option_liste`, `optionsListeApi`), fusionné aux valeurs de base par
-    `optionsListe()` (`demandeOptions.ts`). `AjouterDemandesDialog` n'a pas été mis à jour pour
-    ces options (ne montre que les valeurs de base — l'ajout se fait à l'édition inline).
+  - **Gérer les références connues** : bouton « Gérer les références » en tête de la section
+    (`GererReferencesDialog`, a remplacé `AjouterOptionDialog` le 2026-09-01) → par colonne
+    (Moteurs / Module linéaire / Terminaux) : ajouter, **renommer** (répercuté sur les lignes
+    `demande` / `demande_caisse` via `rename_option_liste`, confirmation si des lignes
+    l'utilisent — `count_option_liste_usage`), **supprimer** une ou plusieurs valeurs (l'option
+    disparaît de la liste, les lignes gardent le texte ; avertissement si utilisée).
+  - **Toutes les valeurs vivent en base** depuis la migration `0017` : les anciennes valeurs
+    "de base" (1..10 MOTEURS / TERMINAUX, codées en dur dans `demandeOptions.ts`) ont été
+    seedées dans `option_liste`. Plus de socle en dur — `optionsListe()` renvoie juste les
+    lignes de la table triées par `ordre`. `module_lineaire` démarre vide.
+    `MOTEURS`/`TERMINAUX`/`MODULES_LINEAIRES` supprimés de `demandeOptions.ts`. `DemandesTable`
+    ET `AjouterDemandesDialog` reçoivent `optionsPersonnalisees` en prop (plus de valeurs par
+    défaut ailleurs). Édition inline `DemandesTable` : le `<select>` s'affiche même si la liste
+    est vide (gating sur présence de la clé, pas sur `.length`) — `module_lineaire` a donc le
+    même menu déroulant que les deux autres.
   - **Menu contextuel recadré** (`positionMenuContextuel`) : ne déborde plus en bas/droite de
     l'écran ; + 80px de marge sous le tableau.
 
@@ -656,20 +682,6 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
 
 ### À faire
 
-*Section Demandes (`DemandesList` / `DemandesTable`)*
-
-- **Outil « Gérer les références connues »** : bouton en tête de section qui ouvre un
-  gestionnaire des valeurs des listes déroulantes du tableau (colonnes Moteurs / Module
-  linéaire / Terminaux, table `option_liste`). Il doit reprendre/absorber le bouton
-  « Ajouter une référence » actuel (`AjouterOptionDialog`) et permettre en plus : **modifier**
-  une référence existante (renommer une valeur), **supprimer une ou plusieurs** références en
-  une fois (sélection multiple). À décider : le renommage doit-il répercuter la nouvelle valeur
-  sur les lignes de `demande` / `demande_caisse` qui portent l'ancienne (probablement oui,
-  sinon la valeur renommée disparaît des listes mais reste orpheline dans les lignes) → sans
-  doute une commande Rust `rename_option_liste` qui fait aussi l'`UPDATE` des colonnes
-  concernées. Portée : ne concerne que les valeurs *personnalisées* (les valeurs de base
-  codées en dur dans `demandeOptions.ts` ne sont ni modifiables ni supprimables).
-
 *Fiabilité et infrastructure*
 
 - **⚠️ Risque connu — dossier BDD réseau partagé** : décision utilisateur (2026-07-30) d'utiliser
@@ -687,12 +699,13 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   candidats évidents quotidien ou hebdomadaire selon le volume réel de saisie. Pourrait être un
   simple script/tâche planifiée Windows dans un premier temps, ou une fonctionnalité intégrée à
   l'app plus tard (bouton "Sauvegarder maintenant" + copie automatique périodique).
-- **Verrouillage — restes connus** : pas d'auto-expiration de la demande de crayon elle-même si le
-  titulaire arrête de poller — à reconsidérer si ça devient gênant en usage réel. Pas de système
-  de droits/permissions par utilisateur (tout titulaire du verrou peut tout faire sur sa
-  ressource) — évolution possible plus tard si le besoin se présente. Si le besoin de temps
-  réel/fiabilité dépasse ce que permet le polling, le bon moment pour introduire le petit serveur
-  HTTP déjà anticipé par la séparation `data/` (cf. section Architecture).
+- **Verrouillage — restes connus** : ~~pas d'auto-expiration de la demande de crayon~~ → traité
+  le 2026-09-01 (`demande_expiree` + `claim_expired_pen`, seuil 90 s, cf. note `section_lock`
+  dans « Modèle de données »). Reste : pas de système de droits/permissions par utilisateur
+  (tout titulaire du verrou peut tout faire sur sa ressource) — évolution possible plus tard si
+  le besoin se présente. Si le besoin de temps réel/fiabilité dépasse ce que permet le polling,
+  le bon moment pour introduire le petit serveur HTTP déjà anticipé par la séparation `data/`
+  (cf. section Architecture).
 - **Dialogues natifs Tauri** : `@tauri-apps/plugin-dialog` est bien dans `package.json`
   (dépendance présente côté JS) mais toujours pas branché : `src/data/confirm.ts` utilise encore
   `window.confirm()` en fallback. Reste à remplacer par les dialogues natifs du plugin

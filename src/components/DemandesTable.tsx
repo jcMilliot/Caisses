@@ -514,7 +514,7 @@ export default function DemandesTable({
         title={avertissement}
         onClick={() => !readOnly && !enEdition && setCellEnEdition({ id: demande.id, champ })}
       >
-        {enEdition && optionsParChamp[champ]?.length ? (
+        {enEdition && optionsParChamp[champ] !== undefined ? (
           <EditableCellSelect
             defaultValue={String(valeurBrute)}
             options={optionsParChamp[champ]!}
@@ -1003,7 +1003,7 @@ function SousLigneCaisse({
         title={verrouille ? "Repris de la demande — non modifiable ici" : avertissementMesures4C}
         onClick={() => editable && !enEdition && setChampEnEdition(champSousLigne)}
       >
-        {enEdition && optionsParChamp[champSousLigne]?.length ? (
+        {enEdition && optionsParChamp[champSousLigne] !== undefined ? (
           <EditableCellSelect
             defaultValue={String(valeurBrute)}
             options={optionsParChamp[champSousLigne]!}

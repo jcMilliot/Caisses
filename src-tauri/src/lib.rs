@@ -19,8 +19,12 @@ use commands::demandes::{
     bulk_create_demandes, create_demande, delete_demande, list_demandes, set_demande_validee,
     update_demande,
 };
-use commands::locks::{acquire_lock, heartbeat, list_locks, release_lock, request_pen, respond_pen_request};
-use commands::options_liste::{create_option_liste, delete_option_liste, list_options_liste};
+use commands::locks::{
+    acquire_lock, claim_expired_pen, heartbeat, list_locks, release_lock, request_pen, respond_pen_request,
+};
+use commands::options_liste::{
+    count_option_liste_usage, create_option_liste, delete_option_liste, list_options_liste, rename_option_liste,
+};
 use commands::setup::{choose_db_folder, get_db_status, init_db, set_db_folder};
 use commands::user::{get_user_status, set_trigramme};
 use tauri::Manager;
@@ -92,11 +96,14 @@ pub fn run() {
             heartbeat,
             request_pen,
             respond_pen_request,
+            claim_expired_pen,
             list_locks,
             get_user_status,
             set_trigramme,
             list_options_liste,
             create_option_liste,
+            rename_option_liste,
+            count_option_liste_usage,
             delete_option_liste,
         ])
         .run(tauri::generate_context!())

@@ -74,6 +74,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0016_add_option_liste",
         include_str!("../../migrations/0016_add_option_liste.sql"),
     ),
+    (
+        "0017_seed_option_liste",
+        include_str!("../../migrations/0017_seed_option_liste.sql"),
+    ),
+    (
+        "0018_seed_modules_lineaires",
+        include_str!("../../migrations/0018_seed_modules_lineaires.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {

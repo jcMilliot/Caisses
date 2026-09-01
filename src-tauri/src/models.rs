@@ -197,6 +197,7 @@ pub struct SectionLock {
     pub demande_le: Option<String>,
     pub demande_statut: String,
     pub expire: bool,
+    pub demande_expiree: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
