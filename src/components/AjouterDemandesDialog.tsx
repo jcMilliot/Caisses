@@ -1,12 +1,10 @@
 import { useState } from "react";
-import type { NewDemande, CaisseStock } from "../domain/types";
+import type { NewDemande, CaisseStock, OptionListe } from "../domain/types";
 import {
   TYPES_ENVOI_CAISSE,
   TYPES_OUVERTURE,
-  MOTEURS,
-  TERMINAUX,
   TRAITEMENTS,
-  MODULES_LINEAIRES,
+  optionsListe,
   necessiteNimp15,
   estCaisse4C,
   contrePlaqueParDefaut,
@@ -16,6 +14,7 @@ import SelectOuAutre from "./SelectOuAutre";
 
 interface Props {
   caissesStock: CaisseStock[];
+  optionsPersonnalisees: OptionListe[];
   // Retourne false pour garder le dialogue ouvert (ex. l'utilisateur a annulé un avertissement
   // « affaire déjà présente ») ; true / void = les lignes ont été prises en compte.
   onAjouter: (demandes: NewDemande[]) => boolean | void | Promise<boolean | void>;
@@ -48,8 +47,11 @@ function ligneVide(): NewDemande {
   };
 }
 
-export default function AjouterDemandesDialog({ caissesStock, onAjouter, onClose }: Props) {
+export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalisees, onAjouter, onClose }: Props) {
   const [lignes, setLignes] = useState<NewDemande[]>([ligneVide()]);
+  const moteurs = optionsListe("moteurs", optionsPersonnalisees);
+  const modulesLineaires = optionsListe("module_lineaire", optionsPersonnalisees);
+  const terminaux = optionsListe("terminaux", optionsPersonnalisees);
 
   function majLigne(index: number, patch: Partial<NewDemande>) {
     setLignes((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
@@ -247,19 +249,19 @@ export default function AjouterDemandesDialog({ caissesStock, onAjouter, onClose
               </Champ>
 
               <Champ label="Moteurs">
-                <SelectOuAutre valeur={ligne.moteurs} options={MOTEURS} onChange={(v) => majLigne(index, { moteurs: v })} />
+                <SelectOuAutre valeur={ligne.moteurs} options={moteurs} onChange={(v) => majLigne(index, { moteurs: v })} />
               </Champ>
 
               <Champ label="Module linéaire">
                 <SelectOuAutre
                   valeur={ligne.module_lineaire}
-                  options={MODULES_LINEAIRES}
+                  options={modulesLineaires}
                   onChange={(v) => majLigne(index, { module_lineaire: v })}
                 />
               </Champ>
 
               <Champ label="Terminaux">
-                <SelectOuAutre valeur={ligne.terminaux} options={TERMINAUX} onChange={(v) => majLigne(index, { terminaux: v })} />
+                <SelectOuAutre valeur={ligne.terminaux} options={terminaux} onChange={(v) => majLigne(index, { terminaux: v })} />
               </Champ>
 
               <Champ label="Traitement">

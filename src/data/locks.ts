@@ -12,5 +12,7 @@ export const locksApi = {
     call<boolean>("request_pen", { sectionKey, trigramme }),
   respondPenRequest: (sectionKey: string, trigramme: string, approve: boolean) =>
     call<void>("respond_pen_request", { sectionKey, trigramme, approve }),
+  claimExpiredPen: (sectionKey: string, trigramme: string) =>
+    call<SectionLock>("claim_expired_pen", { sectionKey, trigramme }),
   list: () => call<SectionLock[]>("list_locks"),
 };

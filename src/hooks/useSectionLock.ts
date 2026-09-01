@@ -75,7 +75,19 @@ export function useSectionLock(sectionKey: string, trigramme: string) {
     const interval = setInterval(async () => {
       const renew = isHolderRef.current && Date.now() - lastActivityRef.current < INACTIVITY_TIMEOUT_MS;
       try {
-        const lock = await locksApi.heartbeat(sectionKey, trigramme, renew);
+        let lock = await locksApi.heartbeat(sectionKey, trigramme, renew);
+        // Notre demande de crayon est restée sans réponse et le titulaire est injoignable
+        // (>= 90 s des deux côtés) : on reprend la main automatiquement, sans attendre les 5 min
+        // d'expiration du verrou lui-même.
+        if (
+          lock &&
+          !cancelled &&
+          lock.demande_expiree &&
+          lock.demandeur === trigramme &&
+          lock.titulaire !== trigramme
+        ) {
+          lock = await locksApi.claimExpiredPen(sectionKey, trigramme);
+        }
         if (!cancelled) applyLock(lock);
       } catch {
         // Échec de poll ponctuel : ignoré, retenté au tick suivant.

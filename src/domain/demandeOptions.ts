@@ -9,35 +9,43 @@ export const TYPES_OUVERTURE = ["Par dessus", "Par dessus et par devant", "Par d
 
 export const VALEURS_STOCK = ["AR_CAISS_00001", "AR_CAISS_00002", "AR_CAISS_00005", "AR_CAISS_00006", "CAISSE RECUP"];
 
-export const MOTEURS = Array.from({ length: 10 }, (_, i) => `${i + 1} MOTEUR${i > 0 ? "S" : ""}`);
-
-export const TERMINAUX = Array.from({ length: 10 }, (_, i) => `${i + 1} ${i === 0 ? "TERMINAL" : "TERMINAUX"}`);
-
 export const TRAITEMENTS = ["NIMP15"];
 
-// Module Linéaire : pas de valeur de base, la liste est entièrement alimentée par l'utilisateur.
-export const MODULES_LINEAIRES: string[] = [];
-
-// Valeurs de base par liste — le socle codé en dur auquel s'ajoutent les options personnalisées
-// stockées en base (table `option_liste`).
-const BASE_PAR_LISTE: Record<ListeOption, string[]> = {
-  moteurs: MOTEURS,
-  module_lineaire: MODULES_LINEAIRES,
-  terminaux: TERMINAUX,
-};
-
+// Les valeurs des colonnes Moteurs / Module linéaire / Terminaux vivent entièrement en base
+// (table `option_liste`, seedée par la migration 0017) — plus de socle codé en dur, elles sont
+// toutes modifiables / supprimables via l'outil « Gérer les références ».
 export const LIBELLE_LISTE: Record<ListeOption, string> = {
   moteurs: "Moteurs",
   module_lineaire: "Module linéaire",
   terminaux: "Terminaux",
 };
 
-// Fusionne les valeurs de base d'une liste avec les options personnalisées (dédoublonné, base
-// d'abord puis ajouts dans leur ordre d'insertion).
-export function optionsListe(liste: ListeOption, personnalisees: OptionListe[]): string[] {
-  const base = BASE_PAR_LISTE[liste];
-  const ajouts = personnalisees.filter((o) => o.liste === liste).map((o) => o.valeur);
-  return [...base, ...ajouts.filter((v) => !base.includes(v))];
+// Tri "quantité puis référence" : un libellé de la forme "<n> <texte> <ref numérique>" est
+// classé d'abord par le nombre de tête (1, 2, 3…), puis par le dernier nombre du libellé (n° de
+// référence, ex. FESTO 426 < FESTO 485), puis alphabétiquement. Les libellés sans ce format
+// tombent en fin de liste, triés alpha. Vaut pour les 3 listes (moteurs "1 MOTEUR"…, terminaux,
+// modules linéaires "1 FESTO 426 (…)") et pour les valeurs ajoutées ensuite via l'outil.
+export function comparerOption(a: string, b: string): number {
+  // Ignore la partie entre parenthèses (dimensions informatives) pour l'analyse.
+  const noyau = (s: string) => s.replace(/\(.*$/, "").trim();
+  const qte = (s: string) => {
+    const m = noyau(s).match(/^(\d+)\b/);
+    return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
+  };
+  const ref = (s: string) => {
+    // 2e nombre du noyau (après le préfixe quantité) = n° de référence.
+    const nombres = noyau(s).match(/\d+/g);
+    return nombres && nombres.length > 1 ? Number(nombres[1]) : Number.POSITIVE_INFINITY;
+  };
+  return qte(a) - qte(b) || ref(a) - ref(b) || a.localeCompare(b, "fr");
+}
+
+// Valeurs d'une liste, triées "quantité puis référence" (cf. comparerOption).
+export function optionsListe(liste: ListeOption, options: OptionListe[]): string[] {
+  return options
+    .filter((o) => o.liste === liste)
+    .map((o) => o.valeur)
+    .sort(comparerOption);
 }
 
 // Une caisse "4B"/"4C" (renforcée) impose systématiquement le traitement NIMP15 ; le "4C"

@@ -8,7 +8,7 @@ import { optionsListeApi } from "../data/optionsListe";
 import DemandesTable from "../components/DemandesTable";
 import PasteImportZoneDemandes from "../components/PasteImportZoneDemandes";
 import AjouterDemandesDialog from "../components/AjouterDemandesDialog";
-import AjouterOptionDialog from "../components/AjouterOptionDialog";
+import GererReferencesDialog from "../components/GererReferencesDialog";
 import LockBanner from "../components/LockBanner";
 import { useSectionLock } from "../hooks/useSectionLock";
 import { confirmerSuppression, confirmerAction } from "../data/confirm";
@@ -90,7 +90,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   const [enregistrement, setEnregistrement] = useState(false);
   const [importOuvert, setImportOuvert] = useState(false);
   const [ajoutOuvert, setAjoutOuvert] = useState(false);
-  const [ajoutOptionOuvert, setAjoutOptionOuvert] = useState(false);
+  const [gestionRefsOuvert, setGestionRefsOuvert] = useState(false);
   const brouillonRef = useRef(brouillon);
   brouillonRef.current = brouillon;
   const demandesRef = useRef(demandes);
@@ -417,6 +417,13 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     setOptionsPersonnalisees((prev) => (prev.some((o) => o.id === creee.id) ? prev : [...prev, creee]));
   }
 
+  async function handleRenommerOption(id: number, valeur: string) {
+    const modifiee = await optionsListeApi.rename(id, valeur, trigramme);
+    setOptionsPersonnalisees((prev) => prev.map((o) => (o.id === id ? modifiee : o)));
+    // Le renommage répercute la valeur sur les lignes en base : recharger pour refléter.
+    await reload();
+  }
+
   async function handleSupprimerOption(id: number) {
     await optionsListeApi.delete(id, trigramme);
     setOptionsPersonnalisees((prev) => prev.filter((o) => o.id !== id));
@@ -444,8 +451,8 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
           <button className="btn" onClick={() => setImportOuvert(true)} disabled={readOnly}>
             Coller depuis Excel
           </button>
-          <button className="btn" onClick={() => setAjoutOptionOuvert(true)} disabled={readOnly}>
-            Ajouter une référence
+          <button className="btn" onClick={() => setGestionRefsOuvert(true)} disabled={readOnly}>
+            Gérer les références
           </button>
           <button className="btn btn-primary" disabled={!modifie || enregistrement || readOnly} onClick={handleEnregistrer}>
             {enregistrement ? "Enregistrement…" : "Enregistrer"}
@@ -491,14 +498,21 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
 
       {importOuvert && <PasteImportZoneDemandes onImport={handleImport} onClose={() => setImportOuvert(false)} />}
       {ajoutOuvert && (
-        <AjouterDemandesDialog caissesStock={caissesStock} onAjouter={handleAjouterLignes} onClose={() => setAjoutOuvert(false)} />
+        <AjouterDemandesDialog
+          caissesStock={caissesStock}
+          optionsPersonnalisees={optionsPersonnalisees}
+          onAjouter={handleAjouterLignes}
+          onClose={() => setAjoutOuvert(false)}
+        />
       )}
-      {ajoutOptionOuvert && (
-        <AjouterOptionDialog
+      {gestionRefsOuvert && (
+        <GererReferencesDialog
           optionsPersonnalisees={optionsPersonnalisees}
           onAjouter={handleAjouterOption}
+          onRenommer={handleRenommerOption}
           onSupprimer={handleSupprimerOption}
-          onClose={() => setAjoutOptionOuvert(false)}
+          compterUsage={optionsListeApi.countUsage}
+          onClose={() => setGestionRefsOuvert(false)}
         />
       )}
     </div>
