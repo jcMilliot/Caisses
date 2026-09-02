@@ -76,7 +76,7 @@ export default function TableOptionsMenu<T extends string>({
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
               <input type="checkbox" checked={masquerValidees} onChange={(e) => onChangeMasquerValidees(e.target.checked)} />
-              Masquer les caisses validées
+              Masquer les caisses reçues
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
               <input type="checkbox" checked={separationMarquee} onChange={(e) => setSeparationMarquee(e.target.checked)} />

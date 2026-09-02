@@ -52,18 +52,18 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
   // et ses valeurs par défaut (type envoi, dates, traitement, cde passée) à la création.
   const [demandeCaissesLiees, setDemandeCaissesLiees] = useState<DemandeCaisse[]>([]);
   const [demandeParente, setDemandeParente] = useState<Demande | null>(null);
+  const [toutesDemandes, setToutesDemandes] = useState<Demande[]>([]);
 
   useEffect(() => {
     demandeCaisseApi.listAll().then(setDemandeCaissesLiees);
-    demandesApi
-      .list()
-      .then((toutes) => {
-        // On ne propose la synchro « ajouter/répercuter dans la demande » que si une demande
-        // NON validée porte ce nom d'affaire — une demande déjà validée est close, on n'y touche pas.
-        if (!affaire) return null;
-        return toutes.find((d) => memeNomAffaire(d.affaire, affaire.nom) && !estDemandeValidee(d)) ?? null;
-      })
-      .then(setDemandeParente);
+    demandesApi.list().then((toutes) => {
+      setToutesDemandes(toutes);
+      // On ne propose la synchro « ajouter/répercuter dans la demande » que si une demande
+      // NON validée porte ce nom d'affaire — une demande déjà validée est close, on n'y touche pas.
+      setDemandeParente(
+        affaire ? toutes.find((d) => memeNomAffaire(d.affaire, affaire.nom) && !estDemandeValidee(d)) ?? null : null,
+      );
+    });
   }, [affaire?.nom]);
 
   function togglePosition() {
@@ -239,16 +239,38 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
               onUpdate={async (nom, l, w, h, seuil, couleur) => {
                 setCaisseRecenteId(null);
                 const dimsChangees = l !== c.longueur_mm || w !== c.largeur_mm || h !== c.hauteur_mm;
-                if (dimsChangees && c.demande_caisse_id !== null) {
-                  const confirme = await confirmerAction(
-                    `Répercuter ces nouvelles dimensions sur la demande d'origine « ${c.nom} » ?`,
-                    "Synchroniser avec Demandes",
-                  );
-                  if (confirme) {
-                    const sousLigne = demandeCaissesLiees.find((sl) => sl.id === c.demande_caisse_id);
-                    if (sousLigne) {
-                      const { id: _id, ordre: _ordre, ...base } = sousLigne;
-                      await demandeCaisseApi.update(sousLigne.id, { ...base, longueur_mm: l, largeur_mm: w, hauteur_mm: h }, trigramme);
+                if (dimsChangees) {
+                  // Cible côté Demandes : lien explicite (demande_caisse_id / demande_id) en
+                  // priorité, puis correspondance par nom d'affaire pour la caisse mère.
+                  const demandeMereCible =
+                    (c.demande_id !== null && toutesDemandes.find((d) => d.id === c.demande_id)) ||
+                    (c.demande_caisse_id === null && demandeParente
+                      ? demandeParente
+                      : null);
+                  if (c.demande_caisse_id !== null) {
+                    const confirme = await confirmerAction(
+                      `Répercuter ces nouvelles dimensions sur la demande d'origine « ${c.nom} » ?`,
+                      "Synchroniser avec Demandes",
+                    );
+                    if (confirme) {
+                      const sousLigne = demandeCaissesLiees.find((sl) => sl.id === c.demande_caisse_id);
+                      if (sousLigne) {
+                        const { id: _id, ordre: _ordre, ...base } = sousLigne;
+                        await demandeCaisseApi.update(sousLigne.id, { ...base, longueur_mm: l, largeur_mm: w, hauteur_mm: h }, trigramme);
+                      }
+                    }
+                  } else if (demandeMereCible) {
+                    const confirme = await confirmerAction(
+                      `Répercuter ces nouvelles dimensions sur la demande « ${demandeMereCible.affaire} » ?`,
+                      "Synchroniser avec Demandes",
+                    );
+                    if (confirme) {
+                      const { id: _id, ordre: _ordre, validee: _v, ...base } = demandeMereCible;
+                      await demandesApi.update(
+                        demandeMereCible.id,
+                        { ...base, longueur_mm: l, largeur_mm: w, hauteur_mm: h },
+                        trigramme,
+                      );
                     }
                   }
                 }

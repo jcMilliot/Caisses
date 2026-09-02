@@ -3,17 +3,16 @@ import { createPortal } from "react-dom";
 import type { Demande, DemandeCaisse, CaisseStock, OptionListe } from "../domain/types";
 import { dateIsoVersAffichage } from "../domain/dates";
 import {
-  necessiteNimp15,
   estCaisse4C,
-  contrePlaqueParDefaut,
   estDemandeValidee,
   estDemandeCaisseValidee,
   AVERTISSEMENT_MOUSSE_4C,
   depassementMesuresMax4C,
   TYPES_ENVOI_CAISSE,
-  TYPES_OUVERTURE,
   TRAITEMENTS,
   optionsListe,
+  ouverturesAutorisees,
+  appliquerReglesCaisse,
 } from "../domain/demandeOptions";
 import { PALETTE_CAISSES } from "../domain/palette";
 import ColumnFilterMenu from "./ColumnFilterMenu";
@@ -36,6 +35,9 @@ interface Props {
   onValider: (id: number, validee: boolean) => void;
   onSimulerAffaire: (demande: Demande) => void;
   optionsPersonnalisees: OptionListe[];
+  // Nœud DOM (dans l'en-tête de DemandesList) où porter le bouton « Options » via un portail,
+  // pour le grouper avec « Créer une nouvelle caisse » / « Gérer les références » / etc.
+  slotOptions?: HTMLElement | null;
   readOnly?: boolean;
 }
 
@@ -178,17 +180,17 @@ function buildOptions(perso: OptionListe[]): {
   const moteurs = optionsListe("moteurs", perso);
   const moduleLineaire = optionsListe("module_lineaire", perso);
   const terminaux = optionsListe("terminaux", perso);
+  // Note : `type_ouverture` n'est PAS ici — ses options dépendent de l'état de chaque caisse
+  // (4C / caisse en stock), calculées par cellule via ouverturesAutorisees().
   return {
     parChamp: {
       type_envoi_caisse: TYPES_ENVOI_CAISSE,
-      type_ouverture: TYPES_OUVERTURE,
       moteurs,
       module_lineaire: moduleLineaire,
       terminaux,
       traitement: TRAITEMENTS,
     },
     parChampSousLigne: {
-      type_ouverture: TYPES_OUVERTURE,
       moteurs,
       module_lineaire: moduleLineaire,
       traitement: TRAITEMENTS,
@@ -209,18 +211,20 @@ function valeurTexte(d: Demande, champ: Champ): string {
   return String(v);
 }
 
-const COLONNES: { champ: Champ; label: string; align?: "left" | "right" }[] = [
+// align: "center" pour les dates et Qté, "left" (défaut) pour tout le reste — toutes les
+// valeurs texte sont alignées à gauche avec une petite marge (cf. tdStyle).
+const COLONNES: { champ: Champ; label: string; align?: "left" | "center" }[] = [
   { champ: "ok_pour_passer_cde", label: "Ok cde" },
   { champ: "affaire", label: "Affaire" },
   { champ: "type_envoi_caisse", label: "Type envoi caisse" },
   { champ: "type_ouverture", label: "Type ouverture" },
   { champ: "stock", label: "Stock" },
-  { champ: "longueur_mm", label: "L", align: "right" },
-  { champ: "largeur_mm", label: "l", align: "right" },
-  { champ: "hauteur_mm", label: "H", align: "right" },
-  { champ: "quantite", label: "Qté", align: "right" },
-  { champ: "date_picking", label: "Date picking" },
-  { champ: "date_demandee_s2c", label: "Date dem. S2C" },
+  { champ: "longueur_mm", label: "Long. (m)" },
+  { champ: "largeur_mm", label: "larg. (m)" },
+  { champ: "hauteur_mm", label: "Haut. (m)" },
+  { champ: "quantite", label: "Qté", align: "center" },
+  { champ: "date_picking", label: "Date picking", align: "center" },
+  { champ: "date_demandee_s2c", label: "Date dem. S2C", align: "center" },
   { champ: "moteurs", label: "Moteurs" },
   { champ: "module_lineaire", label: "Module linéaire" },
   { champ: "terminaux", label: "Terminaux" },
@@ -228,7 +232,7 @@ const COLONNES: { champ: Champ; label: string; align?: "left" | "right" }[] = [
   { champ: "informations_supp", label: "Infos suppl." },
   { champ: "cde_passee_affaire", label: "Cde passée affaire" },
   { champ: "cde_passee_achat_stock", label: "Cde passée achat stock" },
-  { champ: "observations", label: "Observations" },
+  // `observations` reste un champ (marqueur Livré/Reçu) mais n'est plus affiché en colonne.
 ];
 
 const TOUTES_LES_COLONNES = COLONNES.map((c) => c.champ);
@@ -249,6 +253,7 @@ export default function DemandesTable({
   onValider,
   onSimulerAffaire,
   optionsPersonnalisees,
+  slotOptions,
   readOnly,
 }: Props) {
   const { parChamp: optionsParChamp, parChampSousLigne: optionsParChampSousLigne } = useMemo(
@@ -426,12 +431,16 @@ export default function DemandesTable({
     const nombre = Number(valeurBrute.replace(",", ".")) || 0;
     const valeur = CHAMPS_DIM.has(champ) ? nombre * 1000 : CHAMPS_NOMBRE.has(champ) ? nombre : valeurBrute;
     if (demande[champ] === valeur) return;
-    // Une caisse 4B/4C impose le traitement NIMP15 — pré-rempli seulement si le champ
-    // Traitement est encore vide, pour ne pas écraser une saisie manuelle déjà faite. Le
-    // contre-plaqué, lui, est systématiquement recalculé (STANDARD/4B → requis, 4C → non).
+    // Changer le type d'envoi applique les règles dynamiques (ouverture autorisée, NIMP15,
+    // contre-plaqué), cf. appliquerReglesCaisse.
     if (champ === "type_envoi_caisse") {
-      const traitement = necessiteNimp15(String(valeur)) && !demande.traitement.trim() ? "NIMP15" : demande.traitement;
-      onEdit(demande.id, { type_envoi_caisse: valeur as string, traitement, contre_plaque: contrePlaqueParDefaut(String(valeur)) });
+      const regles = appliquerReglesCaisse({
+        type_envoi_caisse: String(valeur),
+        type_ouverture: demande.type_ouverture,
+        traitement: demande.traitement,
+        caisse_stock_id: demande.caisse_stock_id,
+      });
+      onEdit(demande.id, { type_envoi_caisse: valeur as string, ...regles });
       return;
     }
     onEdit(demande.id, { [champ]: valeur });
@@ -448,7 +457,7 @@ export default function DemandesTable({
     }
   }
 
-  function cell(demande: Demande, champ: Champ, align: "left" | "right" = "left", td: React.CSSProperties = tdStyle) {
+  function cell(demande: Demande, champ: Champ, align: "left" | "center" = "left", td: React.CSSProperties = tdStyle) {
     if (CHAMPS_BOOL.has(champ)) {
       return (
         <td style={{ ...td, textAlign: "center" }}>
@@ -514,7 +523,14 @@ export default function DemandesTable({
         title={avertissement}
         onClick={() => !readOnly && !enEdition && setCellEnEdition({ id: demande.id, champ })}
       >
-        {enEdition && optionsParChamp[champ] !== undefined ? (
+        {enEdition && champ === "type_ouverture" ? (
+          <EditableCellSelect
+            defaultValue={String(valeurBrute)}
+            options={ouverturesAutorisees(demande)}
+            onCommit={(v) => sauvegarderChamp(demande, champ, v)}
+            onCancel={() => setCellEnEdition(null)}
+          />
+        ) : enEdition && optionsParChamp[champ] !== undefined ? (
           <EditableCellSelect
             defaultValue={String(valeurBrute)}
             options={optionsParChamp[champ]!}
@@ -543,10 +559,19 @@ export default function DemandesTable({
     );
   }
 
-  function thFiltrable(champ: Champ, label: string, align: "left" | "right" = "left", th: React.CSSProperties = thStyle) {
+  function thFiltrable(champ: Champ, label: string, align: "left" | "center" = "left", th: React.CSSProperties = thStyle) {
     const actif = tri?.colonne === champ;
     const filtreActif = filtres[champ] !== undefined;
-    const valeursDistinctes = [...new Set(demandes.map((d) => valeurTexte(d, champ)))].sort((a, b) => a.localeCompare(b));
+    // Valeurs proposées au filtre : uniquement celles des lignes actuellement visibles —
+    // « masquer les caisses reçues » et les filtres des AUTRES colonnes sont pris en compte,
+    // pour ne jamais proposer une valeur qui vide le tableau une fois sélectionnée.
+    const autresFiltres = Object.entries(filtres).filter(([c]) => c !== champ) as [Champ, string[]][];
+    const baseValeurs = demandesVisibles.filter((d) =>
+      autresFiltres.every(([c, vals]) => vals.includes(valeurTexte(d, c))),
+    );
+    const valeursDistinctes = [...new Set(baseValeurs.map((d) => valeurTexte(d, champ)))].sort((a, b) =>
+      a.localeCompare(b),
+    );
     const selection = filtres[champ] ? new Set(filtres[champ]) : null;
     const largeur = largeurColonne(champ);
     return (
@@ -558,12 +583,12 @@ export default function DemandesTable({
           top: 0,
           width: largeur,
           maxWidth: largeur,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
+          // Un filtre actif sur la colonne teinte son en-tête (repère visuel).
+          background: filtreActif ? "var(--filtre-actif-bg)" : th.background,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: align === "right" ? "flex-end" : "flex-start", gap: 4 }}>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: align === "center" ? "center" : "flex-start", gap: 4 }}>
+          <span style={{ wordBreak: "keep-all", overflowWrap: "normal" }}>{label}</span>
           <button
             ref={(el) => {
               if (el) boutonsFiltreRef.current[champ] = el;
@@ -628,33 +653,40 @@ export default function DemandesTable({
   const td = compact ? tdStyleCompact : tdStyle;
   const colonnesAvecLargeur = colonnesAffichees.map((c) => ({ ...c, largeur: largeurColonne(c.champ) }));
 
+  const optionsMenu = (
+    <TableOptionsMenu
+      colonnes={COLONNES.map((c) => ({ champ: c.champ, label: c.label }))}
+      colonnesVisibles={colonnesVisibles}
+      onChangeColonnesVisibles={changerColonnesVisibles}
+      compact={compact}
+      onChangeCompact={changerCompact}
+      masquerValidees={masquerValidees}
+      onChangeMasquerValidees={changerMasquerValidees}
+      inverse={inverse}
+      onChangeInverse={changerInverse}
+    />
+  );
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
-        <div>
-          {selectedIds.size > 0 && !readOnly && (
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-sm btn-primary" onClick={() => validerSelection(true)}>
-                Valider la sélection ({selectedIds.size})
-              </button>
-              <button className="btn btn-sm" onClick={() => validerSelection(false)}>
-                Dévalider la sélection
-              </button>
-            </div>
-          )}
+      {slotOptions ? createPortal(optionsMenu, slotOptions) : null}
+      {(selectedIds.size > 0 && !readOnly) || !slotOptions ? (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+          <div>
+            {selectedIds.size > 0 && !readOnly && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-sm btn-primary" onClick={() => validerSelection(true)}>
+                  Valider la sélection ({selectedIds.size})
+                </button>
+                <button className="btn btn-sm" onClick={() => validerSelection(false)}>
+                  Dévalider la sélection
+                </button>
+              </div>
+            )}
+          </div>
+          {!slotOptions && optionsMenu}
         </div>
-        <TableOptionsMenu
-          colonnes={COLONNES.map((c) => ({ champ: c.champ, label: c.label }))}
-          colonnesVisibles={colonnesVisibles}
-          onChangeColonnesVisibles={changerColonnesVisibles}
-          compact={compact}
-          onChangeCompact={changerCompact}
-          masquerValidees={masquerValidees}
-          onChangeMasquerValidees={changerMasquerValidees}
-          inverse={inverse}
-          onChangeInverse={changerInverse}
-        />
-      </div>
+      ) : null}
       <div ref={conteneurScrollRef} style={{ overflow: "auto", maxHeight: "calc(100vh - 220px)", paddingBottom: 80 }}>
         <table
           style={{
@@ -887,7 +919,7 @@ function SousLigneCaisse({
   onSelectStock,
 }: {
   caisse: DemandeCaisse;
-  colonnesAffichees: { champ: Champ; label: string; align?: "left" | "right"; largeur: number }[];
+  colonnesAffichees: { champ: Champ; label: string; align?: "left" | "center"; largeur: number }[];
   caissesStock: CaisseStock[];
   optionsParChamp: Partial<Record<keyof DemandeCaisse, string[]>>;
   td: React.CSSProperties;
@@ -929,7 +961,7 @@ function SousLigneCaisse({
     }
   }
 
-  function cellulePourColonne(colonne: { champ: Champ; align?: "left" | "right"; largeur: number }) {
+  function cellulePourColonne(colonne: { champ: Champ; align?: "left" | "center"; largeur: number }) {
     const champSousLigne = CHAMP_SOUS_LIGNE[colonne.champ];
     const style: React.CSSProperties = {
       ...td,
@@ -1003,7 +1035,17 @@ function SousLigneCaisse({
         title={verrouille ? "Repris de la demande — non modifiable ici" : avertissementMesures4C}
         onClick={() => editable && !enEdition && setChampEnEdition(champSousLigne)}
       >
-        {enEdition && optionsParChamp[champSousLigne] !== undefined ? (
+        {enEdition && champSousLigne === "type_ouverture" ? (
+          <EditableCellSelect
+            defaultValue={String(valeurBrute)}
+            options={ouverturesAutorisees(caisse)}
+            onCommit={(v) => {
+              setChampEnEdition(null);
+              if (v !== valeurBrute) onEdit({ type_ouverture: v });
+            }}
+            onCancel={() => setChampEnEdition(null)}
+          />
+        ) : enEdition && optionsParChamp[champSousLigne] !== undefined ? (
           <EditableCellSelect
             defaultValue={String(valeurBrute)}
             options={optionsParChamp[champSousLigne]!}
@@ -1071,7 +1113,7 @@ function EditableCellInput({
 }: {
   type: "text" | "number" | "date";
   defaultValue: string;
-  align: "left" | "right";
+  align: "left" | "center";
   onCommit: (value: string) => void;
   onCancel: () => void;
   onTabNext?: (backward: boolean) => void;
@@ -1239,32 +1281,42 @@ const menuBoutonStyle: React.CSSProperties = {
 };
 
 const thStyle: React.CSSProperties = {
-  padding: "9px 8px",
+  padding: "8px 8px",
   borderBottom: "2px solid var(--row-border-color)",
   borderRight: "1px solid var(--row-border-color)",
-  fontSize: 11,
+  fontSize: 11.5,
   fontWeight: 700,
-  letterSpacing: "0.03em",
+  letterSpacing: "0.02em",
   textTransform: "uppercase",
   position: "sticky",
   top: 0,
   background: "var(--bg-panel)",
   zIndex: 1,
-  whiteSpace: "nowrap",
+  // Les titres peuvent passer sur plusieurs lignes pour que tous les caractères restent
+  // visibles, mais un mot n'est jamais coupé au milieu (retour à la ligne aux espaces seulement).
+  whiteSpace: "normal",
+  overflowWrap: "normal",
+  wordBreak: "keep-all",
+  hyphens: "none",
+  lineHeight: 1.2,
+  verticalAlign: "bottom",
 };
 const tdStyle: React.CSSProperties = {
-  padding: "10px 8px",
+  padding: "10px 10px",
   borderBottom: "1px solid var(--row-border-color)",
   borderRight: "1px solid var(--row-border-color)",
   verticalAlign: "middle",
+  // Toutes les valeurs texte alignées à gauche avec une petite marge (les colonnes dates / Qté
+  // passent textAlign:"center" via leur `align`).
+  textAlign: "left",
 };
 
 const thStyleCompact: React.CSSProperties = {
   ...thStyle,
   padding: "4px 5px",
-  fontSize: 9.5,
+  fontSize: 10,
 };
 const tdStyleCompact: React.CSSProperties = {
   ...tdStyle,
-  padding: "6px 5px",
+  padding: "6px 6px",
 };

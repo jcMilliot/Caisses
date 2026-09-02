@@ -29,11 +29,12 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<Caisse> {
         caisse_stock_id: row.get(9)?,
         type_envoi_caisse: row.get(10)?,
         demande_caisse_id: row.get(11)?,
+        demande_id: row.get(12)?,
     })
 }
 
 const SELECT_COLS: &str =
-    "id, affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, couleur, ordre, caisse_stock_id, type_envoi_caisse, demande_caisse_id";
+    "id, affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm, seuil_pct, couleur, ordre, caisse_stock_id, type_envoi_caisse, demande_caisse_id, demande_id";
 
 #[tauri::command]
 pub fn list_caisses(db: State<Db>, affaire_id: i64) -> Result<Vec<Caisse>, String> {
@@ -136,6 +137,22 @@ pub fn link_caisse_demande_caisse(db: State<Db>, id: i64, demande_caisse_id: i64
     conn.execute(
         "UPDATE caisse SET demande_caisse_id = ?1 WHERE id = ?2",
         rusqlite::params![demande_caisse_id, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Lie la caisse "mère" d'une simulation à la ligne de demande dont elle est issue — pour que
+/// la synchro bidirectionnelle des dimensions reste fiable même si la caisse est renommée dans
+/// Simulations. Idempotent (on peut le rappeler sans effet si le lien est déjà bon).
+#[tauri::command]
+pub fn link_caisse_demande(db: State<Db>, id: i64, demande_id: i64, trigramme: String) -> Result<(), String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock_for_caisse(conn, id, &trigramme)?;
+    conn.execute(
+        "UPDATE caisse SET demande_id = ?1 WHERE id = ?2",
+        rusqlite::params![demande_id, id],
     )
     .map_err(|e| e.to_string())?;
     Ok(())

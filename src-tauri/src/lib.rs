@@ -13,12 +13,15 @@ use commands::caisse_stock::{
     create_caisse_stock, delete_caisse_stock, list_caisses_stock, set_caisse_stock_validee, transfer_caisse_stock,
     update_caisse_stock,
 };
-use commands::caisses::{create_caisse, delete_caisse, link_caisse_demande_caisse, list_caisses, update_caisse};
+use commands::caisses::{
+    create_caisse, delete_caisse, link_caisse_demande, link_caisse_demande_caisse, list_caisses, update_caisse,
+};
 use commands::demande_caisse::{create_demande_caisse, delete_demande_caisse, list_all_demande_caisses, update_demande_caisse};
 use commands::demandes::{
     bulk_create_demandes, create_demande, delete_demande, list_demandes, set_demande_validee,
     update_demande,
 };
+use commands::journal::{list_journal, peut_lire_journal};
 use commands::locks::{
     acquire_lock, claim_expired_pen, heartbeat, list_locks, release_lock, request_pen, respond_pen_request,
 };
@@ -68,6 +71,7 @@ pub fn run() {
             create_caisse,
             update_caisse,
             link_caisse_demande_caisse,
+            link_caisse_demande,
             delete_caisse,
             list_articles,
             create_article,
@@ -105,6 +109,8 @@ pub fn run() {
             rename_option_liste,
             count_option_liste_usage,
             delete_option_liste,
+            list_journal,
+            peut_lire_journal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

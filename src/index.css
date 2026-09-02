@@ -27,6 +27,9 @@
   --row-border-color-marquee: #000000;
   --row-border-color: var(--border);
 
+  /* En-tête d'une colonne ayant un filtre actif (tous les tableaux). */
+  --filtre-actif-bg: #eae4f4;
+
   --radius: 8px;
   --radius-lg: 12px;
   --shadow-sm: 0 1px 2px rgba(32, 30, 26, 0.06);

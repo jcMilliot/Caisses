@@ -1,6 +1,6 @@
 [package]
 name = "caisses"
-version = "0.7.0"
+version = "0.8.0"
 description = "Gestion d'affaires, articles et caisses de conditionnement"
 authors = ["you"]
 edition = "2021"

@@ -111,7 +111,18 @@ export default function ColumnFilterMenu({ valeurs, selection, onApply, triActif
           autoFocus
           value={recherche}
           onChange={(e) => changerRecherche(e.target.value)}
-          placeholder="Rechercher…"
+          onKeyDown={(e) => {
+            // Entrée valide le filtre. Espace aussi quand le champ est vide (rien à saisir),
+            // pour valider au clavier sans viser le bouton OK.
+            if (e.key === "Enter" || (e.key === " " && recherche === "")) {
+              e.preventDefault();
+              appliquer();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              onClose();
+            }
+          }}
+          placeholder="Rechercher… (Entrée pour valider)"
           style={{
             width: "100%",
             padding: "5px 8px",

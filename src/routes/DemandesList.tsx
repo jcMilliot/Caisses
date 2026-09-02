@@ -13,8 +13,14 @@ import LockBanner from "../components/LockBanner";
 import { useSectionLock } from "../hooks/useSectionLock";
 import { confirmerSuppression, confirmerAction } from "../data/confirm";
 import { estArCaiss } from "../domain/caisseStock";
-import { contrePlaqueParDefaut, demandesActivesPourAffaire } from "../domain/demandeOptions";
-import type { Demande, NewDemande, DemandeCaisse, NewDemandeCaisse, CaisseStock, OptionListe, ListeOption } from "../domain/types";
+import {
+  contrePlaqueParDefaut,
+  demandesActivesPourAffaire,
+  memeNomAffaire,
+  appliquerReglesCaisse,
+  OUVERTURE_PAR_DESSUS,
+} from "../domain/demandeOptions";
+import type { Affaire, Demande, NewDemande, DemandeCaisse, NewDemandeCaisse, CaisseStock, OptionListe, ListeOption } from "../domain/types";
 
 let prochainIdTemporaire = -1;
 
@@ -58,10 +64,6 @@ function sousCaisseSansId(c: DemandeCaisse, demandeIdReel: number): NewDemandeCa
   return { ...base, demande_id: demandeIdReel };
 }
 
-function sansId(d: Demande, patch: Partial<Demande>): NewDemande {
-  const { id: _id, ordre: _ordre, validee: _validee, ...base } = { ...d, ...patch };
-  return base;
-}
 
 interface Props {
   onSimulerAffaire: (demande: Demande) => void;
@@ -84,6 +86,9 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   // sur une demande pas encore enregistrée — les seules à persister dans handleEnregistrer.
   const [demandeCaissesServeur, setDemandeCaissesServeur] = useState<DemandeCaisse[]>([]);
   const [caissesStock, setCaissesStock] = useState<CaisseStock[]>([]);
+  const [affaires, setAffaires] = useState<Affaire[]>([]);
+  const affairesRef = useRef(affaires);
+  affairesRef.current = affaires;
   const [optionsPersonnalisees, setOptionsPersonnalisees] = useState<OptionListe[]>([]);
   const [lignesEtendues, setLignesEtendues] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -91,13 +96,19 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   const [importOuvert, setImportOuvert] = useState(false);
   const [ajoutOuvert, setAjoutOuvert] = useState(false);
   const [gestionRefsOuvert, setGestionRefsOuvert] = useState(false);
+  const [slotOptions, setSlotOptions] = useState<HTMLDivElement | null>(null);
   const brouillonRef = useRef(brouillon);
   brouillonRef.current = brouillon;
   const demandesRef = useRef(demandes);
   demandesRef.current = demandes;
 
-  const sousCaissesBrouillon = demandeCaisses.some((c) => c.id < 0);
-  const modifie = JSON.stringify(brouillon) !== JSON.stringify(demandes) || sousCaissesBrouillon;
+  // Sous-caisses supprimées localement (id > 0), à effacer en base au moment de l'enregistrement.
+  const [sousCaissesSupprimees, setSousCaissesSupprimees] = useState<DemandeCaisse[]>([]);
+
+  const modifie =
+    JSON.stringify(brouillon) !== JSON.stringify(demandes) ||
+    JSON.stringify(demandeCaisses) !== JSON.stringify(demandeCaissesServeur) ||
+    sousCaissesSupprimees.length > 0;
   const modifieRef = useRef(modifie);
   modifieRef.current = modifie;
 
@@ -109,11 +120,12 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   async function reload() {
     setLoading(true);
     try {
-      const [d, dc, cs, opts] = await Promise.all([
+      const [d, dc, cs, opts, aff] = await Promise.all([
         demandesApi.list(),
         demandeCaisseApi.listAll(),
         caisseStockApi.list(),
         optionsListeApi.list(),
+        affairesApi.list(),
       ]);
       setDemandes(d);
       setBrouillon(d);
@@ -121,6 +133,9 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
       setDemandeCaissesServeur(dc);
       setCaissesStock(cs);
       setOptionsPersonnalisees(opts);
+      setAffaires(aff);
+      // Les caisses filles sont dépliées par défaut (visibles d'emblée).
+      setLignesEtendues(new Set(dc.map((c) => c.demande_id)));
     } finally {
       setLoading(false);
     }
@@ -179,6 +194,93 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
 
   function handleEditLocal(id: number, patch: Partial<Demande>) {
     setBrouillon((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+
+    // Cascade vers les sous-caisses : la date de picking et le type d'envoi de la mère font
+    // foi — on les répercute, et pour le type d'envoi on ré-applique les règles (ouverture
+    // autorisée, NIMP15, contre-plaqué) sur chaque sous-caisse.
+    const cascade: Partial<DemandeCaisse> = {};
+    if ("date_picking" in patch) cascade.date_picking = patch.date_picking;
+    if ("type_envoi_caisse" in patch) cascade.type_envoi_caisse = patch.type_envoi_caisse;
+    if (Object.keys(cascade).length === 0) return;
+
+    setDemandeCaisses((prev) =>
+      prev.map((c) => {
+        if (c.demande_id !== id) return c;
+        const majEnvoi = cascade.type_envoi_caisse ?? c.type_envoi_caisse;
+        const regles =
+          "type_envoi_caisse" in cascade
+            ? appliquerReglesCaisse({
+                type_envoi_caisse: majEnvoi,
+                type_ouverture: c.type_ouverture,
+                traitement: c.traitement,
+                caisse_stock_id: c.caisse_stock_id,
+              })
+            : {};
+        return { ...c, ...cascade, ...regles };
+      }),
+    );
+  }
+
+  // Après enregistrement : si une demande dont les dimensions ont changé (ou qui vient d'être
+  // créée) correspond à une affaire Simulations existante, propose de mettre à jour la caisse
+  // interne du même nom. Une confirmation par affaire concernée.
+  async function repercuterDimsVersSimulation(modifiees: Demande[], creees: Demande[]) {
+    const affaires = await affairesApi.list();
+    const dejaProposees = new Set<string>();
+
+    async function traiter(d: Demande, dimsOntChange: boolean) {
+      if (!dimsOntChange) return;
+      const affaire = affaires.find((a) => memeNomAffaire(a.nom, d.affaire));
+      if (!affaire || dejaProposees.has(affaire.nom)) return;
+      dejaProposees.add(affaire.nom);
+      const caisses = await caissesApi.list(affaire.id);
+      // Priorité au lien explicite (caisse.demande_id) ; à défaut, la caisse "mère" = celle qui
+      // porte le nom de l'affaire et n'est pas liée à une sous-caisse de demande.
+      const memeNom = caisses.filter((c) => c.nom.trim().toLowerCase() === d.affaire.trim().toLowerCase());
+      const caisse =
+        caisses.find((c) => c.demande_id === d.id) ?? memeNom.find((c) => c.demande_caisse_id === null) ?? memeNom[0];
+      if (!caisse) return;
+      const identique =
+        Math.abs(caisse.longueur_mm - d.longueur_mm) < 0.5 &&
+        Math.abs(caisse.largeur_mm - d.largeur_mm) < 0.5 &&
+        Math.abs(caisse.hauteur_mm - d.hauteur_mm) < 0.5;
+      if (identique) return;
+      const ok = await confirmerAction(
+        `L'affaire « ${affaire.nom} » est simulée. Répercuter les nouvelles dimensions sur la caisse « ${caisse.nom} » ?`,
+        "Synchroniser avec Simulations",
+      );
+      if (!ok) return;
+      try {
+        await caissesApi.update(
+          caisse.id,
+          caisse.nom,
+          d.longueur_mm,
+          d.largeur_mm,
+          d.hauteur_mm,
+          caisse.seuil_pct,
+          caisse.couleur,
+          caisse.type_envoi_caisse,
+          trigramme,
+        );
+      } catch (e) {
+        await confirmerAction(
+          `Impossible de mettre à jour la caisse « ${caisse.nom} » dans Simulations : ${e}. ` +
+            `L'affaire est peut-être ouverte sur un autre poste. La demande, elle, a bien été enregistrée.`,
+          "Synchronisation Simulations échouée",
+        );
+      }
+    }
+
+    for (const d of creees) await traiter(d, true);
+    for (const d of modifiees) {
+      const original = demandes.find((o) => o.id === d.id);
+      const change =
+        !original ||
+        original.longueur_mm !== d.longueur_mm ||
+        original.largeur_mm !== d.largeur_mm ||
+        original.hauteur_mm !== d.hauteur_mm;
+      await traiter(d, change);
+    }
   }
 
   // Cherche, dans l'affaire Simulations correspondant au nom de la demande (si elle existe), la
@@ -216,12 +318,26 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     await reload();
   }
 
+  // Une observation qui vaut marqueur de validation (Livré / Rapatriée / livrée / rapatriée…).
+  function estObservationValidation(obs: string): boolean {
+    const o = obs.trim().toLowerCase();
+    return ["livré", "livre", "livrée", "livree", "rapatriée", "rapatriee"].includes(o);
+  }
+
   function handleValider(id: number, validee: boolean) {
+    const demande = brouillonRef.current.find((d) => d.id === id);
     if (!validee) {
-      handleEditLocal(id, { validee });
+      // Dévalider : retirer aussi l'observation « Livré/Rapatriée » (sinon estDemandeValidee la
+      // considère toujours validée via l'observation historique).
+      const patch: Partial<Demande> = { validee: false };
+      if (demande && estObservationValidation(demande.observations)) patch.observations = "";
+      handleEditLocal(id, patch);
+      // Cascade : dévalider aussi les sous-caisses (leur observation de validation).
+      for (const sc of demandeCaisses.filter((c) => c.demande_id === id)) {
+        if (estObservationValidation(sc.observations)) handleEditDemandeCaisse(sc.id, { observations: "" });
+      }
       return;
     }
-    const demande = brouillonRef.current.find((d) => d.id === id);
     if (demande?.cde_passee_affaire) {
       handleEditLocal(id, { validee, observations: "Livré" });
     } else if (demande?.cde_passee_achat_stock) {
@@ -238,44 +354,24 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     }
   }
 
-  async function handleCreerDemandeCaisse(demande: Demande) {
-    // Demande pas encore enregistrée (id temporaire) : la sous-caisse est créée en brouillon
-    // local, elle sera persistée au moment de l'enregistrement (handleEnregistrer).
-    if (demande.id < 0) {
-      setDemandeCaisses((prev) => [...prev, nouvelleSousCaisseBrouillon(demande, prochainIdTemporaire--)]);
-      setLignesEtendues((prev) => new Set(prev).add(demande.id));
-      return;
-    }
-    const nouvelle = sousCaisseSansId(nouvelleSousCaisseBrouillon(demande, 0), demande.id);
-    const creee = await demandeCaisseApi.create(nouvelle, trigramme);
-    setDemandeCaisses((prev) => [...prev, creee]);
+  function handleCreerDemandeCaisse(demande: Demande) {
+    // Toujours en brouillon (id temporaire négatif) — persistée à l'enregistrement.
+    setDemandeCaisses((prev) => [...prev, nouvelleSousCaisseBrouillon(demande, prochainIdTemporaire--)]);
     setLignesEtendues((prev) => new Set(prev).add(demande.id));
   }
 
-  async function handleEditDemandeCaisse(id: number, patch: Partial<DemandeCaisse>) {
-    const existante = demandeCaisses.find((c) => c.id === id);
-    if (!existante) return;
-    // Sous-caisse brouillon (id négatif) : édition purement locale jusqu'à l'enregistrement.
-    if (id < 0) {
-      setDemandeCaisses((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-      return;
-    }
-    const { id: _id, ordre: _ordre, ...base } = existante;
-    await demandeCaisseApi.update(id, { ...base, ...patch }, trigramme);
+  // Édition d'une sous-caisse : purement locale (brouillon) — persistée dans handleEnregistrer,
+  // comme les lignes mères. « Annuler » restaure l'état serveur.
+  function handleEditDemandeCaisse(id: number, patch: Partial<DemandeCaisse>) {
     setDemandeCaisses((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
 
   async function handleDeleteDemandeCaisse(id: number) {
     if (!(await confirmerSuppression("Supprimer cette caisse détaillée ?"))) return;
-    if (id < 0) {
-      setDemandeCaisses((prev) => prev.filter((c) => c.id !== id));
-      return;
-    }
     const sousLigne = demandeCaisses.find((c) => c.id === id);
-    const demandeParente = sousLigne ? demandes.find((d) => d.id === sousLigne.demande_id) : undefined;
-    if (demandeParente) await supprimerCaisseLieeSiConfirmee(demandeParente.affaire, id);
-    await demandeCaisseApi.delete(id, trigramme);
     setDemandeCaisses((prev) => prev.filter((c) => c.id !== id));
+    // Sous-caisse déjà en base : on mémorise la suppression pour l'appliquer à l'enregistrement.
+    if (id > 0 && sousLigne) setSousCaissesSupprimees((prev) => [...prev, sousLigne]);
   }
 
   // Trouve la demande qui possède déjà cette caisse (autre que demandeId), si conflit — sert à
@@ -308,31 +404,84 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   }
 
   async function handleSelectStock(demandeId: number, caisseStockId: number | null) {
+    // Édition brouillon comme le reste du tableau — rien n'est persisté avant « Enregistrer »,
+    // et « Annuler » restaure les dimensions d'origine.
     if (caisseStockId === null) {
       handleEditLocal(demandeId, { caisse_stock_id: null });
-      await demandesApi.update(demandeId, sansId(demandesRef.current.find((d) => d.id === demandeId)!, { caisse_stock_id: null }), trigramme);
-      setDemandes((prev) => prev.map((d) => (d.id === demandeId ? { ...d, caisse_stock_id: null } : d)));
       return;
     }
     const cs = caissesStock.find((c) => c.id === caisseStockId);
     if (!cs) return;
     if (!(await confirmerEtDemanderReassignment(cs, demandeId))) return;
-    const patch: Partial<Demande> = {
+
+    const demande = brouillonRef.current.find((d) => d.id === demandeId);
+    // Cas ACHSTOCK (AR_CAISS_...) sur une demande dont l'affaire existe déjà en Simulations :
+    // on demande s'il faut reprendre les mesures de la caisse en stock. Refus → on n'affecte
+    // pas la caisse (retour à vide), la coche « commandé sur affaire » est laissée telle quelle.
+    const affaireExiste =
+      demande && demande.affaire.trim() !== "" && affairesRef.current.some((a) => memeNomAffaire(a.nom, demande.affaire));
+    if (estArCaiss(cs.nom) && affaireExiste) {
+      const reprendre = await confirmerAction(
+        `Reprendre les mesures de la caisse en stock « ${cs.nom} » (${(cs.longueur_mm / 1000).toFixed(2)} × ${(cs.largeur_mm / 1000).toFixed(2)} × ${(cs.hauteur_mm / 1000).toFixed(2)} m) pour cette demande ?`,
+        "Mesures de la caisse en stock",
+      );
+      if (!reprendre) {
+        handleEditLocal(demandeId, { caisse_stock_id: null });
+        return;
+      }
+      handleEditLocal(demandeId, {
+        caisse_stock_id: caisseStockId,
+        longueur_mm: cs.longueur_mm,
+        largeur_mm: cs.largeur_mm,
+        hauteur_mm: cs.hauteur_mm,
+        type_ouverture: OUVERTURE_PAR_DESSUS,
+      });
+      // Si l'affaire est déjà simulée, proposer de répercuter les mesures sur la caisse interne.
+      await proposerSyncCaisseSimu(demande!.affaire, cs);
+      return;
+    }
+
+    handleEditLocal(demandeId, {
       caisse_stock_id: caisseStockId,
       longueur_mm: cs.longueur_mm,
       largeur_mm: cs.largeur_mm,
       hauteur_mm: cs.hauteur_mm,
-    };
-    const demandeActuelle = demandesRef.current.find((d) => d.id === demandeId);
-    if (!demandeActuelle) return;
-    await demandesApi.update(demandeId, sansId(demandeActuelle, patch), trigramme);
-    setDemandes((prev) => prev.map((d) => (d.id === demandeId ? { ...d, ...patch } : d)));
-    handleEditLocal(demandeId, patch);
+      // Caisse en stock → type d'ouverture forcé « Par dessus ».
+      type_ouverture: OUVERTURE_PAR_DESSUS,
+    });
+  }
+
+  // Propose de répercuter les mesures d'une caisse en stock sur la Caisse correspondante d'une
+  // affaire Simulations déjà créée (identifiée par le nom de l'affaire). Sans effet si l'affaire
+  // n'existe pas ou n'a pas de caisse portant son nom.
+  async function proposerSyncCaisseSimu(nomAffaire: string, cs: CaisseStock) {
+    const affaires = await affairesApi.list();
+    const affaire = affaires.find((a) => memeNomAffaire(a.nom, nomAffaire));
+    if (!affaire) return;
+    const caisses = await caissesApi.list(affaire.id);
+    const caisse = caisses.find((c) => c.nom.trim().toLowerCase() === nomAffaire.trim().toLowerCase());
+    if (!caisse) return;
+    const confirme = await confirmerAction(
+      `L'affaire « ${affaire.nom} » est déjà simulée. Mettre à jour les dimensions de la caisse « ${caisse.nom} » avec celles de « ${cs.nom} » ?`,
+      "Synchroniser avec Simulations",
+    );
+    if (!confirme) return;
+    await caissesApi.update(
+      caisse.id,
+      caisse.nom,
+      cs.longueur_mm,
+      cs.largeur_mm,
+      cs.hauteur_mm,
+      caisse.seuil_pct,
+      caisse.couleur,
+      caisse.type_envoi_caisse,
+      trigramme,
+    );
   }
 
   async function handleSelectStockSousLigne(id: number, caisseStockId: number | null) {
     if (caisseStockId === null) {
-      await handleEditDemandeCaisse(id, { caisse_stock_id: null });
+      handleEditDemandeCaisse(id, { caisse_stock_id: null });
       return;
     }
     const cs = caissesStock.find((c) => c.id === caisseStockId);
@@ -340,11 +489,12 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     const sousLigne = demandeCaisses.find((c) => c.id === id);
     if (!sousLigne) return;
     if (!(await confirmerEtDemanderReassignment(cs, sousLigne.demande_id))) return;
-    await handleEditDemandeCaisse(id, {
+    handleEditDemandeCaisse(id, {
       caisse_stock_id: caisseStockId,
       longueur_mm: cs.longueur_mm,
       largeur_mm: cs.largeur_mm,
       hauteur_mm: cs.hauteur_mm,
+      type_ouverture: OUVERTURE_PAR_DESSUS,
     });
   }
 
@@ -401,6 +551,29 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
           }
         }
       }
+
+      // Sous-caisses sur demandes déjà enregistrées : créations (id < 0 rattachées à une mère
+      // id > 0), modifications et suppressions.
+      for (const sc of demandeCaisses.filter((c) => c.id < 0 && c.demande_id > 0)) {
+        await demandeCaisseApi.create(sousCaisseSansId(sc, sc.demande_id), trigramme);
+      }
+      for (const sc of demandeCaisses.filter((c) => c.id > 0)) {
+        const original = demandeCaissesServeur.find((o) => o.id === sc.id);
+        if (original && JSON.stringify(original) !== JSON.stringify(sc)) {
+          const { id: _id, ordre: _ordre, ...base } = sc;
+          await demandeCaisseApi.update(sc.id, base, trigramme);
+        }
+      }
+      for (const sc of sousCaissesSupprimees) {
+        const demandeParente = demandes.find((d) => d.id === sc.demande_id);
+        if (demandeParente) await supprimerCaisseLieeSiConfirmee(demandeParente.affaire, sc.id);
+        await demandeCaisseApi.delete(sc.id, trigramme);
+      }
+      setSousCaissesSupprimees([]);
+
+      // Répercussion des modifs de dimensions sur la simulation, si l'affaire existe.
+      await repercuterDimsVersSimulation(aModifier, aCreer);
+
       await reload();
     } finally {
       setEnregistrement(false);
@@ -410,6 +583,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   function handleAnnuler() {
     setBrouillon(demandes);
     setDemandeCaisses(demandeCaissesServeur);
+    setSousCaissesSupprimees([]);
   }
 
   async function handleAjouterOption(liste: ListeOption, valeur: string) {
@@ -436,9 +610,11 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent)", marginBottom: 4 }}>
             Caisses
           </div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Demandes</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>
+            Tableau de gestion des caisses
+          </h1>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
           {modifie && <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Modifications non enregistrées</span>}
           {modifie && (
             <button className="btn" onClick={handleAnnuler}>
@@ -446,7 +622,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
             </button>
           )}
           <button className="btn" onClick={() => setAjoutOuvert(true)} disabled={readOnly}>
-            + Ajouter des demandes
+            + Créer une nouvelle caisse
           </button>
           <button className="btn" onClick={() => setImportOuvert(true)} disabled={readOnly}>
             Coller depuis Excel
@@ -454,6 +630,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
           <button className="btn" onClick={() => setGestionRefsOuvert(true)} disabled={readOnly}>
             Gérer les références
           </button>
+          <div ref={setSlotOptions} style={{ display: "inline-flex" }} />
           <button className="btn btn-primary" disabled={!modifie || enregistrement || readOnly} onClick={handleEnregistrer}>
             {enregistrement ? "Enregistrement…" : "Enregistrer"}
           </button>
@@ -491,6 +668,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
             onValider={handleValider}
             onSimulerAffaire={onSimulerAffaire}
             optionsPersonnalisees={optionsPersonnalisees}
+            slotOptions={slotOptions}
             readOnly={readOnly}
           />
         </div>

@@ -22,6 +22,7 @@ pub struct Caisse {
     pub caisse_stock_id: Option<i64>,
     pub type_envoi_caisse: String,
     pub demande_caisse_id: Option<i64>,
+    pub demande_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -206,4 +207,15 @@ pub struct OptionListe {
     pub liste: String,
     pub valeur: String,
     pub ordre: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JournalEntree {
+    pub id: i64,
+    pub horodatage: String,
+    pub trigramme: String,
+    pub action: String,
+    pub entite: String,
+    pub entite_id: Option<i64>,
+    pub details: String,
 }

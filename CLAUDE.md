@@ -83,6 +83,8 @@ src-tauri/src/
                         table indépendante (pas de FK vers affaire — `affaire` = texte libre)
     demande_caisse.rs → CRUD sous-caisses d'une demande (multi-caisses par demande)
     caisse_stock.rs   → CRUD caisses en stock + transfer + set_caisse_stock_validee
+    journal.rs        → journal d'audit : journaliser() appelé par les commandes concernées +
+                        list_journal / peut_lire_journal (lecture réservée au trigramme AJC)
     locks.rs          → verrouillage applicatif multi-poste (acquire/release/heartbeat/
                         request_pen/respond_pen_request/list_locks + require_lock)
     options_liste.rs  → valeurs personnalisées des listes déroulantes Demandes (moteurs /
@@ -103,7 +105,8 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-09-01 : migrations `0001` à `0018` (dernière : `0018_seed_modules_lineaires.sql`).
+État au 2026-09-02 : migrations `0001` à `0020` (dernière : `0020_add_caisse_demande_id.sql` ;
+pas de `0019_reorder` — supprimé avant publication, cf. journal des listes).
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
 triées côté frontend par `demandeOptions.ts::comparerOption` (quantité de tête puis n° de
 référence, ex. `1 MOTEUR` < `2 MOTEURS` < `10 MOTEURS` ; `1 FESTO 426` < `1 FESTO 485` <
@@ -127,7 +130,9 @@ caisse (id, affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm,
         couleur TEXT,         -- hex pastel, attribuée auto à la création (palette round-robin),
                                -- modifiable via un sélecteur visuel dans CaisseCard
         type_envoi_caisse TEXT,       -- ajouté 0014 (standard / 4B / 4C…)
-        demande_caisse_id INTEGER NULL,  -- 0014, lien vers une sous-caisse de demande
+        demande_caisse_id INTEGER NULL,  -- 0014, lien vers une SOUS-caisse de demande
+        demande_id        INTEGER NULL,  -- 0020, lien vers la ligne de demande dont la caisse
+                                          --   MÈRE est issue (synchro dims fiable même renommée)
         caisse_stock_id   INTEGER NULL,  -- 0011, lien vers une caisse en stock
         ordre)
 
@@ -169,6 +174,13 @@ caisse_stock (id, nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observatio
 section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" | "affaire:{id}"
               titulaire, acquis_le, dernier_battement,  -- trigramme + horodatages
               demandeur NULL, demande_le NULL, demande_statut)  -- 'aucune'|'en_attente'|'refusee'
+
+journal (id, horodatage, trigramme, action, entite, entite_id NULL, details)  -- 0019
+         -- journal d'audit des actions à effet fort. `action` ∈ 'creation' | 'suppression' |
+         -- 'modification_dimensions' | 'reference_ajout' | 'reference_modification' |
+         -- 'reference_suppression'. `entite` ∈ 'demande' | 'demande_caisse' | 'option_liste'.
+         -- Écriture par journaliser() (best-effort, jamais bloquant) ; lecture (list_journal)
+         -- réservée au trigramme AJC — identité = trigramme déclaratif, pas une preuve.
 
 option_liste (id, liste TEXT, valeur TEXT, ordre, UNIQUE(liste, valeur))  -- 0016 + seed 0017
          -- valeurs des listes déroulantes de la section Demandes ; `liste` ∈ 'moteurs' |
@@ -514,6 +526,22 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
 
 ### Fait
 
+- **Verrouillage applicatif multi-poste — complet** : table `section_lock`,
+  `commands/locks.rs::require_lock` sur toutes les mutations, `hooks/useSectionLock.ts` (polling
+  7 s, détection d'activité). Testé à deux postes le 2026-07-31. Auto-expiration de la demande
+  de crayon ajoutée le 2026-09-01 (`demande_expiree` + `claim_expired_pen`, seuil 90 s). Les
+  seuls « restes » sont des choix assumés, pas des bugs (dérive d'horloge entre postes,
+  pas de droits par utilisateur — cf. « À réfléchir plus tard »).
+- **Journal d'audit** — implémenté le 2026-09-02 (`commands/journal.rs`, migration `0019`,
+  route `src/routes/Journal.tsx`). Périmètre restreint (décision utilisateur) :
+  création/suppression de caisse (`demande`) et sous-caisse (`demande_caisse`), modification
+  des dimensions d'une caisse depuis Demandes, ajout/renommage/suppression de référence
+  (`option_liste`). `journaliser()` appelé dans les commandes concernées, dans la même
+  transaction quand il y en a une, best-effort (une erreur d'écriture du journal ne fait jamais
+  échouer l'action métier). Identité = trigramme déclaratif (pas d'auth). Consultation réservée
+  au trigramme **AJC** (garde côté `list_journal` + entrée de menu masquée sinon). **Rétention
+  2 mois** : trigger `trg_journal_purge` AFTER INSERT + purge au démarrage dans `db.rs`. Pour
+  élargir le périmètre : `journaliser(...)` dans la commande visée + libellé dans `Journal.tsx`.
 - **Contenu de "Caisses en stock"** : `src/routes/CaissesStockList.tsx` est un CRUD complet
   (nom/dimensions/quantité/observations, édition inline, verrouillage, suppression), ce n'est
   plus un stub. Vérifié le 2026-08-25.
@@ -680,6 +708,46 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
     déclenche plus si la demande de même nom est **validée** (close) — `demandeParente` filtre
     sur `!estDemandeValidee`.
 
+- **Section Demandes — règles métier dynamiques, brouillon complet, sync bidirectionnelle** —
+  2026-09-02 (`domain/demandeOptions.ts`, `DemandesTable.tsx`, `DemandesList.tsx`,
+  `AjouterDemandesDialog.tsx`, `AffaireDetail.tsx`) :
+  - **Règles caisse centralisées** (`demandeOptions.ts`) : `ouverturesAutorisees(état)` — 4C →
+    « Par dessus » uniquement (pas d'ouverture par devant) ; caisse en stock → « Par dessus »
+    forcé. `appliquerReglesCaisse(état)` renvoie le patch à appliquer après un changement de
+    type d'envoi / de caisse en stock : ouverture ramenée à « Par dessus » si plus autorisée,
+    NIMP15 forcé si 4B/4C et **retiré** si STANDARD, contre-plaqué recalculé. Appliqué partout
+    (édition inline mère + sous-ligne, `AjouterDemandesDialog`, sélection de caisse en stock).
+  - **Édition entièrement en brouillon** : les sous-caisses (création, édition, suppression) et
+    la sélection de caisse en stock passent désormais par le brouillon comme les lignes mères —
+    plus rien n'est persisté avant « Enregistrer », « Annuler » restaure tout.
+    `handleEnregistrer` diffe et applique création/modif/suppression des sous-caisses ;
+    `sousCaissesSupprimees` mémorise les suppressions de sous-caisses déjà en base.
+  - **Cascade mère → sous-caisses** : la date de picking et le type d'envoi de la mère sont
+    répercutés sur ses sous-caisses (`handleEditLocal`), avec ré-application des règles pour le
+    type d'envoi.
+  - **Sync bidirectionnelle des dimensions** avec Simulations, à l'enregistrement :
+    - Lien fiable caisse mère ↔ demande via `caisse.demande_id` (migration `0020`,
+      `link_caisse_demande`), posé par `App.creerCaissesManquantes` — la synchro ne dépend plus
+      du nom (qu'on renomme souvent dans Simulations pour être explicite). Fallback : caisse du
+      même nom que l'affaire non liée à une sous-caisse.
+    - Demandes → Simu : `repercuterDimsVersSimulation()` — pour chaque demande créée / dont les
+      dims ont changé, si l'affaire existe et a la caisse cible, propose de la mettre à jour
+      (une confirmation par affaire ; erreur affichée si le verrou de l'affaire est pris
+      ailleurs).
+    - Simu → Demandes : `AffaireDetail` — sous-caisse liée (`demande_caisse_id`) OU caisse mère
+      (`demande_id`, sinon nom) → `demandeCaisseApi.update` / `demandesApi.update`.
+  - **Dévalidation** : « Dévalider la sélection » / le menu contextuel effacent maintenant aussi
+    l'observation « Livré/Rapatriée » (sinon `estDemandeValidee` la considère toujours validée
+    via l'observation), en cascade sur les sous-caisses.
+  - **Filtres qui respectent « masquer les caisses reçues »** : `thFiltrable` calcule les
+    valeurs proposées sur `demandesVisibles` filtré par les *autres* colonnes — on ne peut plus
+    sélectionner une valeur qui vide le tableau.
+  - Divers : colonne Observations retirée de `AjouterDemandesDialog` ; nom d'affaire **≥ 8
+    caractères** obligatoire (`AffairesList`, `CreerAffaireDialog`) ; notification de blocage
+    si un champ obligatoire manque dans `AjouterDemandesDialog` ; `DimInput` (state texte local)
+    pour saisir « 0.xx » sans perdre le 0 ; confirmation avant de fermer le dialogue avec de la
+    saisie ; champs obligatoires (Affaire, Qté) au fond orangé.
+
 ### À faire
 
 *Fiabilité et infrastructure*
@@ -699,20 +767,10 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   candidats évidents quotidien ou hebdomadaire selon le volume réel de saisie. Pourrait être un
   simple script/tâche planifiée Windows dans un premier temps, ou une fonctionnalité intégrée à
   l'app plus tard (bouton "Sauvegarder maintenant" + copie automatique périodique).
-- **Verrouillage — restes connus** : ~~pas d'auto-expiration de la demande de crayon~~ → traité
-  le 2026-09-01 (`demande_expiree` + `claim_expired_pen`, seuil 90 s, cf. note `section_lock`
-  dans « Modèle de données »). Reste : pas de système de droits/permissions par utilisateur
-  (tout titulaire du verrou peut tout faire sur sa ressource) — évolution possible plus tard si
-  le besoin se présente. Si le besoin de temps réel/fiabilité dépasse ce que permet le polling,
-  le bon moment pour introduire le petit serveur HTTP déjà anticipé par la séparation `data/`
-  (cf. section Architecture).
 - **Dialogues natifs Tauri** : `@tauri-apps/plugin-dialog` est bien dans `package.json`
   (dépendance présente côté JS) mais toujours pas branché : `src/data/confirm.ts` utilise encore
   `window.confirm()` en fallback. Reste à remplacer par les dialogues natifs du plugin
   (suppression affaire/caisse/demande, confirmation de déplacement drag & drop).
-- **Export/impression d'un récapitulatif d'affaire** (explicitement hors v1, mentionné par
-  l'utilisateur pour plus tard) — toujours pas implémenté, aucune fonctionnalité d'export/print
-  trouvée dans `src/` en dehors de la copie d'affiche.
 - **Icônes de l'app** (`src-tauri/icons/`) — le jeu de fichiers présent correspond aux noms par
   défaut de `create-tauri-app` (`icon.ico`, `Square*Logo.png`, etc.) ; à confirmer visuellement si
   des icônes personnalisées ont depuis été déposées sous ces mêmes noms.
@@ -726,3 +784,28 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   code mort ou à supprimer, et les incohérences à corriger — à planifier une fois les points
   ci-dessus stabilisés plutôt qu'en parallèle, pour reviewer un état du code qui ne bouge pas sous
   le pied de la revue.
+
+### À réfléchir plus tard
+
+- **Système de droits/permissions par utilisateur** — décision 2026-09-02 : inutile pour l'usage
+  actuel (3 personnes, mêmes droits, interne bienveillant). À reconsidérer seulement si (a) un
+  poste « consultation seule » apparaît → option légère : `role` dans `user-identity.json` +
+  refus des mutations côté Rust ; (b) besoin d'identités vérifiées → table `utilisateur` + PIN,
+  ou serveur HTTP central (le bon moment = quand le partage SQLite réseau devient un problème).
+- **Colonne « type d'ouverture » dans le tableau Caisses en stock** — aujourd'hui une caisse en
+  stock n'a pas de type d'ouverture ; quand on en sélectionne une dans Demandes, le type
+  d'ouverture est forcé à « Par dessus ». Si le besoin d'un autre type par caisse en stock
+  apparaît, ajouter la colonne (migration + CRUD `caisse_stock`) et lever le forçage.
+- **Alias de caisse affiché dans le tableau Demandes** — quand on renomme une caisse dans
+  Simulations (souvent pour la rendre explicite, ex. « caisse moteurs »), afficher ce nom sous
+  le nom de l'affaire dans la colonne Affaire de la ligne de demande correspondante (caisse
+  mère via `caisse.demande_id`, sous-caisse via `caisse.demande_caisse_id`). Rendu discret :
+  police plus fine, gris (`--text-muted`), ~11px — purement informatif, non éditable côté
+  Demandes. Nécessite de charger les `caisse` liées dans `DemandesList` (via un nouvel endpoint
+  « caisses liées à des demandes » ou en filtrant `caissesApi` par affaire), et de n'afficher
+  l'alias que s'il diffère du nom de l'affaire.
+
+### Annulé pour le moment
+
+- **Export/impression d'un récapitulatif d'affaire** — abandonné (2026-09-02). Aucun besoin
+  concret ; la copie d'affiche (Demandes d'achats) couvre le seul cas de sortie utile.

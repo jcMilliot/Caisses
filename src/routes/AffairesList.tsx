@@ -40,9 +40,11 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
     reload();
   }, []);
 
+  const nomTropCourt = nom.trim().length > 0 && nom.trim().length < 8;
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!nom.trim()) return;
+    if (nom.trim().length < 8) return;
     if (affaires.some((a) => memeNomAffaire(a.nom, nom))) {
       const ok = await confirmerAction(
         `Une affaire « ${nom.trim()} » existe déjà. En créer une seconde du même nom ?`,
@@ -102,14 +104,19 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
           }}
         >
           <div style={{ flex: 1 }}>
-            <label style={labelStyle}>Nom de l'affaire</label>
+            <label style={labelStyle}>Nom de l'affaire (8 caractères minimum)</label>
             <input
               autoFocus
               value={nom}
               onChange={(e) => setNom(e.target.value)}
-              placeholder="Ex : Client XYZ — commande n°123"
-              style={inputStyle}
+              placeholder="Ex : UUSPM01D"
+              style={{ ...inputStyle, ...(nomTropCourt ? { borderColor: "var(--danger-border)" } : null) }}
             />
+            {nomTropCourt && (
+              <span style={{ fontSize: 11.5, color: "var(--danger-text)" }}>
+                Le nom doit comporter au moins 8 caractères.
+              </span>
+            )}
           </div>
           <div style={{ width: 160 }}>
             <label style={labelStyle}>Seuil de remplissage par défaut (%)</label>
@@ -122,7 +129,7 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
               style={inputStyle}
             />
           </div>
-          <button type="submit" className="btn btn-primary">
+          <button type="submit" className="btn btn-primary" disabled={nom.trim().length < 8}>
             Créer
           </button>
           <button type="button" className="btn" onClick={() => setCreating(false)}>

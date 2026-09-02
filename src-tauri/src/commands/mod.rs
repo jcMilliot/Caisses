@@ -4,6 +4,7 @@ pub mod caisse_stock;
 pub mod caisses;
 pub mod demande_caisse;
 pub mod demandes;
+pub mod journal;
 pub mod locks;
 pub mod options_liste;
 pub mod setup;

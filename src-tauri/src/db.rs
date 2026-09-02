@@ -82,6 +82,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0018_seed_modules_lineaires",
         include_str!("../../migrations/0018_seed_modules_lineaires.sql"),
     ),
+    (
+        "0019_add_journal",
+        include_str!("../../migrations/0019_add_journal.sql"),
+    ),
+    (
+        "0020_add_caisse_demande_id",
+        include_str!("../../migrations/0020_add_caisse_demande_id.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {
@@ -116,6 +124,10 @@ pub fn open_at(db_folder: &Path) -> Connection {
         conn.execute("INSERT INTO _migrations (nom) VALUES (?1)", [nom])
             .expect("impossible d'enregistrer la migration appliquée");
     }
+
+    // Purge du journal d'audit au démarrage (le trigger AFTER INSERT couvre le cas courant ;
+    // ceci gère une base restée longtemps sans écriture). Ignoré si la table n'existe pas encore.
+    let _ = conn.execute("DELETE FROM journal WHERE horodatage < datetime('now', '-2 months')", []);
 
     conn
 }

@@ -244,7 +244,7 @@ export default function ArticlesTable({
     const valeursDistinctes = [...new Set(articles.map((a) => valeurTexte(a, colonne)))].sort((a, b) => a.localeCompare(b));
     const selection = filtres[colonne] ? new Set(filtres[colonne]) : null;
     return (
-      <th style={{ ...thStyle, textAlign: align }}>
+      <th style={{ ...thStyle, textAlign: align, background: filtreActif ? "var(--filtre-actif-bg)" : thStyle.background }}>
         <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: align === "right" ? "flex-end" : "flex-start", gap: 4 }}>
           <span style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleTri(colonne)}>
             {label}
