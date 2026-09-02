@@ -51,5 +51,7 @@ export const caissesApi = {
     }),
   linkDemandeCaisse: (id: number, demande_caisse_id: number, trigramme: string) =>
     call<void>("link_caisse_demande_caisse", { id, demandeCaisseId: demande_caisse_id, trigramme }),
+  linkDemande: (id: number, demande_id: number, trigramme: string) =>
+    call<void>("link_caisse_demande", { id, demandeId: demande_id, trigramme }),
   delete: (id: number, trigramme: string) => call<void>("delete_caisse", { id, trigramme }),
 };

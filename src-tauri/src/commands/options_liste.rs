@@ -1,3 +1,4 @@
+use crate::commands::journal::journaliser;
 use crate::commands::locks::require_lock;
 use crate::db::Db;
 use crate::models::OptionListe;
@@ -88,12 +89,22 @@ pub fn create_option_liste(
     )
     .map_err(|e| e.to_string())?;
 
-    conn.query_row(
-        "SELECT id, liste, valeur, ordre FROM option_liste WHERE liste = ?1 AND valeur = ?2",
-        rusqlite::params![liste, valeur],
-        map_row,
-    )
-    .map_err(|e| e.to_string())
+    let cree = conn
+        .query_row(
+            "SELECT id, liste, valeur, ordre FROM option_liste WHERE liste = ?1 AND valeur = ?2",
+            rusqlite::params![liste, valeur],
+            map_row,
+        )
+        .map_err(|e| e.to_string())?;
+    journaliser(
+        conn,
+        &trigramme,
+        "reference_ajout",
+        "option_liste",
+        Some(cree.id),
+        &format!("{liste} : « {valeur} »"),
+    );
+    Ok(cree)
 }
 
 /// Nombre de lignes (`demande` + `demande_caisse`) qui utilisent encore la valeur d'une option —
@@ -162,6 +173,15 @@ pub fn rename_option_liste(db: State<Db>, id: i64, valeur: String, trigramme: St
     }
     tx.commit().map_err(|e| e.to_string())?;
 
+    journaliser(
+        conn,
+        &trigramme,
+        "reference_modification",
+        "option_liste",
+        Some(id),
+        &format!("{liste} : « {ancienne} » → « {nouvelle} »"),
+    );
+
     conn.query_row("SELECT id, liste, valeur, ordre FROM option_liste WHERE id = ?1", [id], map_row)
         .map_err(|e| e.to_string())
 }
@@ -173,7 +193,22 @@ pub fn delete_option_liste(db: State<Db>, id: i64, trigramme: String) -> Result<
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     require_lock(conn, "demandes", &trigramme)?;
+    let details: Option<(String, String)> = conn
+        .query_row("SELECT liste, valeur FROM option_liste WHERE id = ?1", [id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .ok();
     conn.execute("DELETE FROM option_liste WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
+    if let Some((liste, valeur)) = details {
+        journaliser(
+            conn,
+            &trigramme,
+            "reference_suppression",
+            "option_liste",
+            Some(id),
+            &format!("{liste} : « {valeur} »"),
+        );
+    }
     Ok(())
 }

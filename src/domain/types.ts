@@ -18,6 +18,7 @@ export interface Caisse {
   caisse_stock_id: number | null;
   type_envoi_caisse: string;
   demande_caisse_id: number | null;
+  demande_id: number | null;
 }
 
 export interface Article {
@@ -184,6 +185,24 @@ export interface OptionListe {
   liste: ListeOption;
   valeur: string;
   ordre: number;
+}
+
+export type JournalAction =
+  | "creation"
+  | "suppression"
+  | "modification_dimensions"
+  | "reference_ajout"
+  | "reference_modification"
+  | "reference_suppression";
+
+export interface JournalEntree {
+  id: number;
+  horodatage: string; // "YYYY-MM-DD HH:MM:SS" (UTC, datetime('now'))
+  trigramme: string;
+  action: JournalAction | string;
+  entite: "demande" | "demande_caisse" | "option_liste" | string;
+  entite_id: number | null;
+  details: string;
 }
 
 export interface SectionLock {

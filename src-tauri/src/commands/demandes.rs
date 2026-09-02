@@ -1,7 +1,12 @@
+use crate::commands::journal::journaliser;
 use crate::commands::locks::require_lock;
 use crate::db::Db;
 use crate::models::{Demande, NewDemande};
 use tauri::State;
+
+fn dims(l: f64, w: f64, h: f64) -> String {
+    format!("{:.2} × {:.2} × {:.2} m", l / 1000.0, w / 1000.0, h / 1000.0)
+}
 
 fn map_row(row: &rusqlite::Row) -> rusqlite::Result<Demande> {
     Ok(Demande {
@@ -93,6 +98,18 @@ pub fn create_demande(db: State<Db>, demande: NewDemande, trigramme: String) -> 
         .query_row("SELECT COALESCE(MAX(ordre), -1) + 1 FROM demande", [], |row| row.get(0))
         .map_err(|e| e.to_string())?;
     let id = insert_demande(conn, &demande, ordre)?;
+    journaliser(
+        conn,
+        &trigramme,
+        "creation",
+        "demande",
+        Some(id),
+        &format!(
+            "Caisse « {} » — {}",
+            demande.affaire,
+            dims(demande.longueur_mm, demande.largeur_mm, demande.hauteur_mm)
+        ),
+    );
     let sql = format!("SELECT {} FROM demande WHERE id = ?1", SELECT_COLS);
     conn.query_row(&sql, [id], map_row).map_err(|e| e.to_string())
 }
@@ -142,7 +159,20 @@ pub fn bulk_create_demandes(db: State<Db>, demandes: Vec<NewDemande>, trigramme:
                 ],
             )
             .map_err(|e| e.to_string())?;
-            ids.push(tx.last_insert_rowid());
+            let nid = tx.last_insert_rowid();
+            journaliser(
+                &tx,
+                &trigramme,
+                "creation",
+                "demande",
+                Some(nid),
+                &format!(
+                    "Caisse « {} » — {} (collage Excel)",
+                    d.affaire,
+                    dims(d.longueur_mm, d.largeur_mm, d.hauteur_mm)
+                ),
+            );
+            ids.push(nid);
             ordre += 1;
         }
     }
@@ -162,6 +192,13 @@ pub fn update_demande(db: State<Db>, id: i64, demande: NewDemande, trigramme: St
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     require_lock(conn, "demandes", &trigramme)?;
+    let avant: Option<(String, f64, f64, f64)> = conn
+        .query_row(
+            "SELECT affaire, longueur_mm, largeur_mm, hauteur_mm FROM demande WHERE id = ?1",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .ok();
     conn.execute(
         "UPDATE demande SET
             ok_pour_passer_cde = ?1, affaire = ?2, type_envoi_caisse = ?3, type_ouverture = ?4, stock = ?5,
@@ -196,6 +233,26 @@ pub fn update_demande(db: State<Db>, id: i64, demande: NewDemande, trigramme: St
         ],
     )
     .map_err(|e| e.to_string())?;
+    if let Some((affaire_avant, la, wa, ha)) = avant {
+        let change_dims = (la - demande.longueur_mm).abs() > 0.5
+            || (wa - demande.largeur_mm).abs() > 0.5
+            || (ha - demande.hauteur_mm).abs() > 0.5;
+        if change_dims {
+            journaliser(
+                conn,
+                &trigramme,
+                "modification_dimensions",
+                "demande",
+                Some(id),
+                &format!(
+                    "Caisse « {} » : {} → {}",
+                    affaire_avant,
+                    dims(la, wa, ha),
+                    dims(demande.longueur_mm, demande.largeur_mm, demande.hauteur_mm)
+                ),
+            );
+        }
+    }
     Ok(())
 }
 
@@ -204,8 +261,19 @@ pub fn delete_demande(db: State<Db>, id: i64, trigramme: String) -> Result<(), S
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     require_lock(conn, "demandes", &trigramme)?;
+    let affaire: Option<String> = conn
+        .query_row("SELECT affaire FROM demande WHERE id = ?1", [id], |row| row.get(0))
+        .ok();
     conn.execute("DELETE FROM demande WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
+    journaliser(
+        conn,
+        &trigramme,
+        "suppression",
+        "demande",
+        Some(id),
+        &format!("Caisse « {} »", affaire.unwrap_or_default()),
+    );
     Ok(())
 }
 

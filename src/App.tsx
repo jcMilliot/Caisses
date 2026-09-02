@@ -5,6 +5,7 @@ import AffaireDetail from "./routes/AffaireDetail";
 import DemandesList from "./routes/DemandesList";
 import CaissesStockList from "./routes/CaissesStockList";
 import DemandesAchatsList from "./routes/DemandesAchatsList";
+import Journal from "./routes/Journal";
 import CreerAffaireDialog from "./components/CreerAffaireDialog";
 import FirstLaunchSetup from "./components/FirstLaunchSetup";
 import TrigrammeSetup from "./components/TrigrammeSetup";
@@ -19,14 +20,17 @@ import { useUserSetup } from "./hooks/useUserSetup";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
 import type { Demande, DemandeCaisse } from "./domain/types";
 
-type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats";
+type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "journal";
 
 const SECTIONS: { id: Section; label: string }[] = [
-  { id: "demandes", label: "Demandes" },
+  { id: "demandes", label: "Gestion des caisses" },
   { id: "simulations", label: "Simulations" },
   { id: "stock", label: "Caisses en stock" },
   { id: "achats", label: "Demandes d'achats" },
 ];
+
+// Journal d'audit : accessible au seul trigramme AJC (garde aussi appliquée côté backend).
+const TRIGRAMME_JOURNAL = "AJC";
 
 export default function App() {
   const { status: dbStatus, chooseFolder } = useDbSetup();
@@ -83,11 +87,11 @@ export default function App() {
         trigramme,
       );
     }
-    const mereDejaCreee = caissesExistantes.some(
+    const caisseMereExistante = caissesExistantes.find(
       (c) => c.demande_caisse_id === null && c.nom.trim().toLowerCase() === demande.affaire.trim().toLowerCase(),
     );
-    if (!mereDejaCreee) {
-      await caissesApi.create(
+    if (!caisseMereExistante) {
+      const creee = await caissesApi.create(
         affaireIdCible,
         demande.affaire,
         demande.longueur_mm,
@@ -99,6 +103,12 @@ export default function App() {
         null,
         trigramme,
       );
+      // Lien explicite caisse mère ↔ ligne de demande, pour une synchro fiable des dimensions
+      // même si la caisse est renommée dans Simulations.
+      if (demande.id > 0) await caissesApi.linkDemande(creee.id, demande.id, trigramme);
+    } else if (caisseMereExistante.demande_id === null && demande.id > 0) {
+      // Caisse mère créée avant l'ajout de la colonne demande_id : on pose le lien maintenant.
+      await caissesApi.linkDemande(caisseMereExistante.id, demande.id, trigramme);
     }
   }
 
@@ -199,6 +209,15 @@ export default function App() {
               {s.label}
             </button>
           ))}
+          {trigramme === TRIGRAMME_JOURNAL && (
+            <button
+              className={section === "journal" ? "btn btn-primary btn-sm" : "btn btn-sm"}
+              onClick={() => handleSelectSection("journal")}
+              style={{ marginLeft: "auto" }}
+            >
+              Journal
+            </button>
+          )}
         </nav>
       )}
 
@@ -219,6 +238,7 @@ export default function App() {
           ))}
         {section === "stock" && <CaissesStockList trigramme={trigramme} />}
         {section === "achats" && <DemandesAchatsList trigramme={trigramme} />}
+        {section === "journal" && trigramme === TRIGRAMME_JOURNAL && <Journal trigramme={trigramme} />}
       </div>
 
       {creationAffaire && (

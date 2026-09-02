@@ -7,6 +7,10 @@ export const TYPES_ENVOI_CAISSE = ["STANDARD", "STANDARD (4B)", "STANDARD (4C)"]
 
 export const TYPES_OUVERTURE = ["Par dessus", "Par dessus et par devant", "Par devant"];
 
+export const OUVERTURE_PAR_DESSUS = "Par dessus";
+// Ouvertures interdites pour une caisse 4C (housse soudée — pas d'ouverture par devant).
+const OUVERTURES_INTERDITES_4C = ["Par dessus et par devant", "Par devant"];
+
 export const VALEURS_STOCK = ["AR_CAISS_00001", "AR_CAISS_00002", "AR_CAISS_00005", "AR_CAISS_00006", "CAISSE RECUP"];
 
 export const TRAITEMENTS = ["NIMP15"];
@@ -60,6 +64,57 @@ export function estCaisse4C(typeEnvoiCaisse: string): boolean {
 
 export function necessiteNimp15(typeEnvoiCaisse: string): boolean {
   return estCaisse4B(typeEnvoiCaisse) || estCaisse4C(typeEnvoiCaisse);
+}
+
+// --- Règles dynamiques d'une caisse (Demandes) --------------------------------------------
+// Ces règles doivent s'appliquer à chaque changement de type d'envoi / de caisse en stock,
+// aussi bien sur la ligne mère que sur les sous-caisses. Centralisées ici pour être identiques
+// partout (édition inline, dialogue de création, sélection de caisse en stock).
+
+interface EtatCaisseRegles {
+  type_envoi_caisse: string;
+  type_ouverture: string;
+  traitement: string;
+  caisse_stock_id?: number | null;
+}
+
+// Types d'ouverture réellement sélectionnables selon l'état de la caisse :
+//  - 4C : uniquement « Par dessus » (housse soudée, pas d'ouverture par devant)
+//  - caisse en stock : uniquement « Par dessus » (pas de type d'ouverture par caisse en stock,
+//    cf. « À réfléchir plus tard » — ajouter la colonne côté Caisses en stock)
+//  - sinon : toutes les valeurs de TYPES_OUVERTURE
+export function ouverturesAutorisees(etat: Pick<EtatCaisseRegles, "type_envoi_caisse" | "caisse_stock_id">): string[] {
+  if (etat.caisse_stock_id != null) return [OUVERTURE_PAR_DESSUS];
+  if (estCaisse4C(etat.type_envoi_caisse)) {
+    return TYPES_OUVERTURE.filter((o) => !OUVERTURES_INTERDITES_4C.includes(o));
+  }
+  return TYPES_OUVERTURE;
+}
+
+// Corrige l'état d'une caisse après un changement, pour respecter les règles métier :
+//  - type d'ouverture ramené à « Par dessus » s'il n'est plus autorisé (4C, ou caisse en stock)
+//  - traitement NIMP15 : forcé si 4B/4C, retiré si STANDARD (on ne touche pas à un autre
+//    traitement saisi manuellement)
+//  - contre-plaqué recalculé (STANDARD/4B requis, 4C non)
+// Renvoie uniquement les champs qui changent (patch à appliquer via onEdit).
+export function appliquerReglesCaisse(etat: EtatCaisseRegles): Partial<EtatCaisseRegles> & { contre_plaque?: boolean } {
+  const patch: Partial<EtatCaisseRegles> & { contre_plaque?: boolean } = {};
+
+  const autorisees = ouverturesAutorisees(etat);
+  if (etat.type_ouverture !== "" && !autorisees.includes(etat.type_ouverture)) {
+    patch.type_ouverture = OUVERTURE_PAR_DESSUS;
+  }
+
+  const traitementActuel = etat.traitement.trim();
+  if (necessiteNimp15(etat.type_envoi_caisse)) {
+    if (traitementActuel === "") patch.traitement = "NIMP15";
+  } else if (traitementActuel.toUpperCase() === "NIMP15") {
+    // STANDARD : pas de NIMP15 — on le retire.
+    patch.traitement = "";
+  }
+
+  patch.contre_plaque = contrePlaqueParDefaut(etat.type_envoi_caisse);
+  return patch;
 }
 
 export const AVERTISSEMENT_MOUSSE_4C =
@@ -117,11 +172,12 @@ export function demandesActivesPourAffaire(nomAffaire: string, demandes: Demande
 }
 
 // Une sous-caisse (demande_caisse) n'a pas sa propre colonne `validee` — elle est considérée
-// validée soit par sa propre observation (même convention que la demande mère), soit parce que
-// la demande mère qui la porte a été validée (cascade : valider la mère vide aussi les affiches
-// des filles, cf. DemandesList.handleValiderCascade).
-export function estDemandeCaisseValidee(c: DemandeCaisse, demandeMere: Demande | undefined): boolean {
+// validée UNIQUEMENT par sa propre observation "livrée"/"rapatriée". La validation de la
+// demande mère la propage via une cascade explicite (DemandesList.handleValider écrit
+// l'observation sur les sous-caisses existantes) — mais on n'HÉRITE PAS de la mère : une
+// sous-caisse ajoutée après coup à une affaire déjà livrée reste "à faire" (pas de "Livré").
+// `demandeMere` gardé en 2e paramètre pour compat des appelants, non utilisé.
+export function estDemandeCaisseValidee(c: DemandeCaisse, _demandeMere?: Demande | undefined): boolean {
   const obs = c.observations.trim().toLowerCase();
-  const obsValidee = obs.includes("livrée") || obs.includes("livree") || obs.includes("rapatriée") || obs.includes("rapatriee");
-  return obsValidee || (demandeMere ? estDemandeValidee(demandeMere) : false);
+  return obs.includes("livrée") || obs.includes("livree") || obs.includes("rapatriée") || obs.includes("rapatriee");
 }

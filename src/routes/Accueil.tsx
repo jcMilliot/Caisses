@@ -16,8 +16,8 @@ interface CardDef {
 const CARDS: CardDef[] = [
   {
     id: "demandes",
-    titre: "Demandes",
-    description: "Suivi des demandes de caisses",
+    titre: "Gestion des caisses",
+    description: "Tableau de suivi des caisses",
     icone: "📋",
   },
   {

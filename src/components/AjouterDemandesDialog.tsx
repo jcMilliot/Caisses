@@ -1,14 +1,14 @@
 import { useState } from "react";
+import { confirmerAction } from "../data/confirm";
 import type { NewDemande, CaisseStock, OptionListe } from "../domain/types";
 import {
   TYPES_ENVOI_CAISSE,
-  TYPES_OUVERTURE,
   TRAITEMENTS,
   optionsListe,
-  necessiteNimp15,
   estCaisse4C,
-  contrePlaqueParDefaut,
   AVERTISSEMENT_MOUSSE_4C,
+  ouverturesAutorisees,
+  appliquerReglesCaisse,
 } from "../domain/demandeOptions";
 import SelectOuAutre from "./SelectOuAutre";
 
@@ -42,30 +42,38 @@ function ligneVide(): NewDemande {
     cde_passee_affaire: false,
     cde_passee_achat_stock: false,
     observations: "",
-    contre_plaque: contrePlaqueParDefaut(""),
+    // STANDARD par défaut → contre-plaqué requis.
+    contre_plaque: true,
     caisse_stock_id: null,
   };
 }
 
 export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalisees, onAjouter, onClose }: Props) {
   const [lignes, setLignes] = useState<NewDemande[]>([ligneVide()]);
+  const [erreurValidation, setErreurValidation] = useState<string | null>(null);
   const moteurs = optionsListe("moteurs", optionsPersonnalisees);
   const modulesLineaires = optionsListe("module_lineaire", optionsPersonnalisees);
   const terminaux = optionsListe("terminaux", optionsPersonnalisees);
 
   function majLigne(index: number, patch: Partial<NewDemande>) {
     setLignes((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+    setErreurValidation(null);
   }
 
-  // Une caisse 4B/4C impose le traitement NIMP15 — pré-rempli seulement si le champ Traitement
-  // est encore vide, pour ne pas écraser une saisie manuelle déjà faite.
+  // Règles dynamiques (ouverture autorisée, NIMP15, contre-plaqué) — cf. appliquerReglesCaisse.
   function changerTypeEnvoi(index: number, valeur: string) {
+    setErreurValidation(null);
     setLignes((prev) =>
       prev.map((l, i) => {
         if (i !== index) return l;
-        const traitement = necessiteNimp15(valeur) && !l.traitement.trim() ? "NIMP15" : l.traitement;
-        return { ...l, type_envoi_caisse: valeur, traitement, contre_plaque: contrePlaqueParDefaut(valeur) };
-      })
+        const regles = appliquerReglesCaisse({
+          type_envoi_caisse: valeur,
+          type_ouverture: l.type_ouverture,
+          traitement: l.traitement,
+          caisse_stock_id: l.caisse_stock_id,
+        });
+        return { ...l, type_envoi_caisse: valeur, ...regles };
+      }),
     );
   }
 
@@ -77,11 +85,38 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
     setLignes((prev) => prev.filter((_, i) => i !== index));
   }
 
+  // Une ligne a été touchée si elle diffère d'une ligne vide (affaire, dims, dates, listes…).
+  const aDeLaSaisie = lignes.some((l) => JSON.stringify(l) !== JSON.stringify(ligneVide()));
+
+  // Champs obligatoires manquants, par ligne (Affaire ; Qté >= 1).
+  function champsManquants(l: NewDemande): string[] {
+    const m: string[] = [];
+    if (l.affaire.trim() === "") m.push("Affaire");
+    if (!Number.isFinite(l.quantite) || l.quantite < 1) m.push("Qté");
+    return m;
+  }
+
   async function handleAjouter() {
-    const valides = lignes.filter((l) => l.affaire.trim().length > 0);
-    if (valides.length === 0) return;
-    const resultat = await onAjouter(valides);
+    const lignesRemplies = lignes.filter((l) => JSON.stringify(l) !== JSON.stringify(ligneVide()));
+    const aCreer = lignesRemplies.length > 0 ? lignesRemplies : lignes;
+    const incompletes = aCreer.filter((l) => champsManquants(l).length > 0);
+    if (incompletes.length > 0) {
+      const champs = [...new Set(incompletes.flatMap(champsManquants))].join(" et ");
+      setErreurValidation(
+        aCreer.length === 1
+          ? `Champ obligatoire non renseigné : ${champs}.`
+          : `${incompletes.length} caisse(s) incomplète(s) — champ(s) obligatoire(s) manquant(s) : ${champs}.`,
+      );
+      return;
+    }
+    setErreurValidation(null);
+    const resultat = await onAjouter(aCreer);
     if (resultat === false) return; // avertissement annulé — on garde la saisie à l'écran
+    onClose();
+  }
+
+  async function handleFermer() {
+    if (aDeLaSaisie && !(await confirmerAction("Abandonner la saisie en cours ?", "Fermer sans enregistrer"))) return;
     onClose();
   }
 
@@ -96,7 +131,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
         justifyContent: "center",
         zIndex: 100,
       }}
-      onClick={onClose}
+      onClick={handleFermer}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -112,7 +147,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
         }}
       >
         <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border)" }}>
-          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Ajouter des demandes</h2>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Créer une nouvelle caisse</h2>
         </div>
 
         <div style={{ padding: 20, overflow: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
@@ -137,7 +172,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
                   autoFocus={index === 0}
                   value={ligne.affaire}
                   onChange={(e) => majLigne(index, { affaire: e.target.value })}
-                  style={inputStyle}
+                  style={champObligatoireStyle}
                 />
               </Champ>
 
@@ -155,7 +190,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
               <Champ label="Type ouverture">
                 <SelectOuAutre
                   valeur={ligne.type_ouverture}
-                  options={TYPES_OUVERTURE}
+                  options={ouverturesAutorisees(ligne)}
                   onChange={(v) => majLigne(index, { type_ouverture: v })}
                 />
               </Champ>
@@ -175,6 +210,8 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
                       longueur_mm: cs.longueur_mm,
                       largeur_mm: cs.largeur_mm,
                       hauteur_mm: cs.hauteur_mm,
+                      // Caisse en stock → type d'ouverture forcé « Par dessus ».
+                      type_ouverture: ouverturesAutorisees({ ...ligne, caisse_stock_id: cs.id })[0],
                     });
                   }}
                   style={inputStyle}
@@ -191,33 +228,15 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
               </Champ>
 
               <Champ label="Longueur (m)">
-                <input
-                  type="number"
-                  step="0.01"
-                  value={ligne.longueur_mm / 1000 || ""}
-                  onChange={(e) => majLigne(index, { longueur_mm: Number(e.target.value) * 1000 || 0 })}
-                  style={inputStyle}
-                />
+                <DimInput valeurMm={ligne.longueur_mm} onChangeMm={(mm) => majLigne(index, { longueur_mm: mm })} />
               </Champ>
 
               <Champ label="Largeur (m)">
-                <input
-                  type="number"
-                  step="0.01"
-                  value={ligne.largeur_mm / 1000 || ""}
-                  onChange={(e) => majLigne(index, { largeur_mm: Number(e.target.value) * 1000 || 0 })}
-                  style={inputStyle}
-                />
+                <DimInput valeurMm={ligne.largeur_mm} onChangeMm={(mm) => majLigne(index, { largeur_mm: mm })} />
               </Champ>
 
               <Champ label="Hauteur (m)">
-                <input
-                  type="number"
-                  step="0.01"
-                  value={ligne.hauteur_mm / 1000 || ""}
-                  onChange={(e) => majLigne(index, { hauteur_mm: Number(e.target.value) * 1000 || 0 })}
-                  style={inputStyle}
-                />
+                <DimInput valeurMm={ligne.hauteur_mm} onChangeMm={(mm) => majLigne(index, { hauteur_mm: mm })} />
               </Champ>
 
               <Champ label="Qté">
@@ -226,7 +245,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
                   min={1}
                   value={ligne.quantite}
                   onChange={(e) => majLigne(index, { quantite: Math.round(Number(e.target.value)) || 1 })}
-                  style={inputStyle}
+                  style={champObligatoireStyle}
                 />
               </Champ>
 
@@ -280,14 +299,6 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
                 />
               </Champ>
 
-              <Champ label="Observations" span={2}>
-                <input
-                  value={ligne.observations}
-                  onChange={(e) => majLigne(index, { observations: e.target.value })}
-                  style={inputStyle}
-                />
-              </Champ>
-
               <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5 }}>
                 <input
                   type="checkbox"
@@ -317,13 +328,27 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
           </button>
         </div>
 
-        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button className="btn" onClick={onClose}>
-            Annuler
-          </button>
-          <button className="btn btn-primary" onClick={handleAjouter}>
-            Ajouter {lignes.filter((l) => l.affaire.trim()).length || ""} demande(s)
-          </button>
+        <div
+          style={{
+            padding: "14px 20px",
+            borderTop: "1px solid var(--border)",
+            display: "flex",
+            justifyContent: erreurValidation ? "space-between" : "flex-end",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          {erreurValidation && (
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--danger-text)" }}>⚠ {erreurValidation}</span>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn" onClick={handleFermer}>
+              Annuler
+            </button>
+            <button className="btn btn-primary" onClick={handleAjouter}>
+              Créer {lignes.filter((l) => l.affaire.trim()).length || ""} caisse(s)
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -336,6 +361,27 @@ function Champ({ label, span, children }: { label: string; span?: number; childr
       <label style={labelStyle}>{label}</label>
       {children}
     </div>
+  );
+}
+
+// Saisie d'une dimension en mètres : state texte local pour ne pas être gêné par un input
+// numérique contrôlé (« 0.5 » restait bloqué à « 0 » avec value = n/1000 || "").
+function DimInput({ valeurMm, onChangeMm }: { valeurMm: number; onChangeMm: (mm: number) => void }) {
+  const [texte, setTexte] = useState(valeurMm === 0 ? "" : String(valeurMm / 1000));
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={texte}
+      placeholder="m"
+      style={inputStyle}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => {
+        setTexte(e.target.value);
+        const n = Number(e.target.value.replace(",", "."));
+        onChangeMm(Number.isFinite(n) ? Math.round(n * 1000) : 0);
+      }}
+    />
   );
 }
 
@@ -354,4 +400,12 @@ const inputStyle: React.CSSProperties = {
   background: "var(--bg-panel)",
   color: "var(--text)",
   font: "inherit",
+};
+
+// Champs obligatoires (Affaire, Qté) : fond légèrement orangé pour signaler qu'ils doivent
+// être renseignés.
+const champObligatoireStyle: React.CSSProperties = {
+  ...inputStyle,
+  background: "var(--warn-bg)",
+  borderColor: "var(--warn-border)",
 };

@@ -15,6 +15,7 @@ interface Props {
 export default function CreerAffaireDialog({ nomAffaire, caisses, onConfirmer, onClose }: Props) {
   const uneSeule = caisses.length === 1;
   const aDesDimensions = caisses.some((c) => c.longueur_mm > 0 || c.largeur_mm > 0 || c.hauteur_mm > 0);
+  const nomTropCourt = nomAffaire.trim().length < 8;
 
   return (
     <div
@@ -56,11 +57,16 @@ export default function CreerAffaireDialog({ nomAffaire, caisses, onConfirmer, o
           </div>
         )}
 
+        {nomTropCourt && (
+          <p style={{ fontSize: 12.5, color: "var(--danger-text)", margin: "0 0 12px" }}>
+            ⚠ Le nom d'affaire « {nomAffaire} » fait moins de 8 caractères — corrigez-le dans la demande avant de créer l'affaire.
+          </p>
+        )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button className="btn" onClick={onClose}>
             Annuler
           </button>
-          <button className="btn btn-primary" onClick={onConfirmer}>
+          <button className="btn btn-primary" onClick={onConfirmer} disabled={nomTropCourt}>
             Créer
           </button>
         </div>
