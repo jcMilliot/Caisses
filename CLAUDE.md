@@ -752,6 +752,24 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
 
 *Fiabilité et infrastructure*
 
+- **Faux positif Windows Defender sur l'installeur auto-update** — `Trojan:Win32/Bearfoos.B!ml`
+  (détection ML, faux positif classique des binaires Tauri non signés lancés par l'auto-updater),
+  observé sur v0.8.0 le 2026-09-02.
+  - **Soumission Microsoft** (https://www.microsoft.com/wdsi/filesubmission, produit « Microsoft
+    Defender Antivirus », détection `Trojan:Win32/Bearfoos.B!ml`) : **validée comme faux
+    positif** le 2026-09-03 → le 2e poste s'est mis à jour sans problème après approbation. À
+    refaire à chaque version si la détection revient (rapide, se traite en 24-72 h).
+  - Si un poste reste bloqué en attendant : exclusion Defender du dossier d'install + du dossier
+    temporaire de l'updater (`%TEMP%\Caisses-*-updater-*`), ou déblocage manuel via la notif.
+  - **Solution de fond** : signer l'installeur (Authenticode) dans le workflow GitHub Actions.
+    Demande **SignPath.io plan Open Source** envoyée le 2026-09-02 (dépôt public, revue manuelle,
+    pas garanti vu le profil du projet). Fichiers de repo préparés en conséquence le 2026-09-03
+    (`LICENSE` MIT, `README.md` réécrit avec mention SignPath Foundation, métadonnées
+    `package.json` / `Cargo.toml`). Plan B si refus : Certum Open Source Code Signing
+    (~30 €/an, token cloud, signable en CI). Une fois signé : plus de détection Defender,
+    l'auto-update reste inchangé — voir `.github/workflows/release.yml` à modifier pour insérer
+    l'étape de signature.
+
 - **⚠️ Risque connu — dossier BDD réseau partagé** : décision utilisateur (2026-07-30) d'utiliser
   un dossier réseau partagé pour `caisses.sqlite3` afin que plusieurs postes travaillent sur les
   mêmes données. SQLite n'est pas conçu pour des écritures concurrentes fiables sur un partage

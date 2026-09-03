@@ -2,6 +2,12 @@
   "name": "caisses",
   "private": true,
   "version": "0.8.0",
+  "description": "Application de bureau pour dimensionner des caisses en bois d'expédition (volume, poids, taux de remplissage).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jcMilliot/Caisses.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
