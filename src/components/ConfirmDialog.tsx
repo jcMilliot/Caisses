@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 interface Props {
   message: string;
   titre: string;
@@ -7,6 +9,21 @@ interface Props {
 }
 
 export default function ConfirmDialog({ message, titre, danger, onConfirm, onCancel }: Props) {
+  // Raccourcis clavier : Échap = annuler, Entrée = confirmer.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        onConfirm();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onConfirm, onCancel]);
+
   return (
     <div
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}
@@ -25,7 +42,7 @@ export default function ConfirmDialog({ message, titre, danger, onConfirm, onCan
         </div>
 
         <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button className="btn" autoFocus onClick={onCancel}>
+          <button className="btn" onClick={onCancel}>
             Annuler
           </button>
           <button

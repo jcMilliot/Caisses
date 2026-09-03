@@ -526,6 +526,17 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
 
 ### Fait
 
+- **Dialogues de confirmation** — décision 2026-09-03 : on **garde le dialogue React custom**
+  (`ConfirmDialog` + `ConfirmDialogHost`, mécanisme `confirmerAction` / `confirmerSuppression`
+  dans `data/confirm.ts`) plutôt que les dialogues natifs du plugin `@tauri-apps/plugin-dialog`.
+  Raisons : cohérence visuelle avec le reste de l'app, gestion du titre et du niveau `danger`,
+  aucune régression. Le crate Rust `tauri-plugin-dialog` reste utilisé pour le **choix de
+  dossier natif** (`blocking_pick_folder`, `commands/setup.rs`, écran de premier lancement) ;
+  le paquet npm `@tauri-apps/plugin-dialog`, jamais importé côté JS (le picker passe par la
+  commande Rust `choose_db_folder`), a été **retiré** de `package.json`. `window.confirm()`
+  reste un fallback jamais atteint en pratique (le host est monté dès que l'app est prête).
+  Ajout de raccourcis clavier Échap / Entrée sur `ConfirmDialog`.
+
 - **Verrouillage applicatif multi-poste — complet** : table `section_lock`,
   `commands/locks.rs::require_lock` sur toutes les mutations, `hooks/useSectionLock.ts` (polling
   7 s, détection d'activité). Testé à deux postes le 2026-07-31. Auto-expiration de la demande
@@ -785,10 +796,6 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   candidats évidents quotidien ou hebdomadaire selon le volume réel de saisie. Pourrait être un
   simple script/tâche planifiée Windows dans un premier temps, ou une fonctionnalité intégrée à
   l'app plus tard (bouton "Sauvegarder maintenant" + copie automatique périodique).
-- **Dialogues natifs Tauri** : `@tauri-apps/plugin-dialog` est bien dans `package.json`
-  (dépendance présente côté JS) mais toujours pas branché : `src/data/confirm.ts` utilise encore
-  `window.confirm()` en fallback. Reste à remplacer par les dialogues natifs du plugin
-  (suppression affaire/caisse/demande, confirmation de déplacement drag & drop).
 - **Icônes de l'app** (`src-tauri/icons/`) — le jeu de fichiers présent correspond aux noms par
   défaut de `create-tauri-app` (`icon.ico`, `Square*Logo.png`, etc.) ; à confirmer visuellement si
   des icônes personnalisées ont depuis été déposées sous ces mêmes noms.
