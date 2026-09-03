@@ -16,8 +16,8 @@ dist-ssr
 src-tauri/target
 src-tauri/gen
 
-# Outillage local Claude Code
-.claude/scheduled_tasks.lock
+# Outillage local Claude Code (config par machine, non versionnée)
+.claude/
 
 # Clé de signature updater (ne doit jamais être commitée)
 *.key
