@@ -2,8 +2,10 @@
 name = "caisses"
 version = "0.8.0"
 description = "Gestion d'affaires, articles et caisses de conditionnement"
-authors = ["you"]
+authors = ["Milliot Jean-Claude"]
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/jcMilliot/Caisses"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
