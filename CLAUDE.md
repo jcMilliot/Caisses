@@ -842,8 +842,8 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
     même contrainte d'éligibilité que SignPath Foundation (projet OSS non commercial souscrit par
     un individu) — ne correspond pas non plus au profil réel du projet. Le produit adapté serait
     un Certum Standard/Cloud Code Signing payant classique (~90-150 $/an selon revendeur, pas de
-    contrainte d'éligibilité), mais **décision du 2026-09-09 (à confirmer avec le responsable de
-    l'utilisateur) : ne pas payer d'abonnement de signature pour l'instant**, et continuer avec la
+    contrainte d'éligibilité), mais **décision actée le 2026-09-09 : pas d'abonnement de
+    signature pour l'instant**, confirmée après discussion avec le responsable. On reste sur la
     procédure manuelle existante (soumission Microsoft à chaque version + exclusion Defender au
     besoin) — cohérent avec un usage à 2-3 postes internes plutôt qu'une diffusion publique. Le
     workflow `.github/workflows/release.yml` a été remis dans son état d'avant les essais SignPath
