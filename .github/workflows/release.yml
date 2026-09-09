@@ -35,6 +35,22 @@ jobs:
           # La release est créée en brouillon avec les binaires non signés ;
           # les étapes suivantes les remplacent par leurs versions signées Authenticode.
 
+      - name: Uploader le MSI non signé comme artifact
+        uses: actions/upload-artifact@v4
+        id: upload-msi
+        with:
+          name: unsigned-msi
+          path: src-tauri/target/release/bundle/msi/*.msi
+          retention-days: 1
+
+      - name: Uploader le NSIS non signé comme artifact
+        uses: actions/upload-artifact@v4
+        id: upload-nsis
+        with:
+          name: unsigned-nsis
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          retention-days: 1
+
       - name: Signer le MSI via SignPath
         uses: signpath/github-action-submit-signing-request@v1
         with:
@@ -43,11 +59,9 @@ jobs:
           project-slug: "Caisses"
           signing-policy-slug: "test-signing"
           artifact-configuration-slug: "msi"
-          github-artifact-id: ""
+          github-artifact-id: "${{ steps.upload-msi.outputs.artifact-id }}"
           wait-for-completion: true
           output-artifact-directory: "signed/msi"
-          parameters: |
-            unsigned-file: src-tauri/target/release/bundle/msi/*.msi
 
       - name: Signer le NSIS (.exe) via SignPath
         uses: signpath/github-action-submit-signing-request@v1
@@ -57,11 +71,9 @@ jobs:
           project-slug: "Caisses"
           signing-policy-slug: "test-signing"
           artifact-configuration-slug: "nsis"
-          github-artifact-id: ""
+          github-artifact-id: "${{ steps.upload-nsis.outputs.artifact-id }}"
           wait-for-completion: true
           output-artifact-directory: "signed/nsis"
-          parameters: |
-            unsigned-file: src-tauri/target/release/bundle/nsis/*.exe
 
       - name: Remplacer les installeurs par leurs versions signées
         shell: pwsh
