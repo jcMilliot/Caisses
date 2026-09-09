@@ -825,28 +825,30 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
     (~30 €/an, token cloud, signable en CI). Une fois signé : plus de détection Defender,
     l'auto-update reste inchangé — voir `.github/workflows/release.yml` à modifier pour insérer
     l'étape de signature.
-  - **État au 2026-09-09 — bloqué en attente de SignPath** : organisation SignPath créée
-    (« Caisse », org ID `e4a80f19-4603-405b-be23-d7eec25a85a3`), projet « Caisses », policy
-    `test-signing`, certificat de test, deux Artifact Configurations créées et validées
-    manuellement via le dashboard (`initial` → Windows Installer .msi, `nsis-installer` →
-    Portable Executable .exe). Signature manuelle testée avec succès sur les deux formats
-    (upload direct dans le dashboard). **Mais l'intégration CI échoue** : le workflow (2 commits,
-    `377e9c9` puis `f1f1f09`) soumet bien les artefacts via
-    `signpath/github-action-submit-signing-request@v1` avec les bons slugs, mais échoue
-    systématiquement avec `Could not authorize against SignPath API` — y compris après
-    régénération du token API et mise à jour du secret GitHub `SIGNPATH_API_TOKEN`. **Cause
-    trouvée** : l'organisation est encore en **Free trial subscription** (jamais passée en plan
-    Foundation malgré la demande du 2026-09-02) ; SignPath affiche noir sur blanc en tentant
-    d'activer « Require trusted build system » sur la policy : *« Trusted build system
-    verification is not included in your Free trial subscription. Please contact
-    sales@signpath.io for upgrading. »* — la vérification GitHub Actions (Trusted Build System)
-    est une fonctionnalité gated par plan, indisponible en essai gratuit, indépendamment du fait
-    que la signature manuelle fonctionne. Email de relance envoyé à `sales@signpath.io` le
-    2026-09-09 (statut de la demande Foundation + déblocage Trusted Build System). **Prochaine
-    session : vérifier la réponse de SignPath avant de retenter le tag de test** `v0.8.1-test`
-    (actuellement présent sur le repo, pointant sur `f1f1f09` — à supprimer une fois la vraie
-    release publiée, ou à laisser bouger au fil des tests). Si SignPath ne débloque pas
-    rapidement, basculer sur Certum (plan B) plutôt que d'attendre indéfiniment.
+  - **SignPath Foundation refusé le 2026-09-09** : réponse officielle par email — le programme
+    Foundation vise des projets ayant déjà une visibilité publique établie (stars/forks/
+    contributeurs GitHub, articles, discussions externes, adoption communautaire) ; Caisses,
+    outil interne d'entreprise au dépôt technique­ment public mais sans audience, ne correspond
+    pas à ce profil (refus assumé comme cohérent, pas un accident administratif). Avant ce refus,
+    toute l'intégration technique avait été validée manuellement (organisation SignPath « Caisse »,
+    projet « Caisses », policy `test-signing`, deux Artifact Configurations `initial`/
+    `nsis-installer` signant correctement .msi et .exe via upload direct dans le dashboard) — seule
+    l'intégration **CI** butait sur `Could not authorize against SignPath API`, causé par le
+    compte resté en **Free trial** : cette édition n'inclut pas la vérification « Trusted Build
+    System » nécessaire à `signpath/github-action-submit-signing-request` (message explicite de
+    SignPath en tentant de l'activer sur la policy). Passer en payant réglerait ce point mais
+    tarif SignPath payant non public/à négocier — écarté au profit de Certum.
+  - **Piste Certum (open source) également écartée** : le certificat "Open Source" Certum a la
+    même contrainte d'éligibilité que SignPath Foundation (projet OSS non commercial souscrit par
+    un individu) — ne correspond pas non plus au profil réel du projet. Le produit adapté serait
+    un Certum Standard/Cloud Code Signing payant classique (~90-150 $/an selon revendeur, pas de
+    contrainte d'éligibilité), mais **décision du 2026-09-09 (à confirmer avec le responsable de
+    l'utilisateur) : ne pas payer d'abonnement de signature pour l'instant**, et continuer avec la
+    procédure manuelle existante (soumission Microsoft à chaque version + exclusion Defender au
+    besoin) — cohérent avec un usage à 2-3 postes internes plutôt qu'une diffusion publique. Le
+    workflow `.github/workflows/release.yml` a été remis dans son état d'avant les essais SignPath
+    (aucune étape de signature Authenticode). Revoir ce point si le nombre de postes/utilisateurs
+    grandit significativement, ou si le rythme des faux positifs Defender devient trop pénible.
 
 - **⚠️ Risque connu — dossier BDD réseau partagé** : décision utilisateur (2026-07-30) d'utiliser
   un dossier réseau partagé pour `caisses.sqlite3` afin que plusieurs postes travaillent sur les
