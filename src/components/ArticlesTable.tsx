@@ -12,6 +12,9 @@ interface Props {
   onToggleSelectAll: () => void;
   onUpdate: (id: number, article: NewArticle) => Promise<void>;
   onStartDrag?: (articleId: number, e: React.PointerEvent) => void;
+  // Collage multi-cellules (Excel) dans une cellule en édition → ouvre l'import avec ce texte
+  // pré-rempli, plutôt que de tout mettre dans un seul champ.
+  onCollageMultiCellules?: (texte: string) => void;
   readOnly?: boolean;
 }
 
@@ -78,6 +81,7 @@ export default function ArticlesTable({
   onToggleSelectAll,
   onUpdate,
   onStartDrag,
+  onCollageMultiCellules,
   readOnly,
 }: Props) {
   const [cellEnEdition, setCellEnEdition] = useState<{ id: number; champ: Champ } | null>(null);
@@ -217,6 +221,14 @@ export default function ArticlesTable({
             align={align}
             onCommit={(v) => sauvegarderChamp(article, champ, v)}
             onCancel={() => setCellEnEdition(null)}
+            onCollageMultiCellules={
+              onCollageMultiCellules
+                ? (texte) => {
+                    setCellEnEdition(null);
+                    onCollageMultiCellules(texte);
+                  }
+                : undefined
+            }
           />
         ) : estMax ? (
           <span
@@ -407,12 +419,14 @@ function EditableCellInput({
   align,
   onCommit,
   onCancel,
+  onCollageMultiCellules,
 }: {
   type: "text" | "number";
   defaultValue: string;
   align: "left" | "right";
   onCommit: (value: string) => void;
   onCancel: () => void;
+  onCollageMultiCellules?: (texte: string) => void;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const committed = useRef(false);
@@ -434,6 +448,16 @@ function EditableCellInput({
       type={type}
       defaultValue={defaultValue}
       onBlur={commitOnce}
+      onPaste={(e) => {
+        // Un collage qui contient une tabulation ou un retour à la ligne = plusieurs cellules
+        // Excel → on ne le met pas dans ce seul champ, on ouvre l'import avec ce texte.
+        const texte = e.clipboardData.getData("text");
+        if (onCollageMultiCellules && /[\t\n\r]/.test(texte)) {
+          e.preventDefault();
+          committed.current = true;
+          onCollageMultiCellules(texte);
+        }
+      }}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           e.preventDefault();

@@ -44,14 +44,38 @@ function chargerLogoDataUrl(): Promise<string> {
   return logoDataUrlPromise;
 }
 
+const raf = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 // html-to-image capture le DOM tel quel — si une <img> (le logo, injecté en base64 via
-// dangerouslySetInnerHTML) n'a pas fini de décoder au moment du snapshot, le rendu est vide ou
-// l'appel échoue. decode() attend que chaque image soit prête à être peinte.
+// dangerouslySetInnerHTML) n'a pas fini de décoder ET d'être peinte au moment du snapshot, le
+// rendu est vide ou tronqué (d'où le "ça marche à la 2e copie"). On force decode() sur TOUTES
+// les images (img.complete peut être true avant le premier paint), puis on laisse passer deux
+// frames pour que le layout soit stabilisé.
 async function attendreImagesDecodees(conteneur: HTMLElement): Promise<void> {
   const images = Array.from(conteneur.querySelectorAll("img"));
-  await Promise.all(
-    images.map((img) => (img.complete ? Promise.resolve() : img.decode().catch(() => undefined))),
-  );
+  await Promise.all(images.map((img) => img.decode().catch(() => undefined)));
+  await raf();
+  await raf();
+}
+
+// Capture PNG robuste : html-to-image renvoie parfois un blob null/tronqué au premier appel
+// (images pas encore peintes) — d'où le "ça marche à la 2e copie". On attend le décodage +
+// deux frames, puis on retente jusqu'à 4 fois avec une pause croissante avant d'abandonner.
+async function capturerAvecRetries(conteneur: HTMLElement | null): Promise<Blob | null> {
+  if (!conteneur) return null;
+  await attendreImagesDecodees(conteneur);
+  for (let tentative = 0; tentative < 4; tentative++) {
+    try {
+      const blob = await toBlob(conteneur, { pixelRatio: 1.2, cacheBust: true });
+      if (blob && blob.size > 1000) return blob;
+    } catch {
+      // on retente
+    }
+    await pause(120 * (tentative + 1));
+    await raf();
+  }
+  return null;
 }
 
 const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function AfficheCaisseCard(
@@ -75,23 +99,7 @@ const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function Af
   }, []);
 
   useImperativeHandle(ref, () => ({
-    capturerPng: async () => {
-      if (!apercuRef.current) return null;
-      await attendreImagesDecodees(apercuRef.current);
-      // html-to-image échoue parfois silencieusement (ou produit un blob null) au tout premier
-      // appel après montage même une fois les images décodées — on retente une fois avant
-      // d'abandonner, plutôt que de renvoyer null direct et forcer l'utilisateur à recliquer
-      // "Copier" pour que ça marche.
-      for (let tentative = 0; tentative < 2; tentative++) {
-        try {
-          const blob = await toBlob(apercuRef.current, { pixelRatio: 1.2 });
-          if (blob) return blob;
-        } catch {
-          // on retente ci-dessous, ou on abandonne si c'était la dernière tentative
-        }
-      }
-      return null;
-    },
+    capturerPng: () => capturerAvecRetries(apercuRef.current),
   }));
 
   async function handleCopier() {
@@ -103,8 +111,7 @@ const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function Af
 
     if (apercuRef.current) {
       try {
-        await attendreImagesDecodees(apercuRef.current);
-        const blob = await toBlob(apercuRef.current, { pixelRatio: 1.2 });
+        const blob = await capturerAvecRetries(apercuRef.current);
         if (blob) {
           const dataUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();

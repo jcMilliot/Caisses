@@ -209,6 +209,32 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
             </div>
           )}
 
+          {caisse.articlesTropGrands.length > 0 && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "7px 10px",
+                background: "var(--danger-bg)",
+                border: "1px solid var(--danger-border)",
+                color: "var(--danger-text)",
+                borderRadius: 6,
+                fontSize: 12,
+              }}
+            >
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                ⚠ {caisse.articlesTropGrands.length} article(s) plus grand(s) que la caisse
+              </div>
+              {caisse.articlesTropGrands.map(({ article, depassements }) => (
+                <div key={article.id} style={{ marginTop: 2 }}>
+                  <span style={{ fontWeight: 600 }}>{article.ar || article.reference || "?"}</span> —{" "}
+                  {depassements
+                    .map((d) => `${d.article} mm > ${d.axe} de la caisse (${d.caisse} mm)`)
+                    .join(" ; ")}
+                </div>
+              ))}
+            </div>
+          )}
+
           <div style={{ marginTop: 12, fontSize: 12.5, display: "flex", flexDirection: "column", gap: 4 }}>
             {(caisse.dim1MaxMm > 0 || caisse.dim2MaxMm > 0 || caisse.dim3MaxMm > 0) && (
               <Row

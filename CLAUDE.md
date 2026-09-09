@@ -526,6 +526,39 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
 
 ### Fait
 
+- **Simulations — alerte « article plus grand que sa caisse »** (2026-09-03, `domain/calculs.ts`
+  + `types.ts`, `CaisseCard.tsx`, `FillRateBadge.tsx`) : `calculerCaisse` compare chaque article
+  assigné aux dimensions de la caisse (**comparaison stricte des axes** : dim1↔longueur,
+  dim2↔largeur, dim3↔hauteur, tolérance 0,5 mm, ignoré si la caisse n'a pas de dimensions).
+  `CaisseCalculee.articlesTropGrands` liste les articles fautifs avec les axes qui dépassent
+  (valeur article / valeur caisse). Rendu : bandeau rouge sur la `CaisseCard` détaillant chaque
+  article (« AR — 610 mm > longueur de la caisse (500 mm) »), `niveauAlerte` passe à `alerte`
+  (bordure + badge rouges), tooltip du `FillRateBadge` adapté.
+
+- **Simulations — alerte « volume affaire > capacité des caisses »** (2026-09-03,
+  `domain/calculs.ts::calculerCapaciteAffaire`, `RecapAffaireBandeau` dans `AffaireDetail.tsx`) :
+  compare le volume cumulé de **tous** les articles de l'affaire (assignés + non assignés) à la
+  capacité utile cumulée des caisses = Σ (volume interne, mousse déduite pour les 4C) × seuil de
+  remplissage (celui de la caisse, ou le seuil par défaut de l'affaire). Bandeau rouge dans le
+  récap sticky du haut si dépassement. **Pas d'alerte** s'il n'y a aucune caisse, ou si une
+  caisse n'a pas encore de dimensions.
+
+- **Collage Excel — robustesse** (2026-09-03, `domain/tsv.ts`, `PasteImportZone.tsx`,
+  `ArticlesTable.tsx`) :
+  - **Guillemets nus** : un `"` au milieu d'une désignation (ex. `G1/8" m`) faisait passer le
+    parseur en mode « champ quoté » et fusionnait toutes les lignes suivantes dans un seul
+    champ. Le parseur ne traite désormais un `"` comme ouvrant que s'il est **en début de
+    champ** (après une tabulation / un retour à la ligne) ; ailleurs c'est un littéral. `""`
+    reste un `"` littéral dans un champ quoté (cas Excel standard). `decouperLignesTsv` /
+    `decouperColonnesTsv` partagent une fonction `decouper()` commune.
+  - **Colonnes en trop** (articles) : le fichier Excel a souvent 2 colonnes de volume calculé
+    après les 8 utiles ; l'import ne rejette plus ces lignes, il **prend les 8 premières
+    colonnes** et affiche un avertissement global unique (les volumes sont recalculés par l'app).
+  - **Collage direct dans une cellule** du tableau `ArticlesTable` : si le presse-papiers
+    contient une tabulation ou un retour à la ligne (= plusieurs cellules Excel), le collage
+    n'est plus mis dans le seul champ édité — il ouvre le dialogue « Coller depuis Excel »
+    pré-rempli (`onCollageMultiCellules` → `PasteImportZone` prop `texteInitial`).
+
 - **Dialogues de confirmation** — décision 2026-09-03 : on **garde le dialogue React custom**
   (`ConfirmDialog` + `ConfirmDialogHost`, mécanisme `confirmerAction` / `confirmerSuppression`
   dans `data/confirm.ts`) plutôt que les dialogues natifs du plugin `@tauri-apps/plugin-dialog`.
@@ -625,6 +658,18 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
     (base64 injecté via `dangerouslySetInnerHTML`) n'ait fini de décoder — la copie groupée se
     retrouvait alors sans aucune image. Corrigé par `attendreImagesDecodees()` (attend
     `img.decode()` sur les images du conteneur avant capture) + une retentative automatique.
+    **Renforcé le 2026-09-03** (`capturerAvecRetries`) : `img.decode()` sur *toutes* les images
+    (pas de raccourci sur `img.complete`, qui peut être `true` avant le premier paint) + 2
+    `requestAnimationFrame` + jusqu'à 4 retentatives avec pause croissante et rejet des blobs
+    < 1 ko. **C'était la vraie cause** du « la copie groupée marche seulement à la 2e fois ».
+  - **Format de la copie groupée** : après un essai d'image PNG unique composée sur `<canvas>`
+    (module `imageComposite.ts`, abandonné et supprimé le 2026-09-03 — image trop lourde,
+    ~900 ko pour 5 affiches), on **revient au `text/html` avec plusieurs `<img data:>`** +
+    `text/plain` en fallback. Ça fonctionne sur le client mail du poste de travail (testé) ;
+    Outlook strippe les images `data:` → dans ce cas, repli sur la copie affiche par affiche
+    (bouton de chaque carte, `handleCopier`, qui met un `image/png` direct dans le
+    presse-papiers). Logique de texte entre types (intro, mention 4C avant le groupe 4C,
+    « Ainsi que : » avant l'ACHSTOCK) conservée.
   - `npx tsc --noEmit` validé après l'ensemble ; aucun fichier Rust touché, pas de migration.
 - **Cas ACHSTOCK dans Demandes d'achats** — implémenté le 2026-08-28. Une demande ACHSTOCK
   (`estDemandeAchstock()`, `affaire` contient "ACHSTOCK") n'a pas de dimensions à fabriquer et ne
@@ -829,6 +874,127 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   Demandes. Nécessite de charger les `caisse` liées dans `DemandesList` (via un nouvel endpoint
   « caisses liées à des demandes » ou en filtrant `caissesApi` par affaire), et de n'afficher
   l'alias que s'il diffère du nom de l'affaire.
+- **« Aide de dimensions » / dimensions conseillées** (idée notée le 2026-09-03, **jamais
+  implémentée**) — un bouton (sur la `CaisseCard` en édition, et/ou dans le dialogue « Créer une
+  nouvelle caisse » côté Demandes) qui pré-remplit L/l/H à partir des plus grandes dimensions
+  des articles assignés (`dim1MaxMm/dim2MaxMm/dim3MaxMm`, déjà calculés dans `calculerCaisse`)
+  **plus un jeu/une marge**. À décider avec l'utilisateur : marge fixe en mm ou en %, valeur,
+  éventuellement différente selon STANDARD / 4B / 4C (4C = mousse → marge plus grande, cf.
+  `AVERTISSEMENT_MOUSSE_4C` qui parle de +5 cm) ; le bouton pré-remplit à vide ou écrase la
+  saisie. Ne rien coder tant que la règle métier n'est pas tranchée.
+- **Créer une caisse enfant depuis « + Créer une nouvelle caisse »** (idée 2026-09-03) —
+  aujourd'hui les sous-caisses d'une demande se créent uniquement par clic droit sur une ligne
+  du tableau (« Créer une nouvelle caisse »). Voir si on ajoute la possibilité de créer
+  directement une ou plusieurs caisses enfants dans le dialogue « + Créer une nouvelle caisse »
+  (une case « ajouter des caisses détaillées » qui déplie des sous-lignes).
+- **Sortir les actions du clic droit du tableau Demandes en boutons** (idée 2026-09-03) — le
+  menu contextuel de `DemandesTable` (« Valider / Dévalider la caisse », « Simuler l'affaire »,
+  « Créer une nouvelle caisse ») est peu découvrable. Envisager de rendre ces actions visibles
+  sous forme de boutons (barre d'actions sur la ligne sélectionnée, ou colonne d'actions), tout
+  en gardant éventuellement le clic droit en raccourci.
+
+### À rédiger
+
+- **Bouton « Documentation » dans la navbar** — à ajouter dans le bandeau de menu principal
+  (`App.tsx`, à côté des sections). Ouvre une page/section `src/routes/Documentation.tsx` (ou un
+  panneau) expliquant le processus métier complet de bout en bout. **Contenu fourni par
+  l'utilisateur le 2026-09-03, à mettre en forme** (titres, captures éventuelles, liens internes
+  vers les sections). Trame :
+
+  **1. Gestion des caisses (ex-Demandes) — point de départ**
+  - « + Créer une nouvelle caisse » : nom d'affaire et Qté **obligatoires** (fond orangé).
+    Renseigner les infos maintenant ou plus tard dans le tableau.
+  - Dans le dialogue : bouton « Créer N caisse(s) » si une seule ; sinon « Ajouter une caisse »
+    (⚠ le libellé actuel est « + Ajouter une ligne » — **à renommer « Ajouter une caisse »**)
+    pour en saisir plusieurs.
+  - Les caisses arrivent dans le tableau, éditables (édition inline, cases à cocher, tri,
+    filtres, menu Options).
+  - Ajouter une autre caisse à une affaire existante : clic droit sur la ligne → « Créer une
+    nouvelle caisse ». Les caisses **enfants héritent** de la caisse mère : type d'envoi, date
+    de picking, traitement (s'il y en a un).
+
+  **2. Simuler l'affaire**
+  - Clic droit sur une ligne → « Simuler l'affaire ». Si l'affaire n'existe pas encore, un
+    message propose de la créer avec une caisse reprenant les dimensions du tableau Demandes.
+  - Décrire l'écran Simulations : le bandeau récap du haut (dimensions max, volume total, poids
+    total, mousse 4C, + les alertes « article > caisse » et « volume affaire > capacité des
+    caisses »), le détail de chaque `CaisseCard` (volume interne/occupé/disponible, poids, seuil,
+    dim. max articles, taux de remplissage, code couleur), le bouton « + Nouvelle caisse » et la
+    synchro bidirectionnelle des dimensions avec le tableau Demandes.
+
+  **3. Récupérer les articles depuis l'intranet SealedAir**
+  - Sur le picking de l'affaire (intranet SealedAir) : Options → « Exporter toutes les lignes »
+    → fichier Excel. (Captures à fournir.)
+  - Copier les colonnes « Ref B+ » et « Qte att » du fichier Excel ainsi généré par le Picking.
+  - Ouvrir le fichier « Aide colisage dimensions V1 » : coller les `AR` dans la 1ʳᵉ colonne et
+    les quantités dans la colonne Qté, puis « Récupérer les infos » → références, désignations,
+    dimensions, poids par article.
+  - Sélectionner + copier cette liste, la coller dans « Coller depuis Excel » (section
+    Simulations), puis Importer. L'outil détecte immédiatement la plus grande Longueur / Largeur
+    / Hauteur → indice pour dimensionner les caisses.
+
+  **4. Assigner et vérifier**
+  - Assigner des articles à une caisse (sélection + « Assigner à → », drag & drop, ou création à
+    la volée). Le taux de remplissage indique si le volume rentre, seuil d'alerte réglable
+    (70 % par défaut).
+  - Multi-caisses : répartir les articles ; le nom de la caisse s'affiche sur chaque ligne d'AR.
+  - Alertes : article dont une dimension ne rentre pas dans sa caisse ; volume total de
+    l'affaire supérieur à la capacité des caisses.
+
+  **5. Passer la commande**
+  - Simulation OK + date de commande atteinte → cocher « OK CDE » sur l'affaire → génère
+    l'affiche pour le service Achat (les multi-caisses sont incluses dans la demande).
+  - Section « Demandes d'achats » : copier une affiche unitairement, ou en sélectionner
+    plusieurs / toutes et « Copier la sélection » → coller dans le mail et envoyer. Mise en
+    forme et mentions de prestation (soudure/fermeture 4C…) détectées automatiquement si la
+    demande est bien remplie.
+  - Après commande passée : sélectionner une ou plusieurs affaires → « Valider la sélection »,
+    ou clic droit → « Valider la caisse ».
+
+  ---
+
+  **Partie séparée A — Caisses en stock** (section indépendante du process principal)
+  - Répertorie les caisses en stock. Les `AR_CAISS` n'ont pas de quantité, rien n'est connecté à
+    la base — purement indicatif.
+  - Caisses « de récup » : système d'affectation. À la création de la demande ou dans le tableau
+    Demandes, on affecte une caisse à une affaire → ses dimensions sont reprises automatiquement.
+    Une caisse de récup ne peut être affectée qu'à **une seule** affaire ; une fois l'affaire
+    validée, la caisse n'est plus disponible.
+  - CRUD complet (nom, dimensions, quantité, observations), édition inline, verrouillage
+    multi-poste, suppression.
+
+  **Partie séparée B — Gérer les références** (section indépendante, bouton en tête de « Gestion
+  des caisses »)
+  - Ce que c'est : le contenu des listes déroulantes des colonnes **Moteurs / Module linéaire /
+    Terminaux** du tableau (édition inline et dialogue « + Créer une nouvelle caisse »).
+  - Par colonne : ajouter une valeur, **renommer** (le nouveau libellé est répercuté
+    automatiquement sur toutes les lignes qui l'utilisent, avec confirmation si des lignes sont
+    concernées), **supprimer** une ou plusieurs valeurs (sélection multiple ; la valeur disparaît
+    de la liste, les lignes qui la portaient gardent le texte, avertissement si utilisée).
+  - Tri automatique des valeurs par quantité puis par n° de référence (ex. `1 MOTEUR` avant
+    `2 MOTEURS` avant `10 MOTEURS` ; `1 FESTO 426` avant `1 FESTO 485` avant `2 FESTO 494`) — vaut
+    aussi pour les valeurs ajoutées via l'outil.
+  - Toutes les valeurs vivent en base (partagées entre postes) ; il n'y a plus de « valeurs de
+    base » figées : tout est modifiable.
+
+  **Partie séparée C — Verrouillage multi-poste et demande de crayon** (transverse aux 4
+  sections, à expliquer une seule fois)
+  - Pourquoi : plusieurs postes peuvent travailler sur la même base (dossier réseau partagé) ;
+    le verrou évite que deux personnes modifient la même chose en même temps.
+  - Portée : un verrou par écran entier pour Demandes / Caisses en stock / Demandes d'achats, un
+    verrou par affaire précise pour Simulations — jamais plus fin qu'une affaire.
+  - Prise automatique à l'ouverture de l'écran/affaire (pas d'action volontaire de l'utilisateur) ;
+    libéré en quittant l'écran, ou après 5 min sans activité (souris/clavier).
+  - Bandeau « verrouillé par XYZ » quand un autre poste tient déjà la main : l'écran reste
+    consultable mais passe en lecture seule (pas de redirection forcée, pas de perte de saisie en
+    cours).
+  - « Demander le crayon » : bouton dans le bandeau pour demander la main au titulaire actuel, qui
+    voit une bannière et peut approuver ou refuser. Si le titulaire ne répond pas et ne bat plus
+    (poste inactif) pendant 90 s, le demandeur reprend automatiquement la main sans attendre les
+    5 min d'expiration classique.
+  - Limite connue à mentionner : pas de droits par utilisateur (tout le monde peut tout faire une
+    fois qu'il a la main) — voir « À réfléchir plus tard » du journal technique si le besoin
+    évolue.
 
 ### Annulé pour le moment
 

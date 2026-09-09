@@ -9,6 +9,7 @@ const STYLES: Record<CaisseCalculee["niveauAlerte"], { bg: string; border: strin
 export default function FillRateBadge({ caisse }: { caisse: CaisseCalculee }) {
   const s = STYLES[caisse.niveauAlerte];
   const pct = caisse.tauxRemplissage * 100;
+  const article = caisse.articlesTropGrands.length > 0;
 
   return (
     <div
@@ -27,12 +28,14 @@ export default function FillRateBadge({ caisse }: { caisse: CaisseCalculee }) {
         whiteSpace: "nowrap",
       }}
       title={
-        caisse.estSurcharge
-          ? `Volume des articles supérieur au volume interne de la caisse (${pct.toFixed(0)}%)`
-          : `Taux de remplissage : ${pct.toFixed(1)}%`
+        article
+          ? `${caisse.articlesTropGrands.length} article(s) plus grand(s) que la caisse (voir le détail sous la barre)`
+          : caisse.estSurcharge
+            ? `Volume des articles supérieur au volume interne de la caisse (${pct.toFixed(0)}%)`
+            : `Taux de remplissage : ${pct.toFixed(1)}%`
       }
     >
-      {caisse.estSurcharge && "⚠ "}
+      {(caisse.estSurcharge || article) && "⚠ "}
       {pct.toFixed(0)}%
     </div>
   );

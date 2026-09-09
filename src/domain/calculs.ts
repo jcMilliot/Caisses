@@ -1,4 +1,4 @@
-import type { Article, Caisse, CaisseCalculee } from "./types";
+import type { Article, ArticleTropGrand, Caisse, CaisseCalculee } from "./types";
 import { estCaisse4C } from "./demandeOptions";
 
 const MM3_TO_M3 = 1_000_000_000;
@@ -48,8 +48,25 @@ export function calculerCaisse(
   const tauxRemplissage = volInterne > 0 ? volOccupe / volInterne : 0;
   const estSurcharge = volOccupe > volInterne;
 
+  // Articles qui ne rentrent pas : comparaison stricte des axes (dim1↔longueur, dim2↔largeur,
+  // dim3↔hauteur). Tolérance de 0,5 mm pour absorber les arrondis. Ignoré si la caisse n'a pas
+  // encore de dimensions (0) — sinon tout article dépasserait.
+  const articlesTropGrands: ArticleTropGrand[] = [];
+  if (caisse.longueur_mm > 0 || caisse.largeur_mm > 0 || caisse.hauteur_mm > 0) {
+    for (const a of articlesDeLaCaisse) {
+      const depassements: ArticleTropGrand["depassements"] = [];
+      if (a.dim1_mm - caisse.longueur_mm > 0.5)
+        depassements.push({ axe: "longueur", article: a.dim1_mm, caisse: caisse.longueur_mm });
+      if (a.dim2_mm - caisse.largeur_mm > 0.5)
+        depassements.push({ axe: "largeur", article: a.dim2_mm, caisse: caisse.largeur_mm });
+      if (a.dim3_mm - caisse.hauteur_mm > 0.5)
+        depassements.push({ axe: "hauteur", article: a.dim3_mm, caisse: caisse.hauteur_mm });
+      if (depassements.length > 0) articlesTropGrands.push({ article: a, depassements });
+    }
+  }
+
   let niveauAlerte: CaisseCalculee["niveauAlerte"] = "ok";
-  if (estSurcharge) {
+  if (estSurcharge || articlesTropGrands.length > 0) {
     niveauAlerte = "alerte";
   } else if (tauxRemplissage * 100 >= seuilEffectif) {
     niveauAlerte = "attention";
@@ -68,6 +85,7 @@ export function calculerCaisse(
     dim1MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, a.dim1_mm), 0),
     dim2MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, a.dim2_mm), 0),
     dim3MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, a.dim3_mm), 0),
+    articlesTropGrands,
   };
 }
 
@@ -87,6 +105,40 @@ export function calculerRecapAffaire(articles: Article[]): RecapAffaire {
     volumeTotalM3: articles.reduce((sum, a) => sum + volumeUnitaireM3(a) * a.quantite, 0),
     poidsTotalKg: articles.reduce((sum, a) => sum + a.poids_unitaire_kg * a.quantite, 0),
   };
+}
+
+export interface CapaciteAffaire {
+  // Volume cumulé de tous les articles de l'affaire (assignés + non assignés).
+  volumeArticlesM3: number;
+  // Capacité utile cumulée des caisses = Σ (volume interne, mousse déduite pour les 4C) × seuil.
+  capaciteUtileM3: number;
+  // true si au moins une caisse existe et a des dimensions, et que le volume des articles
+  // dépasse la capacité utile. false si aucune caisse, ou si une caisse n'a pas de dimensions.
+  depasse: boolean;
+}
+
+export function calculerCapaciteAffaire(
+  articles: Article[],
+  caisses: Caisse[],
+  seuilDefautAffaire: number,
+): CapaciteAffaire {
+  const volumeArticlesM3 = articles.reduce((sum, a) => sum + volumeUnitaireM3(a) * a.quantite, 0);
+
+  const caisseSansDimensions = caisses.some(
+    (c) => c.longueur_mm <= 0 || c.largeur_mm <= 0 || c.hauteur_mm <= 0,
+  );
+
+  const capaciteUtileM3 = caisses.reduce((sum, c) => {
+    const seuil = (c.seuil_pct ?? seuilDefautAffaire) / 100;
+    return sum + volumeDisponibleM3(c) * seuil;
+  }, 0);
+
+  const depasse =
+    caisses.length > 0 &&
+    !caisseSansDimensions &&
+    volumeArticlesM3 > capaciteUtileM3;
+
+  return { volumeArticlesM3, capaciteUtileM3, depasse };
 }
 
 export function articlesParCaisse(articles: Article[]): Map<number, Article[]> {
