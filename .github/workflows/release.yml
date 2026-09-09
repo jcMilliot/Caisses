@@ -58,7 +58,7 @@ jobs:
           organization-id: "e4a80f19-4603-405b-be23-d7eec25a85a3"
           project-slug: "Caisses"
           signing-policy-slug: "test-signing"
-          artifact-configuration-slug: "msi"
+          artifact-configuration-slug: "initial"
           github-artifact-id: "${{ steps.upload-msi.outputs.artifact-id }}"
           wait-for-completion: true
           output-artifact-directory: "signed/msi"
@@ -70,7 +70,7 @@ jobs:
           organization-id: "e4a80f19-4603-405b-be23-d7eec25a85a3"
           project-slug: "Caisses"
           signing-policy-slug: "test-signing"
-          artifact-configuration-slug: "nsis"
+          artifact-configuration-slug: "nsis-installer"
           github-artifact-id: "${{ steps.upload-nsis.outputs.artifact-id }}"
           wait-for-completion: true
           output-artifact-directory: "signed/nsis"
