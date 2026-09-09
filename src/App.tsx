@@ -6,6 +6,7 @@ import DemandesList from "./routes/DemandesList";
 import CaissesStockList from "./routes/CaissesStockList";
 import DemandesAchatsList from "./routes/DemandesAchatsList";
 import Journal from "./routes/Journal";
+import Documentation from "./routes/Documentation";
 import CreerAffaireDialog from "./components/CreerAffaireDialog";
 import FirstLaunchSetup from "./components/FirstLaunchSetup";
 import TrigrammeSetup from "./components/TrigrammeSetup";
@@ -20,7 +21,7 @@ import { useUserSetup } from "./hooks/useUserSetup";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
 import type { Demande, DemandeCaisse } from "./domain/types";
 
-type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "journal";
+type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "journal" | "documentation";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "demandes", label: "Gestion des caisses" },
@@ -209,11 +210,17 @@ export default function App() {
               {s.label}
             </button>
           ))}
+          <button
+            className={section === "documentation" ? "btn btn-primary btn-sm" : "btn btn-sm"}
+            onClick={() => handleSelectSection("documentation")}
+            style={{ marginLeft: "auto" }}
+          >
+            Documentation
+          </button>
           {trigramme === TRIGRAMME_JOURNAL && (
             <button
               className={section === "journal" ? "btn btn-primary btn-sm" : "btn btn-sm"}
               onClick={() => handleSelectSection("journal")}
-              style={{ marginLeft: "auto" }}
             >
               Journal
             </button>
@@ -239,6 +246,7 @@ export default function App() {
         {section === "stock" && <CaissesStockList trigramme={trigramme} />}
         {section === "achats" && <DemandesAchatsList trigramme={trigramme} />}
         {section === "journal" && trigramme === TRIGRAMME_JOURNAL && <Journal trigramme={trigramme} />}
+        {section === "documentation" && <Documentation />}
       </div>
 
       {creationAffaire && (

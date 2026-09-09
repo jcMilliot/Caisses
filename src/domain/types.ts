@@ -232,4 +232,13 @@ export interface CaisseCalculee extends Caisse {
   dim1MaxMm: number;
   dim2MaxMm: number;
   dim3MaxMm: number;
+  // Articles assignés dont au moins une dimension dépasse la dimension correspondante de la
+  // caisse (comparaison stricte des axes : dim1↔longueur, dim2↔largeur, dim3↔hauteur).
+  articlesTropGrands: ArticleTropGrand[];
+}
+
+export interface ArticleTropGrand {
+  article: Article;
+  // Axes qui dépassent, avec la valeur de l'article et celle de la caisse (mm).
+  depassements: { axe: "longueur" | "largeur" | "hauteur"; article: number; caisse: number }[];
 }

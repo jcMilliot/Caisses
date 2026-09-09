@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAffaire } from "../hooks/useAffaire";
-import { calculerRecapAffaire } from "../domain/calculs";
+import { calculerRecapAffaire, calculerCapaciteAffaire } from "../domain/calculs";
 import { estCaisse4C, contrePlaqueParDefaut, estDemandeValidee, memeNomAffaire } from "../domain/demandeOptions";
-import type { Article, Demande, DemandeCaisse, NewDemandeCaisse } from "../domain/types";
+import type { Article, Caisse, Demande, DemandeCaisse, NewDemandeCaisse } from "../domain/types";
 import { usePointerDrag } from "../hooks/usePointerDrag";
 import { useSectionLock } from "../hooks/useSectionLock";
 import ArticlesTable from "../components/ArticlesTable";
@@ -42,6 +42,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
   const conteneurArticlesRef = useRef<HTMLDivElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showPaste, setShowPaste] = useState(false);
+  const [collageInitial, setCollageInitial] = useState("");
   const [showAssign, setShowAssign] = useState(false);
   const [caisseRecenteId, setCaisseRecenteId] = useState<number | null>(null);
   const [caissesPosition, setCaissesPosition] = useState<"droite" | "haut">(
@@ -332,6 +333,14 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
           onToggleSelectAll={toggleSelectAll}
           onUpdate={modifierArticle}
           onStartDrag={startDrag}
+          onCollageMultiCellules={
+            readOnly
+              ? undefined
+              : (texte) => {
+                  setCollageInitial(texte);
+                  setShowPaste(true);
+                }
+          }
           readOnly={readOnly}
         />
       </div>
@@ -362,7 +371,12 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
         </span>
       </div>
 
-      <RecapAffaireBandeau articles={articles} aUneCaisse4C={caissesCalculees.some((c) => estCaisse4C(c.type_envoi_caisse))} />
+      <RecapAffaireBandeau
+        articles={articles}
+        caisses={caissesCalculees}
+        seuilDefaut={affaire.seuil_defaut}
+        aUneCaisse4C={caissesCalculees.some((c) => estCaisse4C(c.type_envoi_caisse))}
+      />
 
       {(readOnly || lock.incomingRequest) && (
         <LockBanner
@@ -389,10 +403,14 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
 
       {showPaste && (
         <PasteImportZone
+          texteInitial={collageInitial}
           onImport={async (arts) => {
             await ajouterArticles(arts);
           }}
-          onClose={() => setShowPaste(false)}
+          onClose={() => {
+            setShowPaste(false);
+            setCollageInitial("");
+          }}
         />
       )}
 
@@ -438,15 +456,29 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
   );
 }
 
-function RecapAffaireBandeau({ articles, aUneCaisse4C }: { articles: Article[]; aUneCaisse4C: boolean }) {
+function RecapAffaireBandeau({
+  articles,
+  caisses,
+  seuilDefaut,
+  aUneCaisse4C,
+}: {
+  articles: Article[];
+  caisses: Caisse[];
+  seuilDefaut: number;
+  aUneCaisse4C: boolean;
+}) {
   const recap = useMemo(() => calculerRecapAffaire(articles), [articles]);
+  const capacite = useMemo(
+    () => calculerCapaciteAffaire(articles, caisses, seuilDefaut),
+    [articles, caisses, seuilDefaut],
+  );
 
   return (
     <div
       style={{
         display: "flex",
-        gap: 24,
-        alignItems: "center",
+        flexDirection: "column",
+        gap: 10,
         marginBottom: 24,
         padding: "12px 18px",
         background: "var(--bg-panel-alt)",
@@ -457,20 +489,42 @@ function RecapAffaireBandeau({ articles, aUneCaisse4C }: { articles: Article[]; 
         position: "sticky",
         top: 46,
         zIndex: 20,
-        flexWrap: "wrap",
       }}
     >
-      <RecapValeur label="Longueur max" valeur={`${(recap.dim1MaxMm / 1000).toFixed(2)} m`} />
-      <RecapValeur label="Largeur max" valeur={`${(recap.dim2MaxMm / 1000).toFixed(2)} m`} />
-      <RecapValeur label="Hauteur max" valeur={`${(recap.dim3MaxMm / 1000).toFixed(2)} m`} />
-      <div style={{ width: 1, height: 24, background: "var(--border-strong)" }} />
-      <RecapValeur label="Volume total" valeur={`${recap.volumeTotalM3.toFixed(3)} m³`} />
-      <RecapValeur label="Poids total" valeur={`${recap.poidsTotalKg.toFixed(1)} kg`} />
-      {aUneCaisse4C && (
-        <>
-          <div style={{ width: 1, height: 24, background: "var(--border-strong)" }} />
-          <RecapValeur label="Mousse (4C)" valeur="0.025 m / face" />
-        </>
+      <div style={{ display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
+        <RecapValeur label="Longueur max" valeur={`${(recap.dim1MaxMm / 1000).toFixed(2)} m`} />
+        <RecapValeur label="Largeur max" valeur={`${(recap.dim2MaxMm / 1000).toFixed(2)} m`} />
+        <RecapValeur label="Hauteur max" valeur={`${(recap.dim3MaxMm / 1000).toFixed(2)} m`} />
+        <div style={{ width: 1, height: 24, background: "var(--border-strong)" }} />
+        <RecapValeur label="Volume total" valeur={`${recap.volumeTotalM3.toFixed(3)} m³`} />
+        <RecapValeur label="Poids total" valeur={`${recap.poidsTotalKg.toFixed(1)} kg`} />
+        {aUneCaisse4C && (
+          <>
+            <div style={{ width: 1, height: 24, background: "var(--border-strong)" }} />
+            <RecapValeur label="Mousse (4C)" valeur="0.025 m / face" />
+          </>
+        )}
+      </div>
+
+      {capacite.depasse && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "7px 10px",
+            background: "var(--danger-bg)",
+            border: "1px solid var(--danger-border)",
+            color: "var(--danger-text)",
+            borderRadius: 6,
+            fontSize: 12,
+            fontWeight: 600,
+          }}
+        >
+          ⚠ Le volume total de l'affaire ({recap.volumeTotalM3.toFixed(3)} m³) dépasse la capacité
+          utile des caisses ({capacite.capaciteUtileM3.toFixed(3)} m³, seuil de remplissage
+          appliqué) — vérifiez le nombre ou les dimensions des caisses.
+        </div>
       )}
     </div>
   );

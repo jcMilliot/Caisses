@@ -5,6 +5,8 @@ import { decouperColonnesTsv, decouperLignesTsv } from "../domain/tsv";
 interface Props {
   onImport: (articles: NewArticle[]) => Promise<void>;
   onClose: () => void;
+  // Texte de collage pré-rempli (ex. collage multi-cellules intercepté dans le tableau).
+  texteInitial?: string;
 }
 
 // Ordre attendu des colonnes lors du collage depuis Excel.
@@ -15,16 +17,23 @@ function parseColle(texte: string): { articles: NewArticle[]; erreurs: string[] 
 
   const articles: NewArticle[] = [];
   const erreurs: string[] = [];
+  let colonnesEnTrop = 0;
+  let colonneMax = 0;
 
   lignes.forEach((ligne, i) => {
     const colsBrutes = decouperColonnesTsv(ligne);
-    if (colsBrutes.length > 8) {
-      erreurs.push(`Ligne ${i + 1} : ${colsBrutes.length} colonne(s) trouvée(s), 8 attendues au maximum — ignorée`);
-      return;
+    // Colonnes au-delà des 8 attendues : on les ignore (le fichier Excel a souvent 2 colonnes
+    // de volume calculé en plus — l'app le recalcule elle-même). On compte pour un avertissement
+    // global unique, on ne rejette pas la ligne.
+    let cols = colsBrutes;
+    if (cols.length > 8) {
+      colonnesEnTrop++;
+      colonneMax = Math.max(colonneMax, cols.length);
+      cols = cols.slice(0, 8);
     }
     // Excel omet les tabulations des cellules vides en fin de ligne : on complète
     // les colonnes manquantes avec des valeurs vides plutôt que de rejeter la ligne.
-    const cols = [...colsBrutes, ...Array(8 - colsBrutes.length).fill("")];
+    cols = [...cols, ...Array(Math.max(0, 8 - cols.length)).fill("")];
     const [ar, reference, designation, d1, d2, d3, poids, qte] = cols;
     const dim1_mm = parseNombre(d1);
     const dim2_mm = parseNombre(d2);
@@ -49,6 +58,14 @@ function parseColle(texte: string): { articles: NewArticle[]; erreurs: string[] 
     });
   });
 
+  if (colonnesEnTrop > 0) {
+    erreurs.unshift(
+      `${colonnesEnTrop} ligne(s) ont ${colonneMax} colonnes — seules les 8 premières ` +
+        `(AR · Référence · Désignation · Dim1 · Dim2 · Dim3 · Poids · Quantité) sont utilisées, ` +
+        `les colonnes de volume sont recalculées par l'application.`,
+    );
+  }
+
   return { articles, erreurs };
 }
 
@@ -57,8 +74,8 @@ function parseNombre(s: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-export default function PasteImportZone({ onImport, onClose }: Props) {
-  const [texte, setTexte] = useState("");
+export default function PasteImportZone({ onImport, onClose, texteInitial = "" }: Props) {
+  const [texte, setTexte] = useState(texteInitial);
   const [importing, setImporting] = useState(false);
 
   const { articles, erreurs } = parseColle(texte);

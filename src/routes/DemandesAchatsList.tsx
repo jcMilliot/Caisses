@@ -126,9 +126,9 @@ export default function DemandesAchatsList({ trigramme }: Props) {
     if (affichesSelectionnees.length === 0 && achstockSelectionnees.length === 0) return;
     setCopieGroupee(true);
     try {
-      // Regroupées par type de caisse (standard/4B/4C) avant collage, ordre fixe : les 4C
-      // (avec la mention soudure/fermeture) apparaissent toujours en dernier. Un seul
-      // "Bonjour, merci de..." en tête pour l'ensemble de la sélection, pas un par groupe.
+      // Regroupées par type de caisse (standard/4B/4C), ordre fixe : les 4C (avec la mention
+      // soudure/fermeture juste avant) toujours en dernier. Un seul "Bonjour, merci de..." en
+      // tête pour l'ensemble de la sélection.
       const ORDRE_CATEGORIES: CategorieEnvoi[] = ["standard", "4b", "4c"];
       const groupes = new Map<CategorieEnvoi, AfficheCaisse[]>();
       for (const a of affichesSelectionnees) {
@@ -148,6 +148,8 @@ export default function DemandesAchatsList({ trigramme }: Props) {
         affichesSelectionnees.length + achstockSelectionnees.length,
         affichesSelectionnees.length === 0,
       );
+      // text/html : intro + mention 4C + images data: URI + bloc ACHSTOCK (fonctionne sur les
+      // clients mail qui acceptent les images inline en data:). text/plain : fallback.
       const blocsHtml: string[] = [versHtml(intro)];
       const blocsTexte: string[] = [intro];
       let auMoinsUnBloc = false;
@@ -172,14 +174,10 @@ export default function DemandesAchatsList({ trigramme }: Props) {
         if (images.length === 0) continue;
         auMoinsUnBloc = true;
 
-        // La mention 4C est ajoutée une seule fois, juste avant les images de ce groupe —
-        // comme le 4C est toujours le dernier groupe traité, elle suit les images des autres
-        // types s'il y en a, ou l'intro directement sinon.
         if (cat === "4c") {
           blocsHtml.push(versHtml(MENTION_SOUDURE_4C));
           blocsTexte.push(MENTION_SOUDURE_4C);
         }
-
         const imagesHtml = images
           .map((src) => `<img src="${src}" alt="" style="display:block;max-width:100%;margin:0 0 16px;" />`)
           .join("\n");
@@ -187,14 +185,11 @@ export default function DemandesAchatsList({ trigramme }: Props) {
         blocsTexte.push(`${images.length} affiche(s) — voir les images ci-dessus.`);
       }
 
-      // ACHSTOCK toujours en dernier, après les affiches classiques (les 4C compris). S'il y a
-      // déjà eu un bloc avant (affiches normales), on l'introduit par "Ainsi que" ; sinon la
-      // sélection ne contient que de l'ACHSTOCK et l'intro générique suffit déjà.
+      // ACHSTOCK toujours en dernier. Précédé de "Ainsi que :" s'il y a déjà des affiches.
       if (achstockSelectionnees.length > 0) {
         if (auMoinsUnBloc) {
-          const ainsiQue = "Ainsi que :";
-          blocsHtml.push(versHtml(ainsiQue));
-          blocsTexte.push(ainsiQue);
+          blocsHtml.push(versHtml("Ainsi que :"));
+          blocsTexte.push("Ainsi que :");
         }
         auMoinsUnBloc = true;
         const blocsAchstockTexte = achstockSelectionnees.map((d) => rendreBlocAchstock(d));

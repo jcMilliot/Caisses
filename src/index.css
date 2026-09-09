@@ -186,3 +186,15 @@ table {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-faint);
 }
+
+.doc-bloc ul {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.doc-bloc li {
+  margin: 0;
+}
