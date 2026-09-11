@@ -111,6 +111,7 @@ export interface DemandeCaisse {
   quantite: number;
   moteurs: string;
   module_lineaire: string;
+  terminaux: string;
   informations_supp: string;
   observations: string;
   cde_passee_affaire: boolean;
@@ -136,6 +137,7 @@ export interface NewDemandeCaisse {
   quantite: number;
   moteurs: string;
   module_lineaire: string;
+  terminaux: string;
   informations_supp: string;
   observations: string;
   cde_passee_affaire: boolean;
