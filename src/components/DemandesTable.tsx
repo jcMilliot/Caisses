@@ -193,6 +193,7 @@ function buildOptions(perso: OptionListe[]): {
     parChampSousLigne: {
       moteurs,
       module_lineaire: moduleLineaire,
+      terminaux,
       traitement: TRAITEMENTS,
     },
   };
@@ -709,14 +710,14 @@ export default function DemandesTable({
               {colonnesAffichees.map((c) => (
                 <Fragment key={c.champ}>{thFiltrable(c.champ, c.label, c.align, th)}</Fragment>
               ))}
-              <th style={{ ...th, width: 90 }}></th>
+              <th style={{ ...th, width: 210 }}></th>
             </tr>
           </thead>
           <tbody>
             {demandes.length === 0 ? (
               <tr>
                 <td colSpan={colonnesAffichees.length + 3} style={{ ...td, textAlign: "center", color: "var(--text-muted)", padding: "20px 8px" }}>
-                  Aucune demande. Collez des lignes depuis Excel ou ajoutez-en une manuellement.
+                  Aucune demande. Ajoutez-en une avec « + Créer une nouvelle caisse ».
                 </td>
               </tr>
             ) : demandesTriees.length === 0 ? (
@@ -777,10 +778,21 @@ export default function DemandesTable({
                       {colonnesAffichees.map((c) => (
                         <Fragment key={c.champ}>{cell(d, c.champ, c.align, td)}</Fragment>
                       ))}
-                      <td style={td}>
-                        <button className="btn btn-sm btn-danger" onClick={() => onDelete(d.id, d.affaire)} disabled={readOnly}>
-                          Suppr.
-                        </button>
+                      <td style={{ ...td, whiteSpace: "nowrap" }}>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button className="btn btn-sm btn-pastel-blue" onClick={() => onValider(d.id, !estValidee)} disabled={readOnly}>
+                            {estValidee ? "Dévalider" : "Valider"}
+                          </button>
+                          <button className="btn btn-sm btn-pastel-orange" onClick={() => onSimulerAffaire(d)}>
+                            Simuler
+                          </button>
+                          <button className="btn btn-sm btn-pastel-green" onClick={() => onCreerDemandeCaisse(d)} disabled={readOnly}>
+                            + Caisse
+                          </button>
+                          <button className="btn btn-sm btn-danger" onClick={() => onDelete(d.id, d.affaire)} disabled={readOnly}>
+                            Suppr.
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     {etendue &&
@@ -889,6 +901,7 @@ const CHAMP_SOUS_LIGNE: Partial<Record<Champ, keyof DemandeCaisse>> = {
   quantite: "quantite",
   moteurs: "moteurs",
   module_lineaire: "module_lineaire",
+  terminaux: "terminaux",
   informations_supp: "informations_supp",
   observations: "observations",
   longueur_mm: "longueur_mm",

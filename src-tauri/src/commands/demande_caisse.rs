@@ -9,7 +9,7 @@ fn dims(l: f64, w: f64, h: f64) -> String {
 }
 
 const SELECT_COLS: &str = "id, demande_id, nom, type_envoi_caisse, type_ouverture, stock, date_picking, date_demandee_s2c,
-    traitement, quantite, moteurs, module_lineaire, informations_supp, observations,
+    traitement, quantite, moteurs, module_lineaire, terminaux, informations_supp, observations,
     cde_passee_affaire, cde_passee_achat_stock, longueur_mm, largeur_mm, hauteur_mm, poids_kg, contre_plaque, ordre, caisse_stock_id";
 
 fn map_row(row: &rusqlite::Row) -> rusqlite::Result<DemandeCaisse> {
@@ -26,17 +26,18 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<DemandeCaisse> {
         quantite: row.get(9)?,
         moteurs: row.get(10)?,
         module_lineaire: row.get(11)?,
-        informations_supp: row.get(12)?,
-        observations: row.get(13)?,
-        cde_passee_affaire: row.get(14)?,
-        cde_passee_achat_stock: row.get(15)?,
-        longueur_mm: row.get(16)?,
-        largeur_mm: row.get(17)?,
-        hauteur_mm: row.get(18)?,
-        poids_kg: row.get(19)?,
-        contre_plaque: row.get(20)?,
-        ordre: row.get(21)?,
-        caisse_stock_id: row.get(22)?,
+        terminaux: row.get(12)?,
+        informations_supp: row.get(13)?,
+        observations: row.get(14)?,
+        cde_passee_affaire: row.get(15)?,
+        cde_passee_achat_stock: row.get(16)?,
+        longueur_mm: row.get(17)?,
+        largeur_mm: row.get(18)?,
+        hauteur_mm: row.get(19)?,
+        poids_kg: row.get(20)?,
+        contre_plaque: row.get(21)?,
+        ordre: row.get(22)?,
+        caisse_stock_id: row.get(23)?,
     })
 }
 
@@ -64,9 +65,9 @@ pub fn create_demande_caisse(db: State<Db>, caisse: NewDemandeCaisse, trigramme:
         .map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO demande_caisse (demande_id, nom, type_envoi_caisse, type_ouverture, stock, date_picking, date_demandee_s2c,
-            traitement, quantite, moteurs, module_lineaire, informations_supp, observations,
+            traitement, quantite, moteurs, module_lineaire, terminaux, informations_supp, observations,
             cde_passee_affaire, cde_passee_achat_stock, longueur_mm, largeur_mm, hauteur_mm, poids_kg, contre_plaque, ordre, caisse_stock_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
         rusqlite::params![
             caisse.demande_id,
             caisse.nom,
@@ -79,6 +80,7 @@ pub fn create_demande_caisse(db: State<Db>, caisse: NewDemandeCaisse, trigramme:
             caisse.quantite,
             caisse.moteurs,
             caisse.module_lineaire,
+            caisse.terminaux,
             caisse.informations_supp,
             caisse.observations,
             caisse.cde_passee_affaire,
@@ -127,9 +129,9 @@ pub fn update_demande_caisse(db: State<Db>, id: i64, caisse: NewDemandeCaisse, t
     conn.execute(
         "UPDATE demande_caisse SET nom = ?1, type_envoi_caisse = ?2, type_ouverture = ?3, stock = ?4,
             date_picking = ?5, date_demandee_s2c = ?6, traitement = ?7, quantite = ?8, moteurs = ?9,
-            module_lineaire = ?10, informations_supp = ?11, observations = ?12,
-            cde_passee_affaire = ?13, cde_passee_achat_stock = ?14, longueur_mm = ?15, largeur_mm = ?16,
-            hauteur_mm = ?17, poids_kg = ?18, contre_plaque = ?19, caisse_stock_id = ?20 WHERE id = ?21",
+            module_lineaire = ?10, terminaux = ?11, informations_supp = ?12, observations = ?13,
+            cde_passee_affaire = ?14, cde_passee_achat_stock = ?15, longueur_mm = ?16, largeur_mm = ?17,
+            hauteur_mm = ?18, poids_kg = ?19, contre_plaque = ?20, caisse_stock_id = ?21 WHERE id = ?22",
         rusqlite::params![
             caisse.nom,
             caisse.type_envoi_caisse,
@@ -141,6 +143,7 @@ pub fn update_demande_caisse(db: State<Db>, id: i64, caisse: NewDemandeCaisse, t
             caisse.quantite,
             caisse.moteurs,
             caisse.module_lineaire,
+            caisse.terminaux,
             caisse.informations_supp,
             caisse.observations,
             caisse.cde_passee_affaire,

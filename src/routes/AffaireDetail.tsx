@@ -194,6 +194,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
                     quantite: 1,
                     moteurs: "",
                     module_lineaire: "",
+                    terminaux: "",
                     informations_supp: "",
                     observations: "",
                     cde_passee_affaire: demandeParente.cde_passee_affaire,

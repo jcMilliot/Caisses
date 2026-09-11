@@ -24,6 +24,10 @@
   --danger-border: #dd8b7c;
   --danger-text: #a8402a;
 
+  --info-bg: #e3eefc;
+  --info-border: #7fa8dd;
+  --info-text: #1f4f8f;
+
   --row-border-color-marquee: #000000;
   --row-border-color: var(--border);
 
@@ -130,6 +134,55 @@ table {
   color: var(--danger-text);
   border-color: var(--danger-border);
   background: var(--danger-bg);
+}
+
+.btn-success {
+  color: var(--ok-text);
+  border-color: var(--ok-border);
+  background: var(--ok-bg);
+  font-weight: 600;
+  padding: 9px 18px;
+  font-size: 15px;
+}
+
+.btn-success:hover {
+  background: #d9f0de;
+  border-color: var(--ok-text);
+}
+
+/* Variantes pastel réutilisables pour les boutons d'action par ligne (tableaux), à combiner
+   avec .btn-sm — distinctes de .btn-success qui porte aussi un agrandissement de taille. */
+.btn-pastel-green {
+  color: var(--ok-text);
+  border-color: var(--ok-border);
+  background: var(--ok-bg);
+}
+
+.btn-pastel-green:hover {
+  background: #d9f0de;
+  border-color: var(--ok-text);
+}
+
+.btn-pastel-blue {
+  color: var(--info-text);
+  border-color: var(--info-border);
+  background: var(--info-bg);
+}
+
+.btn-pastel-blue:hover {
+  background: #d3e4fa;
+  border-color: var(--info-text);
+}
+
+.btn-pastel-orange {
+  color: var(--warn-text);
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+}
+
+.btn-pastel-orange:hover {
+  background: #fbe6c2;
+  border-color: var(--warn-text);
 }
 
 .btn:disabled {

@@ -6,7 +6,6 @@ import { affairesApi } from "../data/affaires";
 import { caissesApi } from "../data/caisses";
 import { optionsListeApi } from "../data/optionsListe";
 import DemandesTable from "../components/DemandesTable";
-import PasteImportZoneDemandes from "../components/PasteImportZoneDemandes";
 import AjouterDemandesDialog from "../components/AjouterDemandesDialog";
 import GererReferencesDialog from "../components/GererReferencesDialog";
 import LockBanner from "../components/LockBanner";
@@ -45,6 +44,7 @@ function nouvelleSousCaisseBrouillon(demande: Demande, id: number): DemandeCaiss
     quantite: 1,
     moteurs: "",
     module_lineaire: "",
+    terminaux: "",
     informations_supp: "",
     observations: "",
     cde_passee_affaire: demande.cde_passee_affaire,
@@ -93,7 +93,6 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   const [lignesEtendues, setLignesEtendues] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [enregistrement, setEnregistrement] = useState(false);
-  const [importOuvert, setImportOuvert] = useState(false);
   const [ajoutOuvert, setAjoutOuvert] = useState(false);
   const [gestionRefsOuvert, setGestionRefsOuvert] = useState(false);
   const [slotOptions, setSlotOptions] = useState<HTMLDivElement | null>(null);
@@ -176,14 +175,6 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
         : `Des demandes non validées existent déjà pour les affaires : ${liste}. Les ajouter quand même comme lignes distinctes ?`,
       "Affaire déjà présente",
     );
-  }
-
-  async function handleImport(nouvelles: NewDemande[]): Promise<boolean> {
-    if (!(await confirmerAffairesDejaPresentes(nouvelles))) return false;
-    // Le collage Excel reste un import immédiat (gros volume, distinct des éditions manuelles).
-    await demandesApi.bulkCreate(nouvelles, trigramme);
-    await reload();
-    return true;
   }
 
   async function handleAjouterLignes(nouvelles: NewDemande[]): Promise<boolean> {
@@ -621,11 +612,8 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
               Annuler
             </button>
           )}
-          <button className="btn" onClick={() => setAjoutOuvert(true)} disabled={readOnly}>
+          <button className="btn btn-success" onClick={() => setAjoutOuvert(true)} disabled={readOnly}>
             + Créer une nouvelle caisse
-          </button>
-          <button className="btn" onClick={() => setImportOuvert(true)} disabled={readOnly}>
-            Coller depuis Excel
           </button>
           <button className="btn" onClick={() => setGestionRefsOuvert(true)} disabled={readOnly}>
             Gérer les références
@@ -674,7 +662,6 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
         </div>
       )}
 
-      {importOuvert && <PasteImportZoneDemandes onImport={handleImport} onClose={() => setImportOuvert(false)} />}
       {ajoutOuvert && (
         <AjouterDemandesDialog
           caissesStock={caissesStock}

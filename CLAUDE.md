@@ -105,8 +105,9 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-09-02 : migrations `0001` à `0020` (dernière : `0020_add_caisse_demande_id.sql` ;
-pas de `0019_reorder` — supprimé avant publication, cf. journal des listes).
+État au 2026-09-11 : migrations `0001` à `0021` (dernière :
+`0021_add_demande_caisse_terminaux.sql` ; pas de `0019_reorder` — supprimé avant publication,
+cf. journal des listes).
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
 triées côté frontend par `demandeOptions.ts::comparerOption` (quantité de tête puis n° de
 référence, ex. `1 MOTEUR` < `2 MOTEURS` < `10 MOTEURS` ; `1 FESTO 426` < `1 FESTO 485` <
@@ -160,7 +161,7 @@ demande_caisse (id, demande_id NOT NULL REFERENCES demande ON DELETE CASCADE,  -
          nom, type_envoi_caisse, type_ouverture, stock, traitement,
          date_picking, date_demandee_s2c, quantite,
          longueur_mm, largeur_mm, hauteur_mm, poids_kg,
-         moteurs, module_lineaire, informations_supp, observations,
+         moteurs, module_lineaire, terminaux, informations_supp, observations,  -- terminaux : 0021
          cde_passee_affaire BOOL, cde_passee_achat_stock BOOL, contre_plaque BOOL,
          caisse_stock_id INTEGER NULL, ordre)
 
@@ -522,6 +523,49 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
 - `cargo check`, `npx tsc --noEmit` et `npm run tauri build -- --debug` validés après le
   correctif.
 
+### 2026-09-11 — Nouveau logo, Terminaux sur caisses enfants, boutons d'action par ligne
+
+- **Nouveau logo de l'app** : jeu d'icônes complet régénéré via `npx tauri icon` depuis un
+  visuel fourni par l'utilisateur (caisse en bois stylisée). Le contenu du visuel source était
+  déjà proche du bord du canevas mais `tauri icon` ajoutait sa propre marge de sécurité sur les
+  petites tailles (32×32, utilisée dans la barre des tâches), ce qui le faisait paraître plus
+  petit que les icônes voisines — corrigé en recadrant sur le contenu réel puis en le
+  ré-agrandissant à ~99 % du canevas 512×512 avant régénération. Dossiers `ios/`/`android/`
+  générés par l'outil supprimés (app desktop-only, jamais utilisés).
+- **Champ `terminaux` ajouté aux caisses enfants (`demande_caisse`)** — jusqu'ici ce champ
+  n'existait que sur la ligne mère (`demande`), les sous-caisses n'avaient pas d'équivalent
+  (case vide, non éditable). Migration `0021_add_demande_caisse_terminaux.sql` (nouvelle
+  colonne, défaut `''`), portée dans `models.rs`/`commands/demande_caisse.rs`
+  (SELECT/INSERT/UPDATE) et `domain/types.ts`. Côté `DemandesTable.tsx` : `terminaux` ajouté à
+  `parChampSousLigne` (menu déroulant, mêmes options que la ligne mère + « Autre… ») et au
+  mapping `CHAMP_SOUS_LIGNE` — non verrouillé, donc éditable inline comme `moteurs`/
+  `module_lineaire`. `AffaireDetail.tsx`/`DemandesList.tsx` mis à jour pour la construction des
+  sous-caisses (synchro caisse mère → sous-caisse, brouillon de sous-caisse).
+- **Boutons d'action par ligne dans le tableau Demandes**, en plus du clic droit existant
+  (conservé tel quel, pas de suppression de fonctionnalités) : colonne actions élargie
+  (90→210px) pour accueillir, à côté de « Suppr. », trois nouveaux boutons compacts par ligne —
+  **Valider/Dévalider**, **Simuler**, **+ Caisse** (créer une caisse enfant). Décision actée avec
+  l'utilisateur : « Simuler l'affaire » et « Créer une nouvelle caisse enfant » ciblent toujours
+  une ligne précise (pas de sens en action de sélection groupée à la différence de Valider, qui
+  a déjà sa barre d'action groupée « Valider la sélection (N) »), d'où un bouton par ligne plutôt
+  qu'un bouton en tête de tableau. « Simuler » n'est jamais désactivé en lecture seule (simple
+  navigation, cohérent avec le clic droit qui ne le bloquait pas non plus).
+- **Couleurs pastel des boutons d'action** : 3 nouvelles classes CSS réutilisables
+  `.btn-pastel-green`/`.btn-pastel-blue`/`.btn-pastel-orange` (`index.css`, combinables avec
+  `.btn-sm`), s'appuyant sur les tokens de couleur existants (`--ok-*`, `--warn-*`) plus un
+  nouveau token bleu `--info-*`. Valider → bleu, Simuler → orange, + Caisse → vert (même famille
+  que le gros bouton d'en-tête). `.btn-success` (existant, plus gros/gras) reste dédié au bouton
+  d'en-tête « + Créer une nouvelle caisse », mis en avant à la demande de l'utilisateur (fond vert
+  pastel, un cran plus grand que les autres boutons du bandeau).
+- **« Coller depuis Excel » retiré de la page Gestion des caisses** (bouton + tout le code
+  associé : état `importOuvert`, handler `handleImport`, import et rendu de
+  `PasteImportZoneDemandes`) — décision utilisateur, le composant `PasteImportZoneDemandes.tsx`
+  lui-même n'est pas supprimé (orphelin, gardé au cas où la fonctionnalité reviendrait ailleurs).
+- `cargo check`, `npx tsc --noEmit` et `npm run tauri build -- --debug` (bundle complet MSI+NSIS)
+  validés. Version bumpée à `0.8.1` (`tauri.conf.json`/`package.json`/`Cargo.toml`), release à
+  préparer avec l'utilisateur (soumission Microsoft Defender à faire dès publication, cf. « À
+  faire » — procédure manuelle actée le 2026-09-09, pas de signature Authenticode).
+
 ## Prochaines étapes
 
 ### Fait
@@ -817,38 +861,11 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
     refaire à chaque version si la détection revient (rapide, se traite en 24-72 h).
   - Si un poste reste bloqué en attendant : exclusion Defender du dossier d'install + du dossier
     temporaire de l'updater (`%TEMP%\Caisses-*-updater-*`), ou déblocage manuel via la notif.
-  - **Solution de fond** : signer l'installeur (Authenticode) dans le workflow GitHub Actions.
-    Demande **SignPath.io plan Open Source** envoyée le 2026-09-02 (dépôt public, revue manuelle,
-    pas garanti vu le profil du projet). Fichiers de repo préparés en conséquence le 2026-09-03
-    (`LICENSE` MIT, `README.md` réécrit avec mention SignPath Foundation, métadonnées
-    `package.json` / `Cargo.toml`). Plan B si refus : Certum Open Source Code Signing
-    (~30 €/an, token cloud, signable en CI). Une fois signé : plus de détection Defender,
-    l'auto-update reste inchangé — voir `.github/workflows/release.yml` à modifier pour insérer
-    l'étape de signature.
-  - **SignPath Foundation refusé le 2026-09-09** : réponse officielle par email — le programme
-    Foundation vise des projets ayant déjà une visibilité publique établie (stars/forks/
-    contributeurs GitHub, articles, discussions externes, adoption communautaire) ; Caisses,
-    outil interne d'entreprise au dépôt technique­ment public mais sans audience, ne correspond
-    pas à ce profil (refus assumé comme cohérent, pas un accident administratif). Avant ce refus,
-    toute l'intégration technique avait été validée manuellement (organisation SignPath « Caisse »,
-    projet « Caisses », policy `test-signing`, deux Artifact Configurations `initial`/
-    `nsis-installer` signant correctement .msi et .exe via upload direct dans le dashboard) — seule
-    l'intégration **CI** butait sur `Could not authorize against SignPath API`, causé par le
-    compte resté en **Free trial** : cette édition n'inclut pas la vérification « Trusted Build
-    System » nécessaire à `signpath/github-action-submit-signing-request` (message explicite de
-    SignPath en tentant de l'activer sur la policy). Passer en payant réglerait ce point mais
-    tarif SignPath payant non public/à négocier — écarté au profit de Certum.
-  - **Piste Certum (open source) également écartée** : le certificat "Open Source" Certum a la
-    même contrainte d'éligibilité que SignPath Foundation (projet OSS non commercial souscrit par
-    un individu) — ne correspond pas non plus au profil réel du projet. Le produit adapté serait
-    un Certum Standard/Cloud Code Signing payant classique (~90-150 $/an selon revendeur, pas de
-    contrainte d'éligibilité), mais **décision actée le 2026-09-09 : pas d'abonnement de
-    signature pour l'instant**, confirmée après discussion avec le responsable. On reste sur la
-    procédure manuelle existante (soumission Microsoft à chaque version + exclusion Defender au
-    besoin) — cohérent avec un usage à 2-3 postes internes plutôt qu'une diffusion publique. Le
-    workflow `.github/workflows/release.yml` a été remis dans son état d'avant les essais SignPath
-    (aucune étape de signature Authenticode). Revoir ce point si le nombre de postes/utilisateurs
-    grandit significativement, ou si le rythme des faux positifs Defender devient trop pénible.
+  - **Solution de fond (signature Authenticode) abandonnée pour l'instant** — voir
+    « Annulé pour le moment » ci-dessous pour le détail des pistes essayées (SignPath, Certum).
+    On reste sur la procédure manuelle : soumission Microsoft à chaque version + exclusion
+    Defender au besoin. Revoir si le nombre de postes/utilisateurs grandit significativement, ou
+    si le rythme des faux positifs Defender devient trop pénible.
 
 - **⚠️ Risque connu — dossier BDD réseau partagé** : décision utilisateur (2026-07-30) d'utiliser
   un dossier réseau partagé pour `caisses.sqlite3` afin que plusieurs postes travaillent sur les
@@ -916,6 +933,19 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   « Créer une nouvelle caisse ») est peu découvrable. Envisager de rendre ces actions visibles
   sous forme de boutons (barre d'actions sur la ligne sélectionnée, ou colonne d'actions), tout
   en gardant éventuellement le clic droit en raccourci.
+- **Rapprochement avec les cartons standards existants** (idée notée le 2026-09-11) — certaines
+  références de carton ont des dimensions toujours identiques ; on y range des références qui
+  seraient sinon comptées comme des articles à caser dans une caisse bois. Il existe un outil
+  interne de « colisage » qui regroupe des pièces en colis et génère un fichier de sortie.
+  Idée : comparer ce fichier de colisage à la liste d'articles d'une affaire dans Simulations —
+  les références déjà présentes dans un colis du fichier seraient retirées (ou masquées) de la
+  liste d'articles de l'affaire, et remplacées par le(s) colis correspondant(s) avec leurs
+  dimensions propres, pour un calcul de volume/poids plus fidèle à la réalité (et garder le
+  seuil d'alerte existant sur le résultat). À trancher avant tout code : format du fichier
+  généré par l'outil de colisage (colonnes, un exemple réel), comment un colis est identifié
+  côté import (référence de carton ? liste des AR qu'il contient ?), et si le rapprochement se
+  fait par simple correspondance de référence ou nécessite une étape de vérification manuelle
+  avant application.
 
 ### À rédiger
 
@@ -1024,3 +1054,31 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
 
 - **Export/impression d'un récapitulatif d'affaire** — abandonné (2026-09-02). Aucun besoin
   concret ; la copie d'affiche (Demandes d'achats) couvre le seul cas de sortie utile.
+- **Signature Authenticode de l'installeur (contre le faux positif Windows Defender)** —
+  abandonnée le 2026-09-09, deux pistes essayées puis écartées :
+  - **SignPath.io plan Open Source (Foundation)** : demande envoyée le 2026-09-02, repo préparé
+    en conséquence (`LICENSE` MIT, `README.md` réécrit avec mention SignPath Foundation,
+    métadonnées `package.json`/`Cargo.toml`). Intégration technique validée manuellement dans le
+    dashboard SignPath (organisation « Caisse », projet « Caisses », policy `test-signing`, deux
+    Artifact Configurations `initial`/`nsis-installer` signant correctement .msi et .exe via
+    upload direct) — seule l'intégration **CI** butait sur `Could not authorize against SignPath
+    API`, causé par le compte resté en **Free trial** (édition sans la vérification « Trusted
+    Build System » requise par `signpath/github-action-submit-signing-request`). **Refusée le
+    2026-09-09** : réponse officielle par email — le programme Foundation vise des projets ayant
+    déjà une visibilité publique établie (stars/forks/contributeurs GitHub, articles, discussions
+    externes, adoption communautaire) ; Caisses, outil interne d'entreprise au dépôt
+    techniquement public mais sans audience, ne correspond pas à ce profil (refus jugé cohérent,
+    pas un accident administratif). Passer en payant aurait réglé le blocage CI mais tarif
+    SignPath payant non public/à négocier.
+  - **Certum Open Source Code Signing** (plan B envisagé, ~30 €/an, token cloud signable en CI) :
+    écarté aussi — même contrainte d'éligibilité que SignPath Foundation (projet OSS non
+    commercial souscrit par un individu), ne correspond pas au profil réel du projet. Le produit
+    adapté serait un Certum Standard/Cloud Code Signing payant classique (~90-150 $/an selon
+    revendeur, sans contrainte d'éligibilité).
+  - **Décision finale** : pas d'abonnement de signature payant pour l'instant, cohérent avec un
+    usage à 2-3 postes internes plutôt qu'une diffusion publique. Le workflow
+    `.github/workflows/release.yml` a été remis dans son état d'avant les essais SignPath (aucune
+    étape de signature). On reste sur la procédure manuelle : soumission Microsoft Defender à
+    chaque version (cf. « À faire ») + exclusion Defender au besoin. À reconsidérer si le nombre
+    de postes/utilisateurs grandit significativement, ou si le rythme des faux positifs Defender
+    devient trop pénible.
