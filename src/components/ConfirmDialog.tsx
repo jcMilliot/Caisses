@@ -11,7 +11,16 @@ interface Props {
 export default function ConfirmDialog({ message, titre, danger, onConfirm, onCancel }: Props) {
   // Raccourcis clavier : Échap = annuler, Entrée = confirmer.
   useEffect(() => {
+    // Armés après un court délai : évite qu'une touche Entrée encore enfoncée au moment où ce
+    // dialogue s'ouvre (ex. validation d'une cellule de tableau qui déclenche elle-même cette
+    // confirmation) ne le referme aussitôt via l'auto-repeat du clavier, sans que l'utilisateur
+    // n'ait rien vu ni pu répondre consciemment.
+    let armes = false;
+    const armer = setTimeout(() => {
+      armes = true;
+    }, 150);
     function onKey(e: KeyboardEvent) {
+      if (!armes || e.repeat) return;
       if (e.key === "Escape") {
         e.preventDefault();
         onCancel();
@@ -21,7 +30,10 @@ export default function ConfirmDialog({ message, titre, danger, onConfirm, onCan
       }
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      clearTimeout(armer);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [onConfirm, onCancel]);
 
   return (

@@ -18,6 +18,7 @@ import {
   memeNomAffaire,
   appliquerReglesCaisse,
   OUVERTURE_PAR_DESSUS,
+  champsManquantsPourCommande,
 } from "../domain/demandeOptions";
 import type { Affaire, Demande, NewDemande, DemandeCaisse, NewDemandeCaisse, CaisseStock, OptionListe, ListeOption } from "../domain/types";
 
@@ -183,7 +184,32 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     return true;
   }
 
-  function handleEditLocal(id: number, patch: Partial<Demande>) {
+  // Champs dont la modification peut invalider "Ok cde" — cf. demandePreteACommander.
+  const CHAMPS_CONDITIONNANT_OK_CDE: (keyof Demande)[] = [
+    "affaire",
+    "longueur_mm",
+    "largeur_mm",
+    "hauteur_mm",
+    "quantite",
+    "date_demandee_s2c",
+    "type_ouverture",
+  ];
+
+  async function handleEditLocal(id: number, patch: Partial<Demande>) {
+    const demandeActuelle = brouillonRef.current.find((d) => d.id === id);
+    const toucheChampConditionnant = CHAMPS_CONDITIONNANT_OK_CDE.some((champ) => champ in patch);
+    if (demandeActuelle?.ok_pour_passer_cde && toucheChampConditionnant) {
+      const projection = { ...demandeActuelle, ...patch };
+      const manquants = champsManquantsPourCommande(projection);
+      if (manquants.length > 0) {
+        const confirme = await confirmerAction(
+          `Cette modification videra le(s) champ(s) suivant(s), nécessaire(s) à la commande : ${manquants.join(", ")}. La caisse ne sera plus « OK pour être commandée ». Confirmer ce changement ?`,
+          "Modification bloquante pour la commande",
+        );
+        if (!confirme) return;
+        patch = { ...patch, ok_pour_passer_cde: false };
+      }
+    }
     setBrouillon((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
 
     // Cascade vers les sous-caisses : la date de picking et le type d'envoi de la mère font
@@ -306,7 +332,12 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     }
     await supprimerCaisseLieeSiConfirmee(affaire, null);
     await demandesApi.delete(id, trigramme);
-    await reload();
+    // Retrait local plutôt qu'un reload() complet (5 appels réseau) — on connaît déjà la ligne
+    // supprimée et ses sous-caisses, pas besoin de tout recharger depuis le serveur.
+    setDemandes((prev) => prev.filter((d) => d.id !== id));
+    setBrouillon((prev) => prev.filter((d) => d.id !== id));
+    setDemandeCaisses((prev) => prev.filter((c) => c.demande_id !== id));
+    setDemandeCaissesServeur((prev) => prev.filter((c) => c.demande_id !== id));
   }
 
   // Une observation qui vaut marqueur de validation (Livré / Rapatriée / livrée / rapatriée…).
@@ -507,6 +538,12 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
         const original = demandes.find((o) => o.id === d.id);
         return original && JSON.stringify(original) !== JSON.stringify(d);
       });
+      // Mapping id temporaire (brouillon, < 0) → id réel une fois la demande créée en base —
+      // sert à reconstruire le state local sans reload() complet.
+      const idsReelsParIdTemporaire = new Map<number, number>();
+      // Sous-caisses brouillon créées en base, avec leur id réel (id temporaire → objet créé).
+      const sousCaissesCreeesParIdTemporaire = new Map<number, DemandeCaisse>();
+      const caissesStockValideesIds = new Set<number>();
 
       if (aCreer.length > 0) {
         // bulkCreate renvoie les demandes créées dans l'ordre d'entrée : on relie chaque id
@@ -518,9 +555,11 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
         for (let i = 0; i < aCreer.length; i++) {
           const idReel = creees[i]?.id;
           if (idReel === undefined) continue;
+          idsReelsParIdTemporaire.set(aCreer[i].id, idReel);
           const sousCaisses = demandeCaisses.filter((c) => c.demande_id === aCreer[i].id);
           for (const sc of sousCaisses) {
-            await demandeCaisseApi.create(sousCaisseSansId(sc, idReel), trigramme);
+            const creee = await demandeCaisseApi.create(sousCaisseSansId(sc, idReel), trigramme);
+            sousCaissesCreeesParIdTemporaire.set(sc.id, creee);
           }
         }
       }
@@ -533,10 +572,12 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
           if (validee && (!original || !original.validee)) {
             if (d.caisse_stock_id !== null) {
               await caisseStockApi.setValidee(d.caisse_stock_id, true, trigramme);
+              caissesStockValideesIds.add(d.caisse_stock_id);
             }
             for (const sc of demandeCaisses.filter((c) => c.demande_id === id)) {
               if (sc.caisse_stock_id !== null) {
                 await caisseStockApi.setValidee(sc.caisse_stock_id, true, trigramme);
+                caissesStockValideesIds.add(sc.caisse_stock_id);
               }
             }
           }
@@ -546,7 +587,8 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
       // Sous-caisses sur demandes déjà enregistrées : créations (id < 0 rattachées à une mère
       // id > 0), modifications et suppressions.
       for (const sc of demandeCaisses.filter((c) => c.id < 0 && c.demande_id > 0)) {
-        await demandeCaisseApi.create(sousCaisseSansId(sc, sc.demande_id), trigramme);
+        const creee = await demandeCaisseApi.create(sousCaisseSansId(sc, sc.demande_id), trigramme);
+        sousCaissesCreeesParIdTemporaire.set(sc.id, creee);
       }
       for (const sc of demandeCaisses.filter((c) => c.id > 0)) {
         const original = demandeCaissesServeur.find((o) => o.id === sc.id);
@@ -555,17 +597,43 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
           await demandeCaisseApi.update(sc.id, base, trigramme);
         }
       }
+      const idsSousCaissesSupprimees = new Set<number>();
       for (const sc of sousCaissesSupprimees) {
         const demandeParente = demandes.find((d) => d.id === sc.demande_id);
         if (demandeParente) await supprimerCaisseLieeSiConfirmee(demandeParente.affaire, sc.id);
         await demandeCaisseApi.delete(sc.id, trigramme);
+        idsSousCaissesSupprimees.add(sc.id);
       }
       setSousCaissesSupprimees([]);
 
       // Répercussion des modifs de dimensions sur la simulation, si l'affaire existe.
       await repercuterDimsVersSimulation(aModifier, aCreer);
 
-      await reload();
+      // Reconstruction du state local à partir de ce qu'on vient d'envoyer — pas de reload()
+      // complet (5 appels réseau), qui provoquait un "flash" visuel du tableau à chaque
+      // enregistrement. `brouillon` porte déjà les valeurs exactes envoyées au serveur ; seuls
+      // les ids temporaires (< 0) doivent être remplacés par les ids réels.
+      const demandesFinal = brouillon.map((d) => {
+        const idReel = idsReelsParIdTemporaire.get(d.id);
+        return idReel !== undefined ? { ...d, id: idReel } : d;
+      });
+      setDemandes(demandesFinal);
+      setBrouillon(demandesFinal);
+
+      const demandeCaissesFinal = demandeCaisses
+        .filter((c) => !idsSousCaissesSupprimees.has(c.id))
+        .map((c) => {
+          const creee = sousCaissesCreeesParIdTemporaire.get(c.id);
+          if (creee) return creee;
+          const idDemandeReel = idsReelsParIdTemporaire.get(c.demande_id);
+          return idDemandeReel !== undefined ? { ...c, demande_id: idDemandeReel } : c;
+        });
+      setDemandeCaisses(demandeCaissesFinal);
+      setDemandeCaissesServeur(demandeCaissesFinal);
+
+      if (caissesStockValideesIds.size > 0) {
+        setCaissesStock((prev) => prev.map((cs) => (caissesStockValideesIds.has(cs.id) ? { ...cs, validee: true } : cs)));
+      }
     } finally {
       setEnregistrement(false);
     }
@@ -607,19 +675,19 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
           {modifie && <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Modifications non enregistrées</span>}
-          {modifie && (
-            <button className="btn" onClick={handleAnnuler}>
-              Annuler
-            </button>
-          )}
-          <button className="btn btn-success" onClick={() => setAjoutOuvert(true)} disabled={readOnly}>
+          <button className="btn btn-info" onClick={() => setAjoutOuvert(true)} disabled={readOnly}>
             + Créer une nouvelle caisse
           </button>
           <button className="btn" onClick={() => setGestionRefsOuvert(true)} disabled={readOnly}>
             Gérer les références
           </button>
           <div ref={setSlotOptions} style={{ display: "inline-flex" }} />
-          <button className="btn btn-primary" disabled={!modifie || enregistrement || readOnly} onClick={handleEnregistrer}>
+          {modifie && (
+            <button className="btn" onClick={handleAnnuler}>
+              Annuler
+            </button>
+          )}
+          <button className="btn btn-success-solid" disabled={!modifie || enregistrement || readOnly} onClick={handleEnregistrer}>
             {enregistrement ? "Enregistrement…" : "Enregistrer"}
           </button>
         </div>

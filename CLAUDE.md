@@ -17,12 +17,27 @@ L'application s'organise autour d'un **menu principal à 4 sections** (`App.tsx`
   - calculer automatiquement pour chaque caisse : volume occupé, volume interne, taux de
     remplissage, poids total — avec alerte visuelle (vert/jaune/rouge) selon un seuil
     paramétrable par affaire et surchargeable par caisse
-- **Caisses en stock** : à définir (stub pour l'instant).
-- **Demandes d'achats** : génération d'une "affiche" à envoyer par mail (à définir, stub pour
-  l'instant).
+- **Caisses en stock** : CRUD des caisses en stock et caisses de récup, affectables à une
+  demande (`CaissesStockList.tsx`).
+- **Demandes d'achats** : génération des "affiches" des demandes « OK pour être commandées », à
+  copier dans un mail pour S2C (`DemandesAchatsList.tsx`, `AfficheCaisseCard.tsx`).
 
 Utilisateur unique pour l'instant (l'auteur, développeur freelance), usage quotidien.
 Sessions de travail espacées dans le temps → **ce fichier est la mémoire de reprise du projet.**
+
+**En cas d'ambiguïté sur une décision structurante (modèle de données, choix technique difficile
+à inverser, portée d'une fonctionnalité), s'arrêter et demander plutôt que de trancher seul.**
+Les sessions sont espacées et l'utilisateur seul décideur — deviner silencieusement un choix
+structurant coûte plus cher à corriger après coup qu'une question posée au bon moment. Ça ne
+s'applique pas aux décisions d'implémentation réversibles (nom de variable, détail de style) :
+là, avancer directement.
+
+Documents complémentaires à ce fichier :
+- **[Bugs.md](Bugs.md)** : index des bugs résolus non triviaux, par symptôme — à consulter avant
+  de re-déboguer quelque chose qui semble déjà familier, et à compléter quand un nouveau bug non
+  trivial est corrigé.
+- **[docs/ADR/](docs/ADR/README.md)** : décisions structurantes actées (pourquoi ce choix plutôt
+  qu'un autre), pour ne pas remettre en question sans contexte un arbitrage déjà tranché.
 
 ## Stack technique et décisions d'architecture
 
@@ -105,7 +120,7 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-09-11 : migrations `0001` à `0021` (dernière :
+État au 2026-09-25 (inchangé depuis le 2026-09-11) : migrations `0001` à `0021` (dernière :
 `0021_add_demande_caisse_terminaux.sql` ; pas de `0019_reorder` — supprimé avant publication,
 cf. journal des listes).
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
@@ -649,8 +664,8 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
 - **Verrouillage par section/affaire (multi-poste)** — implémenté le 2026-07-30, testé en
   conditions réelles à deux postes/instances et durci côté backend le 2026-07-31 (voir journal
   ci-dessus : table `section_lock`, `commands/locks.rs::require_lock`, `hooks/useSectionLock.ts`).
-  Restes connus listés dans "À faire" (auto-expiration de la demande de crayon, droits par
-  utilisateur).
+  Auto-expiration de la demande de crayon ajoutée depuis (2026-09-01) ; droits par utilisateur
+  volontairement écartés (cf. « À réfléchir plus tard »).
 - **Page d'accueil en cards + blocs "caisses à commander/à rapatrier"** — implémenté le
   2026-08-03. Nouvelle route `src/routes/Accueil.tsx` (section `"accueil"`, écran par défaut au
   démarrage dans `App.tsx`), menu principal sous forme de 4 cards (grille 2×2) au lieu de boutons
@@ -842,11 +857,244 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   - **Filtres qui respectent « masquer les caisses reçues »** : `thFiltrable` calcule les
     valeurs proposées sur `demandesVisibles` filtré par les *autres* colonnes — on ne peut plus
     sélectionner une valeur qui vide le tableau.
-  - Divers : colonne Observations retirée de `AjouterDemandesDialog` ; nom d'affaire **≥ 8
-    caractères** obligatoire (`AffairesList`, `CreerAffaireDialog`) ; notification de blocage
-    si un champ obligatoire manque dans `AjouterDemandesDialog` ; `DimInput` (state texte local)
-    pour saisir « 0.xx » sans perdre le 0 ; confirmation avant de fermer le dialogue avec de la
-    saisie ; champs obligatoires (Affaire, Qté) au fond orangé.
+  - Divers : colonne Observations retirée de `AjouterDemandesDialog` ; nom d'affaire **exactement
+    8 caractères** obligatoire (`AffairesList`, `CreerAffaireDialog` — règle resserrée de ≥8 à
+    =8 le 2026-09-24, voir bloc ci-dessous) ; notification de blocage si un champ obligatoire
+    manque dans `AjouterDemandesDialog` ; `DimInput` (state texte local) pour saisir « 0.xx »
+    sans perdre le 0 ; confirmation avant de fermer le dialogue avec de la saisie ; champs
+    obligatoires (Affaire, Qté) au fond orangé.
+
+- **Gestion des caisses — retours utilisateur 2026-09-11 (lot complet)** — implémenté le
+  2026-09-24 (`AffairesList.tsx`, `CreerAffaireDialog.tsx`, `AjouterDemandesDialog.tsx`,
+  `DemandesList.tsx`, `DemandesTable.tsx`, `domain/demandeOptions.ts`, `index.css`) :
+  - **Nom d'affaire : exactement 8 caractères** (et non plus « minimum 8 ») — resserré partout :
+    `AffairesList`/`CreerAffaireDialog` (Simulations) et `AjouterDemandesDialog` (Demandes,
+    n'avait jusque-là aucun contrôle de longueur). `maxLength={8}` sur les champs concernés en
+    plus de la validation. **✅ Fait quand** : impossible de créer une affaire dont le nom trimé
+    ne fait pas exactement 8 caractères, dans les deux écrans — vérifié par lecture de code
+    (`nom.trim().length !== 8` gate la soumission partout) ; `npx tsc --noEmit` OK.
+  - **Date picking obligatoire** dans `AjouterDemandesDialog` (fond orangé + bloquant), au même
+    titre qu'Affaire et Qté. **✅ Fait quand** : `champsManquants` refuse une ligne sans date de
+    picking — vérifié par lecture de code.
+  - **Doublon de nom d'affaire bloqué dans un même ajout local** : `handleAjouter` détecte deux
+    lignes du même nom (trim + uppercase) avant tout appel serveur et affiche un message dédié,
+    en plus de la détection déjà existante contre les affaires *déjà enregistrées*
+    (`confirmerAffairesDejaPresentes`). **✅ Fait quand** : deux lignes portant le même nom dans
+    le dialogue empêchent la création tant qu'elles ne sont pas différenciées.
+  - **Bouton « Annuler » rapproché d'« Enregistrer »** dans le bandeau `DemandesList` — déplacé
+    juste avant Enregistrer plutôt qu'en début de groupe.
+  - **Bug corrigé : caisse enfant ne passait pas en vert à la validation de la mère** — cause
+    racine trouvée par lecture de code (pas de repro UI disponible) : `handleValider` écrit
+    l'observation `"Livré"` (sans accent final) sur les sous-caisses, mais
+    `domain/demandeOptions.ts::estDemandeCaisseValidee` ne testait que `"livrée"` (avec accent) en
+    sous-chaîne — `"livré"` ne contenant pas `"livrée"`, le test échouait toujours pour cette
+    orthographe. La ligne mère restait verte car `estDemandeValidee` teste aussi le booléen
+    `d.validee`, un filet de sécurité que les sous-caisses n'ont pas. Fix : les deux fonctions
+    testent désormais `"livré"`/`"rapatrié"` (sans exigence d'accent final), qui matchent aussi
+    la forme accentuée en sous-chaîne. Documenté dans [Bugs.md](Bugs.md). **✅ Fait quand** :
+    valider une demande mère avec une sous-caisse colore aussi la sous-caisse en vert — confirmé
+    par le mécanisme de test (`node -e` sur les regex de correspondance) après fix ;
+    **reste à confirmer en usage réel** à la prochaine session.
+  - **Bug corrigé : boutons d'action de ligne restaient affichés après suppression de l'affaire
+    avant enregistrement** — `DemandesTable` purge maintenant `selectedIds` par un `useEffect`
+    dès que la liste `demandes` (prop) ne contient plus un id sélectionné, au lieu d'attendre un
+    `toggleSelect`/`validerSelection` explicite. **✅ Fait quand** : supprimer une ligne
+    sélectionnée avant d'enregistrer fait disparaître la barre d'actions groupées associée.
+  - **Couleurs des boutons échangées** : Valider (ligne) → vert (`.btn-pastel-green`), libellé
+    "Livré" au lieu de "Valider" (Dévalider inchangé) ; "+ Caisse" (ligne) et "+ Créer une
+    nouvelle caisse" (en-tête) → bleu (`.btn-pastel-blue` / nouvelle classe `.btn-info`, même
+    gabarit que `.btn-success` mais bleue). **✅ Fait quand** : les couleurs et libellés
+    correspondent à la description ci-dessus — vérifié visuellement dans le code CSS/JSX.
+  - **Bouton "Enregistrer" passé en vert plein** (`.btn-success-solid`, nouvelle classe, même
+    gabarit que `.btn-primary` mais fond `--ok-text`) sur demande explicite du 2026-09-24, pour
+    le distinguer des variantes pastel des boutons de ligne.
+  - **Suppression d'une demande sans `reload()` complet** : `handleDelete` (`DemandesList.tsx`)
+    retire la ligne et ses sous-caisses des états locaux (`demandes`, `brouillon`,
+    `demandeCaisses`, `demandeCaissesServeur`) au lieu de refaire les 5 appels réseau de
+    `reload()` — demande explicite du 2026-09-24 (pas de nécessité fonctionnelle à tout
+    recharger, l'id supprimé et ses dépendances sont déjà connus côté client).
+  - `npx tsc --noEmit` validé après l'ensemble. **Non testé en conditions réelles** (pas
+    d'automation UI disponible) — en particulier le point caisse enfant/vert, à confirmer à la
+    prochaine session avec l'app ouverte.
+
+- **Simulations — volumes de petites pièces illisibles (affichaient 0.0000)** — corrigé le
+  2026-09-24 (`domain/calculs.ts::formaterVolumeM3`, `ArticlesTable.tsx`, `AffaireDetail.tsx`,
+  `CaisseCard.tsx`). **Ce n'était pas un bug de calcul** : `volumeUnitaireM3` ne dépend que des 3
+  dimensions (le poids n'y entre jamais, vérifié par lecture du type `Pick<Article, "dim1_mm" |
+  "dim2_mm" | "dim3_mm">`) — pour de petites pièces mécaniques (vis, joints, écrous, dimensions
+  de l'ordre de 5 à 30 mm), le volume réel est de l'ordre de `0.0000006` à `0.0000028` m³,
+  invisible avec 3-4 décimales fixes (`toFixed(4)` affichait "0.0000" pour un volume pourtant
+  strictement positif). Cas confirmé avec l'utilisateur sur des références réelles (ex.
+  `AR_COVAL_00078`, 16.66 × 5.93 × 5.93 mm → 0.00000059 m³).
+  Nouvelle fonction `formaterVolumeM3()` : arrondi **par excès** (`Math.ceil`, jamais de
+  sous-estimation visuelle — répond aussi au point "arrondi par excès" ci-dessous) avec un
+  nombre de décimales qui s'élargit automatiquement (3 à 9) jusqu'à obtenir au moins 2 chiffres
+  significatifs, au lieu d'un nombre de décimales fixe pour tous les volumes. Appliquée partout
+  où un volume est affiché : colonne "Vol. u." (`ArticlesTable`), bandeau récap affaire (volume
+  total + message de dépassement de capacité), cartes de caisse (interne/occupé/disponible dans
+  `CaisseCard`). **✅ Fait quand** : un article dont les 3 dimensions sont renseignées mais
+  minuscules affiche un volume non nul et distinctif (pas "0.0000", pas la même valeur que
+  d'autres petites pièces) — vérifié par calcul direct sur les 7 références de la capture
+  utilisateur, toutes distinctes après fix. `npx tsc --noEmit` validé.
+
+- **Message de l'alerte "volume affaire > capacité des caisses" clarifié** — corrigé le
+  2026-09-24 (`AffaireDetail.tsx::RecapAffaireBandeau`), sur demande explicite de reformulation
+  (l'ancien message manquait de clarté, sans qu'un comportement erroné n'ait finalement été
+  identifié — la logique de déclenchement de `calculerCapaciteAffaire` elle-même n'a pas changé).
+  Nouveau texte : « Le volume total de l'affaire ({volume} m³) ne peut être contenu dans la
+  caisse/les caisses (capacité utile : {capacité} m³, seuil de remplissage appliqué). Veuillez
+  vérifier les dimensions. » — accord singulier/pluriel selon le nombre de caisses de l'affaire.
+  **✅ Fait quand** : le message reflète la formulation validée avec l'utilisateur — fait,
+  `npx tsc --noEmit` validé.
+
+- **Icône de la barre des tâches après changement de logo (v0.8.1)** — confirmé résolu par
+  l'utilisateur le 2026-09-24 (plus de détail sur la cause exacte ni le correctif appliqué,
+  l'icône est simplement à jour). Retiré du "À faire".
+
+- **Bouton "Manque d'informations" à côté des caisses** — implémenté le 2026-09-24
+  (`domain/calculs.ts::champsManquants`, `AffaireDetail.tsx`, `ArticlesTable.tsx`). Nouvelle
+  fonction pure `champsManquants(article)` : un champ `dim1_mm`/`dim2_mm`/`dim3_mm`/
+  `poids_unitaire_kg` à 0 ou négatif est considéré manquant (aucune pièce réelle n'a une
+  dimension ou un poids nul), distinct de l'alerte existante "article > caisse". Bouton
+  « ⚠ Manque d'informations (N) » dans le header du panneau Caisses, visible seulement s'il y a
+  au moins un article concerné ; bascule on/off (`surlignerManques` state dans `AffaireDetail`).
+  Actif, il surligne (fond + contour rouge, tooltip) la cellule AR de la ligne (dès qu'au moins
+  un champ manque, pour repérer vite la référence) et les cellules précises des champs manquants
+  — **pas** toute la ligne uniformément, comportement confirmé avec l'utilisateur le 2026-09-24
+  ("juste la cellule de l'article et celles des dim/poids qui manquent"). **✅ Fait quand** : sur
+  une affaire de test avec un article à dimension/poids manquant, le bouton apparaît, surligne
+  exactement la cellule AR + les cellules concernées au premier clic, et retire le surlignage au
+  second clic — vérifié par lecture de code et confirmé par l'utilisateur pour le périmètre du
+  surlignage. `npx tsc --noEmit` validé.
+
+- **Panneau Caisses (Simulations) — boutons sous le titre + couleurs** — corrigé le 2026-09-24
+  (`AffaireDetail.tsx`), sur retour visuel direct de l'utilisateur (capture d'écran : les
+  boutons écrasaient le titre "Caisses" en colonne étroite). Header du panneau passé de
+  `justifyContent: space-between` (titre + boutons sur une ligne) à `flexDirection: column`
+  (boutons sur leur propre ligne, en dessous du titre, avec `flexWrap`). Couleurs : "+ Nouvelle
+  caisse" en bleu pastel (`.btn-pastel-blue`, cohérent avec "+ Caisse"/"+ Créer une nouvelle
+  caisse" de Gestion des caisses) ; "⚠ Manque d'informations" en orange pastel
+  (`.btn-pastel-orange`) au repos, bascule en rouge quand le surlignage est actif.
+
+- **Message "volume affaire > capacité" affiné (2e passe)** — 2026-09-24, sur demande explicite
+  après la première reformulation (`AffaireDetail.tsx::RecapAffaireBandeau`) : « capacité
+  utile » → « capacité disponible », et le seuil de remplissage appliqué (`seuilDefaut` de
+  l'affaire) est maintenant affiché en clair dans le message (« seuil de remplissage appliqué :
+  70% ») plutôt que mentionné sans valeur. Le seuil peut différer par caisse
+  (`caisse.seuil_pct`) ; décision actée avec l'utilisateur : toujours afficher le seuil par
+  défaut de l'affaire dans ce message, pas une moyenne ou un détail par caisse.
+
+- **Demandes d'achats — texte d'introduction du mail reformulé** — implémenté le 2026-09-24
+  (`domain/affiches.ts::texteIntroductionMail`, `mettreEnEvidenceS2C`). Formulation fournie
+  par l'utilisateur : « Bonjour, / / Merci de passer commande à S2C (mis en évidence) de la
+  caisse suivante : » (pluriel « des caisses suivantes » si plusieurs). Un seul verbe
+  (« passer commande ») dans tous les cas — l'ancienne distinction fabrication/commande selon
+  `seulementAchstock` a été retirée à la demande de l'utilisateur, avec le paramètre devenu
+  inutile. « S2C » mis en gras et ~5% plus grand (`mettreEnEvidenceS2C`, `<span
+  style="font-weight:700;font-size:1.05em;">`) **uniquement dans le rendu HTML** collé dans le
+  mail (`DemandesAchatsList.tsx` copie groupée, `AfficheCaisseCard.tsx` copie individuelle) — le
+  texte brut (`text/plain`, fallback) reste simple, une mise en forme n'existant pas en texte
+  pur. **✅ Fait quand** : le texte copié correspond exactement à la formulation validée —
+  vérifié par lecture de code, `npx tsc --noEmit` validé.
+
+- **Demandes d'achats — blocage "OK cde" si informations obligatoires manquantes** — implémenté
+  le 2026-09-24 (`domain/demandeOptions.ts::champsManquantsPourCommande`/
+  `demandePreteACommander`, `DemandesTable.tsx`, `DemandesList.tsx::handleEditLocal`). Champs
+  requis décidés avec l'utilisateur : Affaire (non vide), les 3 dimensions (> 0), Qté (> 0),
+  délai (`date_demandee_s2c` non vide), position de la fermeture (`type_ouverture` non vide).
+  Deux comportements :
+  - **Blocage à la coche** (`DemandesTable.tsx::toggleBool`) : tenter de cocher « Ok cde » sans
+    que les conditions soient réunies affiche un message listant précisément les champs
+    manquants pour CETTE ligne (`confirmerAction`, dialogue à un seul effet informatif) et la
+    case reste décochée.
+  - **Dévalidation avec confirmation** (`DemandesList.tsx::handleEditLocal`, devenu async) : si
+    la demande est déjà « Ok cde » et qu'un champ conditionnant change de façon à ne plus
+    satisfaire `demandePreteACommander`, une confirmation apparaît listant les champs qui
+    deviendraient manquants. Si confirmé, le patch inclut `ok_pour_passer_cde: false` en plus du
+    champ modifié ; si annulé, aucune modification n'est appliquée (le `patch` entier est
+    abandonné, pas seulement la case).
+  - **Message rendu dynamique le 2026-09-24 (2e passe)** : retour utilisateur — le premier
+    message listait systématiquement toutes les conditions possibles ("Affaire, les 3
+    dimensions, Qté, délai..."), pas intuitif pour identifier ce qui manque réellement.
+    `champsManquantsPourCommande(d)` retourne la liste des libellés (`"Affaire"`, `"Longueur"`,
+    `"Largeur"`, `"Hauteur"`, `"Qté"`, `"Date demandée à S2C"`, `"Type ouverture"`) réellement en
+    défaut ; `demandePreteACommander` devient un simple raccourci (`.length === 0`) dessus.
+  - Pas de champ `ok_pour_passer_cde` sur `DemandeCaisse` (sous-caisses) — non concerné par ce
+    point, une seule voie d'édition pour ce champ (`toggleBool`, pas de bouton groupé).
+  - **✅ Fait quand** : le message de blocage/dévalidation liste exactement (et seulement) les
+    champs en défaut pour la ligne concernée, pas une liste statique de toutes les conditions —
+    vérifié par lecture de code,
+    `npx tsc --noEmit` validé. **Non testé en conditions réelles** (pas d'automation UI).
+
+- **Date demandée à S2C : avertissement si dans le passé** — implémenté le 2026-09-24
+  (`domain/dates.ts::dateEstDansLePasse`, `AjouterDemandesDialog.tsx`, `DemandesTable.tsx`).
+  Demande explicite de l'utilisateur : `date_demandee_s2c` doit être `>=` aujourd'hui. Portée et
+  comportement décidés avec l'utilisateur : **saisie manuelle uniquement** (dialogue de création
+  + édition inline ligne mère et sous-ligne) — **pas** le collage Excel, qui peut légitimement
+  importer des dates historiques lors d'une reprise de fichier existant. **Avertissement avec
+  confirmation**, pas de blocage strict : une date passée déclenche `confirmerAction` (« La date
+  demandée à S2C est dans le passé. Confirmer cette date ? ») ; si refusé, la saisie n'est pas
+  appliquée. Trois points d'interception : `AjouterDemandesDialog::changerDateDemandeeS2c`,
+  `DemandesTable::sauvegarderChamp` (ligne mère, devenu async), et le `onCommit` de
+  `EditableCellInput` dans `SousLigneCaisse` (sous-ligne). **✅ Fait quand** : saisir une date
+  passée dans l'un de ces trois points déclenche la confirmation, et le refus annule la saisie —
+  vérifié par lecture de code, `npx tsc --noEmit` validé. **Non testé en conditions réelles**
+  (pas d'automation UI).
+
+- **Fix : dialogue de confirmation (ConfirmDialog) fermé silencieusement par auto-repeat clavier**
+  — corrigé le 2026-09-24, découvert en testant le point ci-dessus. Symptôme rapporté par
+  l'utilisateur : cocher "Ok cde" sur une demande incomplète (ou vider un champ requis sur une
+  demande déjà validée) ne montrait jamais le dialogue de confirmation — la case se décochait
+  directement, avec une légère latence perceptible. Cause diagnostiquée par logs de debug
+  temporaires (`console.log` dans `handleEditLocal`/`sauvegarderChamp`, retirés une fois la
+  cause confirmée) : la détection métier fonctionnait correctement (`manquants` bien peuplé), le
+  problème était dans `ConfirmDialog.tsx` — le raccourci clavier Entrée=Confirmer captait la
+  répétition (`event.repeat`, auto-repeat du clavier) du **même appui physique sur Entrée** qui
+  venait de valider la cellule du tableau juste avant, refermant le dialogue en confirmant sans
+  qu'il soit visible ni qu'une réponse consciente ait été donnée. **Fix** : `ConfirmDialog`
+  ignore désormais `event.repeat` et n'arme ses raccourcis clavier (Entrée/Échap) qu'après un
+  délai de 150 ms suivant l'ouverture. Documenté dans [Bugs.md](Bugs.md). Confirmé résolu par
+  l'utilisateur après retest.
+
+- **Demandes — libellé "Ok cde" renommé "OK pour être commandée"** — 2026-09-24
+  (`DemandesTable.tsx`, `DemandesList.tsx`), sur demande explicite : libellé de colonne et tous
+  les messages de confirmation/blocage liés à `ok_pour_passer_cde` mis à jour pour utiliser ce
+  nouveau libellé plus explicite.
+
+- **Demandes — messages "OK pour être commandée" rendus dynamiques (précision des champs
+  manquants)** — 2026-09-24, retour utilisateur : le premier message listait systématiquement
+  toutes les conditions possibles, peu intuitif. `domain/demandeOptions.ts` :
+  `champsManquantsPourCommande(d)` retourne la liste des libellés réellement en défaut pour la
+  ligne concernée (`"Affaire"`, `"Longueur"`, `"Largeur"`, `"Hauteur"`, `"Qté"`, `"Date demandée
+  à S2C"`, `"Type ouverture"`) ; `demandePreteACommander` devient un simple raccourci dessus.
+  Les deux messages (blocage à la coche, dévalidation avec confirmation) affichent maintenant
+  uniquement les champs concernés.
+
+- **Demandes — enregistrement sans reload() complet** — 2026-09-24
+  (`DemandesList.tsx::handleEnregistrer`), retour utilisateur : cliquer "Enregistrer" provoquait
+  un "flash" visuel du tableau (perte de scroll, ré-render complet), causé par un `reload()`
+  intégral (5 appels réseau) après chaque sauvegarde. Remplacé par une reconstruction du state
+  local à partir de ce qui vient d'être envoyé au serveur : mapping id temporaire → id réel pour
+  les demandes et sous-caisses nouvellement créées (capturé sur les retours de
+  `demandesApi.bulkCreate`/`demandeCaisseApi.create`), retrait des sous-caisses supprimées, mise
+  à jour des caisses en stock validées (`caisseStockApi.setValidee`). Même principe que le
+  retrait du `reload()` sur la suppression de ligne (cf. bloc "Gestion des caisses" plus haut).
+  Les lignes dépliées (`lignesEtendues`) ne sont plus reset à chaque enregistrement, en prime.
+
+- **Recherche/filtre — comportement "commence par" au lieu de "contient"** — implémenté le
+  2026-09-25 (`ColumnFilterMenu.tsx`). Le filtre de colonne (menu déroulant sur chaque en-tête
+  filtrable du tableau Demandes) utilisait `.includes()` (contient) ; passé à `.startsWith()`
+  (commence par), sur les deux points concernés : la liste de valeurs affichées dans le menu ET
+  la présélection automatique pendant la frappe (`changerRecherche`, déjà en place depuis le
+  2026-08-28). Taper "f" n'affiche/ne présélectionne donc plus que les valeurs commençant par
+  "f", recalculé en direct à chaque lettre ajoutée/retirée. **✅ Fait quand** : la liste du menu
+  de filtre et la présélection ne contiennent que les valeurs dont le début correspond
+  exactement à la recherche tapée — vérifié par lecture de code, `npx tsc --noEmit` validé.
+
+- **Demandes d'achats — contre-plaqué par défaut clarifié (pas de changement de code)** —
+  2026-09-25 : confirmé avec l'utilisateur que le comportement actuel de
+  `contrePlaqueParDefaut()` (coché par défaut pour STANDARD/4B, décoché par défaut pour 4C) est
+  bien celui souhaité — le point du 11 septembre demandait une clarification, pas un changement.
 
 ### À faire
 
@@ -882,19 +1130,45 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   candidats évidents quotidien ou hebdomadaire selon le volume réel de saisie. Pourrait être un
   simple script/tâche planifiée Windows dans un premier temps, ou une fonctionnalité intégrée à
   l'app plus tard (bouton "Sauvegarder maintenant" + copie automatique périodique).
-- **Icônes de l'app** (`src-tauri/icons/`) — le jeu de fichiers présent correspond aux noms par
-  défaut de `create-tauri-app` (`icon.ico`, `Square*Logo.png`, etc.) ; à confirmer visuellement si
-  des icônes personnalisées ont depuis été déposées sous ces mêmes noms.
 - **Tester manuellement en conditions réelles** la section Demandes (collage Excel 19 colonnes,
   édition inline, cases à cocher, tri) et la navigation par menu — pas d'outil d'automation UI
   dans l'environnement de dev assisté.
 
+*Gestion des caisses — retours utilisateur 2026-09-11* — **tous traités, voir "Fait" ci-dessus**
+(bloc "Gestion des caisses — retours utilisateur 2026-09-11 (lot complet)").
+
+*Simulations — retours utilisateur 2026-09-11* — **tous traités, voir "Fait" ci-dessus**.
+
+*Demandes d'achats — retours utilisateur 2026-09-11* — **tous traités, voir "Fait" ci-dessus**.
+Le point contre-plaqué a été clarifié avec l'utilisateur le 2026-09-25 : le comportement actuel
+(`contrePlaqueParDefaut()` — coché par défaut pour STANDARD/4B, décoché par défaut pour 4C) est
+bien celui souhaité, aucun changement de code nécessaire.
+
+*Recherche/filtre — retour utilisateur 2026-09-11* — **traité, voir "Fait" ci-dessus**.
+
 *Global*
 
-- **Faire un check global du projet** : passe de revue pour repérer les failles de sécurité, le
-  code mort ou à supprimer, et les incohérences à corriger — à planifier une fois les points
-  ci-dessus stabilisés plutôt qu'en parallèle, pour reviewer un état du code qui ne bouge pas sous
-  le pied de la revue.
+- **Check global du projet — fait le 2026-09-25**, corrections appliquées :
+  - **Injection HTML dans les affiches** : `rendreAfficheHtml` insérait affaire / type
+    d'ouverture / demandeur sans échappement dans du HTML rendu via `dangerouslySetInnerHTML`
+    (CSP désactivée, `"csp": null`) et collé dans les mails. Ajout de `echapperHtml`
+    (`domain/affiches.ts`), appliqué dans `ligneChamp`, au titre, et dans
+    `mettreEnEvidenceS2C` (copie mail, couvre le bloc ACHSTOCK qui contient le nom d'affaire).
+  - **Règle « nom d'affaire = 8 caractères »** : appliquée aussi à l'édition inline de la
+    colonne Affaire (`DemandesTable::sauvegarderChamp`), qui la contournait.
+  - **Code mort retiré** : `VALEURS_STOCK` (`demandeOptions.ts`, liste codée en dur remplacée
+    par la table `caisse_stock`) et `estCaisseStockDisponible` (`caisseStock.ts`).
+  - Doc : entrée ConfirmDialog ajoutée à `Bugs.md` (annoncée mais manquante), passages périmés
+    de ce fichier corrigés (section Caisses en stock / Demandes d'achats, état des migrations).
+  - Vérifié sans problème : requêtes SQL toutes paramétrées (les seuls `format!` avec nom de
+    table viennent d'une liste figée, `options_liste.rs::colonnes_pour_liste`), `require_lock`
+    sur toutes les commandes de mutation (sauf `create_affaire`, cohérent : ressource neuve),
+    garde AJC du journal côté serveur, `foreign_keys=ON`.
+  - **Reste ouvert (sans urgence)** : trois copies d'`EditableCellInput` (composant partagé
+    `components/EditableCellInput.tsx` + copies locales dans `ArticlesTable` et
+    `DemandesTable`) à regrouper. Gardés volontairement : `PasteImportZoneDemandes.tsx`
+    orphelin, `useAffaire.supprimerArticle`. La CSP reste `null` — à réactiver un jour si
+    l'app charge du contenu externe, inutile tant que tout est local et échappé.
 
 ### À réfléchir plus tard
 

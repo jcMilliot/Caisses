@@ -130,6 +130,21 @@ table {
   box-shadow: var(--shadow-md);
 }
 
+/* Même gabarit que .btn-primary (fond plein, texte blanc) mais en vert — pour Enregistrer,
+   plus affirmé que les variantes pastel .btn-pastel-green/.btn-success. */
+.btn-success-solid {
+  background: var(--ok-text);
+  border-color: var(--ok-text);
+  color: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-success-solid:hover {
+  background: #1a5730;
+  border-color: #1a5730;
+  box-shadow: var(--shadow-md);
+}
+
 .btn-danger {
   color: var(--danger-text);
   border-color: var(--danger-border);
@@ -148,6 +163,22 @@ table {
 .btn-success:hover {
   background: #d9f0de;
   border-color: var(--ok-text);
+}
+
+/* Même gabarit que .btn-success (mis en avant, plus grand) mais en bleu — pour les actions de
+   création qui doivent rester visuellement distinctes de Valider (vert). */
+.btn-info {
+  color: var(--info-text);
+  border-color: var(--info-border);
+  background: var(--info-bg);
+  font-weight: 600;
+  padding: 9px 18px;
+  font-size: 15px;
+}
+
+.btn-info:hover {
+  background: #d3e4fa;
+  border-color: var(--info-text);
 }
 
 /* Variantes pastel réutilisables pour les boutons d'action par ligne (tableaux), à combiner

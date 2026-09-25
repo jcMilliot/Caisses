@@ -10,6 +10,7 @@ import {
   ouverturesAutorisees,
   appliquerReglesCaisse,
 } from "../domain/demandeOptions";
+import { dateEstDansLePasse } from "../domain/dates";
 import SelectOuAutre from "./SelectOuAutre";
 
 interface Props {
@@ -60,6 +61,19 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
     setErreurValidation(null);
   }
 
+  // Avertissement (pas de blocage strict) si la date demandée à S2C est dans le passé — saisie
+  // manuelle uniquement, le collage Excel peut légitimement importer des dates historiques.
+  async function changerDateDemandeeS2c(index: number, valeur: string) {
+    if (dateEstDansLePasse(valeur)) {
+      const confirme = await confirmerAction(
+        "La date demandée à S2C est dans le passé. Confirmer cette date ?",
+        "Date passée",
+      );
+      if (!confirme) return;
+    }
+    majLigne(index, { date_demandee_s2c: valeur });
+  }
+
   // Règles dynamiques (ouverture autorisée, NIMP15, contre-plaqué) — cf. appliquerReglesCaisse.
   function changerTypeEnvoi(index: number, valeur: string) {
     setErreurValidation(null);
@@ -88,10 +102,11 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
   // Une ligne a été touchée si elle diffère d'une ligne vide (affaire, dims, dates, listes…).
   const aDeLaSaisie = lignes.some((l) => JSON.stringify(l) !== JSON.stringify(ligneVide()));
 
-  // Champs obligatoires manquants, par ligne (Affaire ; Qté >= 1).
+  // Champs obligatoires manquants, par ligne (Affaire exactement 8 caractères ; Date picking ; Qté >= 1).
   function champsManquants(l: NewDemande): string[] {
     const m: string[] = [];
-    if (l.affaire.trim() === "") m.push("Affaire");
+    if (l.affaire.trim().length !== 8) m.push("Affaire (8 caractères)");
+    if (l.date_picking.trim() === "") m.push("Date picking");
     if (!Number.isFinite(l.quantite) || l.quantite < 1) m.push("Qté");
     return m;
   }
@@ -106,6 +121,18 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
         aCreer.length === 1
           ? `Champ obligatoire non renseigné : ${champs}.`
           : `${incompletes.length} caisse(s) incomplète(s) — champ(s) obligatoire(s) manquant(s) : ${champs}.`,
+      );
+      return;
+    }
+    const nomsVus = new Map<string, number>();
+    for (const l of aCreer) {
+      const nom = l.affaire.trim().toUpperCase();
+      nomsVus.set(nom, (nomsVus.get(nom) ?? 0) + 1);
+    }
+    const doublonsLocaux = [...nomsVus.entries()].filter(([, n]) => n > 1).map(([nom]) => nom);
+    if (doublonsLocaux.length > 0) {
+      setErreurValidation(
+        `Le nom d'affaire « ${doublonsLocaux[0]} » est utilisé sur plusieurs lignes de cet ajout — chaque ligne doit avoir un nom distinct.`,
       );
       return;
     }
@@ -167,11 +194,12 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
                 </button>
               )}
 
-              <Champ label="Affaire">
+              <Champ label="Affaire (8 caractères)">
                 <input
                   autoFocus={index === 0}
                   value={ligne.affaire}
                   onChange={(e) => majLigne(index, { affaire: e.target.value })}
+                  maxLength={8}
                   style={champObligatoireStyle}
                 />
               </Champ>
@@ -254,7 +282,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
                   type="date"
                   value={ligne.date_picking}
                   onChange={(e) => majLigne(index, { date_picking: e.target.value })}
-                  style={inputStyle}
+                  style={champObligatoireStyle}
                 />
               </Champ>
 
@@ -262,7 +290,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
                 <input
                   type="date"
                   value={ligne.date_demandee_s2c}
-                  onChange={(e) => majLigne(index, { date_demandee_s2c: e.target.value })}
+                  onChange={(e) => changerDateDemandeeS2c(index, e.target.value)}
                   style={inputStyle}
                 />
               </Champ>
@@ -324,7 +352,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
           ))}
 
           <button className="btn" onClick={ajouterLigne} style={{ alignSelf: "flex-start" }}>
-            + Ajouter une ligne
+            + Ajouter une caisse
           </button>
         </div>
 

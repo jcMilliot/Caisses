@@ -16,3 +16,14 @@ export function dateIsoVersAffichage(iso: string): string {
   const [, aaaa, mm, jj] = m;
   return `${jj}/${mm}/${aaaa}`;
 }
+
+// true si la date ISO (AAAA-MM-JJ) est strictement antérieure à aujourd'hui (comparaison sur le
+// jour calendaire, pas l'heure) — utilisé pour avertir d'une date demandée à S2C dans le passé,
+// à la saisie manuelle uniquement (le collage Excel peut légitimement importer des dates
+// historiques).
+export function dateEstDansLePasse(iso: string): boolean {
+  if (iso.trim() === "") return false;
+  const aujourdhui = new Date();
+  const auj = `${aujourdhui.getFullYear()}-${String(aujourdhui.getMonth() + 1).padStart(2, "0")}-${String(aujourdhui.getDate()).padStart(2, "0")}`;
+  return iso < auj;
+}

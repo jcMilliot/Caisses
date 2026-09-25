@@ -2,6 +2,7 @@ import { useState } from "react";
 import FillRateBadge from "./FillRateBadge";
 import { PALETTE_CAISSES } from "../domain/palette";
 import { estCaisse4C } from "../domain/demandeOptions";
+import { formaterVolumeM3 } from "../domain/calculs";
 import type { CaisseCalculee } from "../domain/types";
 
 interface Props {
@@ -242,10 +243,10 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
                 value={`${caisse.dim1MaxMm} × ${caisse.dim2MaxMm} × ${caisse.dim3MaxMm} mm`}
               />
             )}
-            <Row label="Volume interne" value={`${caisse.volumeInterneM3.toFixed(4)} m³`} />
-            <Row label="Volume occupé" value={`${caisse.volumeOccupeM3.toFixed(4)} m³`} />
+            <Row label="Volume interne" value={`${formaterVolumeM3(caisse.volumeInterneM3)} m³`} />
+            <Row label="Volume occupé" value={`${formaterVolumeM3(caisse.volumeOccupeM3)} m³`} />
             {estCaisse4C(caisse.type_envoi_caisse) && (
-              <Row label="Volume disponible" value={`${caisse.volumeDisponibleM3.toFixed(4)} m³`} />
+              <Row label="Volume disponible" value={`${formaterVolumeM3(caisse.volumeDisponibleM3)} m³`} />
             )}
             <Row label="Poids total" value={`${caisse.poidsTotalKg.toFixed(1)} kg`} />
             <Row label="Seuil d'alerte" value={`${caisse.seuilEffectif}%${caisse.seuil_pct === null ? " (défaut)" : ""}`} />

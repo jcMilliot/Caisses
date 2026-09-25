@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAffaire } from "../hooks/useAffaire";
-import { calculerRecapAffaire, calculerCapaciteAffaire } from "../domain/calculs";
+import { calculerRecapAffaire, calculerCapaciteAffaire, formaterVolumeM3, champsManquants } from "../domain/calculs";
 import { estCaisse4C, contrePlaqueParDefaut, estDemandeValidee, memeNomAffaire } from "../domain/demandeOptions";
 import type { Article, Caisse, Demande, DemandeCaisse, NewDemandeCaisse } from "../domain/types";
 import { usePointerDrag } from "../hooks/usePointerDrag";
@@ -47,6 +47,13 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
   const [caisseRecenteId, setCaisseRecenteId] = useState<number | null>(null);
   const [caissesPosition, setCaissesPosition] = useState<"droite" | "haut">(
     () => (localStorage.getItem("caisses:panelPosition") as "droite" | "haut") ?? "droite",
+  );
+  // Bascule on/off du surlignage des cellules dont une dimension ou le poids manque (bouton
+  // "Manque d'informations" à côté des caisses) — distinct de l'alerte "article > caisse".
+  const [surlignerManques, setSurlignerManques] = useState(false);
+  const articlesAvecManque = useMemo(
+    () => new Map(articles.map((a) => [a.id, champsManquants(a)] as const).filter(([, c]) => c.length > 0)),
+    [articles],
   );
   // Sous-lignes DemandeCaisse liées aux Caisse de cette affaire — pour la synchro retour vers
   // Demandes (modif dims / création / suppression), et la demande parente pour retrouver son nom
@@ -159,9 +166,27 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
           : { marginBottom: 28 }
       }
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
         <h2 style={sectionTitleStyle}>Caisses <span style={sectionCountStyle}>{caissesCalculees.length}</span></h2>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {articlesAvecManque.size > 0 && (
+            <button
+              className="btn btn-sm btn-pastel-orange"
+              title={
+                surlignerManques
+                  ? "Masquer le surlignage des informations manquantes"
+                  : `${articlesAvecManque.size} article(s) avec une dimension ou un poids manquant`
+              }
+              style={
+                surlignerManques
+                  ? { color: "var(--danger-text)", borderColor: "var(--danger-border)", background: "var(--danger-bg)" }
+                  : undefined
+              }
+              onClick={() => setSurlignerManques((v) => !v)}
+            >
+              ⚠ Manque d'informations ({articlesAvecManque.size})
+            </button>
+          )}
           <button
             className="btn btn-sm"
             title={caissesPosition === "droite" ? "Déplacer en haut" : "Déplacer sur le côté"}
@@ -170,7 +195,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
             {caissesPosition === "droite" ? "⇱ En haut" : "⇲ Sur le côté"}
           </button>
           <button
-            className="btn btn-sm"
+            className="btn btn-sm btn-pastel-blue"
             disabled={readOnly}
             onClick={async () => {
               const nom = `Caisse ${caissesCalculees.length + 1}`;
@@ -343,6 +368,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
                 }
           }
           readOnly={readOnly}
+          champsManquantsParArticle={surlignerManques ? articlesAvecManque : undefined}
         />
       </div>
 
@@ -497,7 +523,7 @@ function RecapAffaireBandeau({
         <RecapValeur label="Largeur max" valeur={`${(recap.dim2MaxMm / 1000).toFixed(2)} m`} />
         <RecapValeur label="Hauteur max" valeur={`${(recap.dim3MaxMm / 1000).toFixed(2)} m`} />
         <div style={{ width: 1, height: 24, background: "var(--border-strong)" }} />
-        <RecapValeur label="Volume total" valeur={`${recap.volumeTotalM3.toFixed(3)} m³`} />
+        <RecapValeur label="Volume total" valeur={`${formaterVolumeM3(recap.volumeTotalM3)} m³`} />
         <RecapValeur label="Poids total" valeur={`${recap.poidsTotalKg.toFixed(1)} kg`} />
         {aUneCaisse4C && (
           <>
@@ -522,9 +548,10 @@ function RecapAffaireBandeau({
             fontWeight: 600,
           }}
         >
-          ⚠ Le volume total de l'affaire ({recap.volumeTotalM3.toFixed(3)} m³) dépasse la capacité
-          utile des caisses ({capacite.capaciteUtileM3.toFixed(3)} m³, seuil de remplissage
-          appliqué) — vérifiez le nombre ou les dimensions des caisses.
+          ⚠ Le volume total de l'affaire ({formaterVolumeM3(recap.volumeTotalM3)} m³) ne peut être
+          contenu dans {caisses.length <= 1 ? "la caisse" : "les caisses"} (capacité
+          disponible : {formaterVolumeM3(capacite.capaciteUtileM3)} m³, seuil de remplissage
+          appliqué : {seuilDefaut}%). Veuillez vérifier les dimensions.
         </div>
       )}
     </div>

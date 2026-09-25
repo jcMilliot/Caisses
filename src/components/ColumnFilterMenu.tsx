@@ -31,7 +31,10 @@ export default function ColumnFilterMenu({ valeurs, selection, onApply, triActif
   const valeursFiltrees = useMemo(() => {
     const q = recherche.trim().toLowerCase();
     if (!q) return valeurs;
-    return valeurs.filter((v) => v.toLowerCase().includes(q));
+    // Correspondance "commence par" (pas "contient") — retour utilisateur du 2026-09-11 :
+    // taper "f" ne doit afficher que les valeurs commençant par "f", recalculé en direct à
+    // chaque lettre ajoutée/retirée.
+    return valeurs.filter((v) => v.toLowerCase().startsWith(q));
   }, [valeurs, recherche]);
 
   function changerRecherche(q: string) {
@@ -45,7 +48,7 @@ export default function ColumnFilterMenu({ valeurs, selection, onApply, triActif
       setSelectionLocale(new Set(valeurs));
       return;
     }
-    setSelectionLocale(new Set(valeurs.filter((v) => v.toLowerCase().includes(query))));
+    setSelectionLocale(new Set(valeurs.filter((v) => v.toLowerCase().startsWith(query))));
   }
 
   function toggleValeur(v: string) {

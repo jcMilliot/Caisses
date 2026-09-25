@@ -9,6 +9,7 @@ import {
   construireAffiches,
   categorieEnvoi,
   texteIntroductionMail,
+  mettreEnEvidenceS2C,
   MENTION_SOUDURE_4C,
   demandesAchstockAEnvoyer,
   rendreBlocAchstock,
@@ -141,13 +142,10 @@ export default function DemandesAchatsList({ trigramme }: Props) {
       const versHtml = (t: string) =>
         t
           .split("\n")
-          .map((ligne) => `<div>${ligne || "&nbsp;"}</div>`)
+          .map((ligne) => `<div>${ligne ? mettreEnEvidenceS2C(ligne) : "&nbsp;"}</div>`)
           .join("");
 
-      const intro = texteIntroductionMail(
-        affichesSelectionnees.length + achstockSelectionnees.length,
-        affichesSelectionnees.length === 0,
-      );
+      const intro = texteIntroductionMail(affichesSelectionnees.length + achstockSelectionnees.length);
       // text/html : intro + mention 4C + images data: URI + bloc ACHSTOCK (fonctionne sur les
       // clients mail qui acceptent les images inline en data:). text/plain : fallback.
       const blocsHtml: string[] = [versHtml(intro)];
