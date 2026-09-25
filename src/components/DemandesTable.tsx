@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Demande, DemandeCaisse, CaisseStock, OptionListe } from "../domain/types";
-import { dateIsoVersAffichage } from "../domain/dates";
+import { dateIsoVersAffichage, dateEstDansLePasse } from "../domain/dates";
 import {
   estCaisse4C,
   estDemandeValidee,
@@ -13,8 +13,10 @@ import {
   optionsListe,
   ouverturesAutorisees,
   appliquerReglesCaisse,
+  champsManquantsPourCommande,
 } from "../domain/demandeOptions";
 import { PALETTE_CAISSES } from "../domain/palette";
+import { confirmerAction } from "../data/confirm";
 import ColumnFilterMenu from "./ColumnFilterMenu";
 import TableOptionsMenu from "./TableOptionsMenu";
 import ScrollToTopButton from "./ScrollToTopButton";
@@ -215,7 +217,7 @@ function valeurTexte(d: Demande, champ: Champ): string {
 // align: "center" pour les dates et Qté, "left" (défaut) pour tout le reste — toutes les
 // valeurs texte sont alignées à gauche avec une petite marge (cf. tdStyle).
 const COLONNES: { champ: Champ; label: string; align?: "left" | "center" }[] = [
-  { champ: "ok_pour_passer_cde", label: "Ok cde" },
+  { champ: "ok_pour_passer_cde", label: "OK pour être commandée" },
   { champ: "affaire", label: "Affaire" },
   { champ: "type_envoi_caisse", label: "Type envoi caisse" },
   { champ: "type_ouverture", label: "Type ouverture" },
@@ -312,6 +314,18 @@ export default function DemandesTable({
     document.addEventListener("click", fermer);
     return () => document.removeEventListener("click", fermer);
   }, [menuContextuel]);
+
+  // Une ligne sélectionnée peut disparaître du brouillon (suppression de l'affaire avant
+  // enregistrement) sans passer par toggleSelect/validerSelection — purger la sélection pour
+  // qu'elle ne référence jamais un id qui n'existe plus, sinon la barre d'actions groupées
+  // (« Valider la sélection ») reste affichée à tort.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const ids = new Set(demandes.map((d) => d.id));
+      const next = new Set([...prev].filter((id) => ids.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [demandes]);
 
   function changerColonnesVisibles(visibles: Set<Champ>) {
     setColonnesVisibles(visibles);
@@ -427,11 +441,22 @@ export default function DemandesTable({
     }
   }
 
-  function sauvegarderChamp(demande: Demande, champ: Champ, valeurBrute: string) {
+  async function sauvegarderChamp(demande: Demande, champ: Champ, valeurBrute: string) {
     setCellEnEdition(null);
     const nombre = Number(valeurBrute.replace(",", ".")) || 0;
     const valeur = CHAMPS_DIM.has(champ) ? nombre * 1000 : CHAMPS_NOMBRE.has(champ) ? nombre : valeurBrute;
     if (demande[champ] === valeur) return;
+    // Même règle qu'à la création (AjouterDemandesDialog, AffairesList) : exactement 8 caractères.
+    if (champ === "affaire" && String(valeur).trim().length !== 8) {
+      await confirmerAction("Le nom d'affaire doit comporter exactement 8 caractères.", "Nom d'affaire invalide");
+      return;
+    }
+    // Avertissement (pas de blocage strict) si la date demandée à S2C saisie est dans le passé —
+    // édition inline uniquement, comme dans AjouterDemandesDialog.
+    if (champ === "date_demandee_s2c" && dateEstDansLePasse(String(valeur))) {
+      const confirme = await confirmerAction("La date demandée à S2C est dans le passé. Confirmer cette date ?", "Date passée");
+      if (!confirme) return;
+    }
     // Changer le type d'envoi applique les règles dynamiques (ouverture autorisée, NIMP15,
     // contre-plaqué), cf. appliquerReglesCaisse.
     if (champ === "type_envoi_caisse") {
@@ -447,8 +472,18 @@ export default function DemandesTable({
     onEdit(demande.id, { [champ]: valeur });
   }
 
-  function toggleBool(demande: Demande, champ: "ok_pour_passer_cde" | "cde_passee_affaire" | "cde_passee_achat_stock") {
+  async function toggleBool(demande: Demande, champ: "ok_pour_passer_cde" | "cde_passee_affaire" | "cde_passee_achat_stock") {
     const nouvelle = !demande[champ];
+    if (champ === "ok_pour_passer_cde" && nouvelle) {
+      const manquants = champsManquantsPourCommande(demande);
+      if (manquants.length > 0) {
+        await confirmerAction(
+          `Champ(s) manquant(s) : ${manquants.join(", ")}.`,
+          "Impossible de cocher « OK pour être commandée »",
+        );
+        return;
+      }
+    }
     if (champ === "cde_passee_affaire" && nouvelle) {
       onEdit(demande.id, { cde_passee_affaire: true, cde_passee_achat_stock: false });
     } else if (champ === "cde_passee_achat_stock" && nouvelle) {
@@ -780,13 +815,13 @@ export default function DemandesTable({
                       ))}
                       <td style={{ ...td, whiteSpace: "nowrap" }}>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          <button className="btn btn-sm btn-pastel-blue" onClick={() => onValider(d.id, !estValidee)} disabled={readOnly}>
-                            {estValidee ? "Dévalider" : "Valider"}
+                          <button className="btn btn-sm btn-pastel-green" onClick={() => onValider(d.id, !estValidee)} disabled={readOnly}>
+                            {estValidee ? "Dévalider" : "Livré"}
                           </button>
                           <button className="btn btn-sm btn-pastel-orange" onClick={() => onSimulerAffaire(d)}>
                             Simuler
                           </button>
-                          <button className="btn btn-sm btn-pastel-green" onClick={() => onCreerDemandeCaisse(d)} disabled={readOnly}>
+                          <button className="btn btn-sm btn-pastel-blue" onClick={() => onCreerDemandeCaisse(d)} disabled={readOnly}>
                             + Caisse
                           </button>
                           <button className="btn btn-sm btn-danger" onClick={() => onDelete(d.id, d.affaire)} disabled={readOnly}>
@@ -1073,7 +1108,7 @@ function SousLigneCaisse({
             type={estDate ? "date" : estNombre ? "number" : "text"}
             defaultValue={estDim ? String((valeurBrute as number) / 1000) : String(valeurBrute)}
             align={colonne.align ?? "left"}
-            onCommit={(v) => {
+            onCommit={async (v) => {
               setChampEnEdition(null);
               if (estDim) {
                 const metres = Number(v.replace(",", ".")) || 0;
@@ -1081,6 +1116,13 @@ function SousLigneCaisse({
               } else if (CHAMPS_NOMBRE_SOUS_LIGNE.has(champSousLigne)) {
                 onEdit({ [champSousLigne]: Math.round(Number(v.replace(",", "."))) || 0 });
               } else if (v !== valeurBrute) {
+                if (champSousLigne === "date_demandee_s2c" && dateEstDansLePasse(v)) {
+                  const confirme = await confirmerAction(
+                    "La date demandée à S2C est dans le passé. Confirmer cette date ?",
+                    "Date passée",
+                  );
+                  if (!confirme) return;
+                }
                 onEdit({ [champSousLigne]: v });
               }
             }}

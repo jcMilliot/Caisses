@@ -128,11 +128,17 @@ function accentAffiche(typeEnvoiCaisse: string): string {
   }
 }
 
+// Les valeurs saisies (affaire, type d'ouverture « Autre… », demandeur…) finissent dans du HTML
+// injecté via dangerouslySetInnerHTML et collé dans les mails : un "<" ou "&" casserait le rendu.
+export function echapperHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 function ligneChamp(label: string, valeur: string, pleineLargeur = false): string {
   return `
     <td style="padding:7px 10px;vertical-align:top;${pleineLargeur ? "" : "width:50%;"}">
-      <div style="font-size:8.5px;font-weight:700;letter-spacing:0.05em;color:#64748b;text-transform:uppercase;margin-bottom:2px;">${label}</div>
-      <div style="font-size:11px;font-weight:600;color:#0f172a;">${valeur}</div>
+      <div style="font-size:8.5px;font-weight:700;letter-spacing:0.05em;color:#64748b;text-transform:uppercase;margin-bottom:2px;">${echapperHtml(label)}</div>
+      <div style="font-size:11px;font-weight:600;color:#0f172a;">${echapperHtml(valeur)}</div>
     </td>`;
 }
 
@@ -153,7 +159,7 @@ export function rendreAfficheHtml(affiche: AfficheCaisse, demandeur: string, dat
         <tr>
           <td style="padding:9px 12px;width:44px;">${logoImg}</td>
           <td style="padding:9px 6px;text-align:center;">
-            <div style="font-size:12.5px;font-weight:800;letter-spacing:-0.01em;color:#0f172a;">${titre}</div>
+            <div style="font-size:12.5px;font-weight:800;letter-spacing:-0.01em;color:#0f172a;">${echapperHtml(titre)}</div>
           </td>
           <td style="padding:9px 12px;width:44px;text-align:right;">${logoImg}</td>
         </tr>
@@ -173,7 +179,7 @@ export function rendreAfficheHtml(affiche: AfficheCaisse, demandeur: string, dat
         <tr style="border-bottom:1px solid #eef2f6;">
           ${ligneChamp(
             "Dimensions intérieures (L × l × H)",
-            `${formaterMetres(affiche.longueurMm)} m &nbsp;×&nbsp; ${formaterMetres(affiche.largeurMm)} m &nbsp;×&nbsp; ${formaterMetres(affiche.hauteurMm)} m`,
+            `${formaterMetres(affiche.longueurMm)} m  ×  ${formaterMetres(affiche.largeurMm)} m  ×  ${formaterMetres(affiche.hauteurMm)} m`,
             true,
           )}
         </tr>
@@ -207,15 +213,18 @@ export function rendreAfficheHtml(affiche: AfficheCaisse, demandeur: string, dat
 }
 
 // Texte d'introduction générique inséré une seule fois en tête du mail, avant les affiches (qui
-// peuvent être de plusieurs types en cas de copie groupée). Si la sélection ne contient que des
-// lignes ACHSTOCK (caisses déjà en stock, rien à fabriquer), le texte parle de commande plutôt
-// que de fabrication.
-export function texteIntroductionMail(quantiteCaisses: number, seulementAchstock = false): string {
+// peuvent être de plusieurs types en cas de copie groupée).
+export function texteIntroductionMail(quantiteCaisses: number): string {
   const pluriel = quantiteCaisses > 1;
-  const verbe = seulementAchstock
-    ? `de bien vouloir passer commande ${pluriel ? "des caisses suivantes" : "de la caisse suivante"}`
-    : `de bien vouloir prévoir la fabrication ${pluriel ? "des caisses suivantes" : "de la caisse suivante"}`;
+  const verbe = `de bien vouloir passer commande à S2C ${pluriel ? "des caisses suivantes" : "de la caisse suivante"}`;
   return [`Bonjour,`, ``, `Merci ${verbe} :`].join("\n");
+}
+
+// Convertit une ligne de texte brut en HTML sûr pour le mail (échappée — elle peut contenir un
+// nom d'affaire, cf. bloc ACHSTOCK) et met "S2C" en évidence (gras, légèrement agrandi). Le texte
+// brut (text/plain) reste simple : cette mise en forme n'existe que dans la version HTML.
+export function mettreEnEvidenceS2C(ligneTexte: string): string {
+  return echapperHtml(ligneTexte).replace(/S2C/g, '<span style="font-weight:700;font-size:1.05em;">S2C</span>');
 }
 
 // Mention de prestation à ajouter uniquement pour les caisses 4C — positionnée après les

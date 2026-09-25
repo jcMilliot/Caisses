@@ -8,6 +8,38 @@ export function volumeUnitaireM3(article: Pick<Article, "dim1_mm" | "dim2_mm" | 
   return (article.dim1_mm * article.dim2_mm * article.dim3_mm) / MM3_TO_M3;
 }
 
+// Champs de l'article considérés comme "donnée manquante" pour le bouton "Manque
+// d'informations" — distinct de l'alerte "article > caisse" (qui suppose des dimensions déjà
+// renseignées). Une valeur à 0 ou négative est traitée comme manquante : aucune pièce réelle n'a
+// une dimension ou un poids nul.
+export type ChampArticleManquant = "dim1_mm" | "dim2_mm" | "dim3_mm" | "poids_unitaire_kg";
+
+export function champsManquants(
+  article: Pick<Article, "dim1_mm" | "dim2_mm" | "dim3_mm" | "poids_unitaire_kg">,
+): ChampArticleManquant[] {
+  const champs: ChampArticleManquant[] = [];
+  if (article.dim1_mm <= 0) champs.push("dim1_mm");
+  if (article.dim2_mm <= 0) champs.push("dim2_mm");
+  if (article.dim3_mm <= 0) champs.push("dim3_mm");
+  if (article.poids_unitaire_kg <= 0) champs.push("poids_unitaire_kg");
+  return champs;
+}
+
+// Affichage d'un volume en m³, arrondi par excès (jamais sous-estimé visuellement) et avec une
+// précision adaptée : 3 décimales pour les volumes usuels, mais élargie automatiquement pour les
+// petites pièces (vis, joints...) dont le volume réel est non nul mais s'arrondirait à "0.000" en
+// 3 décimales — on cherche le nombre de décimales qui donne au moins 2 chiffres significatifs,
+// pas juste une valeur non nulle (sinon toutes les petites pièces afficheraient le même 0.001).
+export function formaterVolumeM3(volumeM3: number): string {
+  if (volumeM3 <= 0) return (0).toFixed(3);
+  for (let decimales = 3; decimales <= 9; decimales++) {
+    const echelle = 10 ** decimales;
+    const arrondi = Math.ceil(volumeM3 * echelle) / echelle;
+    if (arrondi >= 10 / echelle || decimales === 9) return arrondi.toFixed(decimales);
+  }
+  return volumeM3.toFixed(9);
+}
+
 export function volumeInterneM3(caisse: Pick<Caisse, "longueur_mm" | "largeur_mm" | "hauteur_mm">): number {
   return (caisse.longueur_mm * caisse.largeur_mm * caisse.hauteur_mm) / MM3_TO_M3;
 }

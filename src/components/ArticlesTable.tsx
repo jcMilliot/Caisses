@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { volumeUnitaireM3 } from "../domain/calculs";
+import { volumeUnitaireM3, formaterVolumeM3, type ChampArticleManquant } from "../domain/calculs";
 import type { Article, Caisse, NewArticle } from "../domain/types";
 import ColumnFilterMenu from "./ColumnFilterMenu";
 
@@ -16,6 +16,10 @@ interface Props {
   // pré-rempli, plutôt que de tout mettre dans un seul champ.
   onCollageMultiCellules?: (texte: string) => void;
   readOnly?: boolean;
+  // Bouton "Manque d'informations" (AffaireDetail) : quand actif, surligne précisément les
+  // cellules de dimension/poids manquantes des articles listés — undefined/vide = pas de
+  // surlignage (bascule désactivée).
+  champsManquantsParArticle?: Map<number, ChampArticleManquant[]>;
 }
 
 type Champ = "ar" | "reference" | "designation" | "dim1_mm" | "dim2_mm" | "dim3_mm" | "poids_unitaire_kg" | "quantite";
@@ -83,6 +87,7 @@ export default function ArticlesTable({
   onStartDrag,
   onCollageMultiCellules,
   readOnly,
+  champsManquantsParArticle,
 }: Props) {
   const [cellEnEdition, setCellEnEdition] = useState<{ id: number; champ: Champ } | null>(null);
   const [tri, setTri] = useState<Tri | null>(() => chargerTri(affaireId));
@@ -96,7 +101,7 @@ export default function ArticlesTable({
   function valeurTexte(a: Article, colonne: ColonneTriable): string {
     switch (colonne) {
       case "volume":
-        return volumeUnitaireM3(a).toFixed(4);
+        return formaterVolumeM3(volumeUnitaireM3(a));
       case "caisse":
         return caisseName(a.caisse_id);
       default:
@@ -201,6 +206,12 @@ export default function ArticlesTable({
     const estNombre = !CHAMPS_TEXTE.has(champ);
     const editable = !readOnly && CHAMPS_EDITABLES.has(champ);
     const estMax = idArticleMaxParChamp[champ] === article.id;
+    // La cellule AR est surlignée dès que l'article a au moins un champ manquant (pour repérer
+    // vite la référence concernée) ; les autres colonnes ne le sont que si CE champ manque.
+    const estManquant =
+      champ === "ar"
+        ? (champsManquantsParArticle?.get(article.id)?.length ?? 0) > 0
+        : (champsManquantsParArticle?.get(article.id)?.includes(champ as ChampArticleManquant) ?? false);
     return (
       <td
         style={{
@@ -209,9 +220,17 @@ export default function ArticlesTable({
           cursor: editable ? "text" : "default",
           padding: enEdition ? 2 : tdStyle.padding,
           fontWeight: estMax ? 800 : undefined,
+          background: estManquant ? "var(--danger-bg)" : undefined,
+          boxShadow: estManquant ? "inset 0 0 0 1px var(--danger-border)" : undefined,
         }}
         className={estNombre ? "mono" : undefined}
-        title={estMax ? "Dimension maximale de l'affaire pour cette colonne" : undefined}
+        title={
+          estManquant
+            ? "Donnée manquante (dimension ou poids à 0)"
+            : estMax
+              ? "Dimension maximale de l'affaire pour cette colonne"
+              : undefined
+        }
         onClick={() => editable && !enEdition && setCellEnEdition({ id: article.id, champ })}
       >
         {enEdition ? (
@@ -383,7 +402,7 @@ export default function ArticlesTable({
                 {cell(a, "poids_unitaire_kg", a.poids_unitaire_kg, "right")}
                 {cell(a, "quantite", a.quantite, "right")}
                 <td style={{ ...tdStyle, textAlign: "right" }} className="mono">
-                  {volumeUnitaireM3(a).toFixed(4)}
+                  {formaterVolumeM3(volumeUnitaireM3(a))}
                 </td>
                 <td style={tdStyle}>
                   {caisseAssignee ? (

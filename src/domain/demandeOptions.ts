@@ -11,8 +11,6 @@ export const OUVERTURE_PAR_DESSUS = "Par dessus";
 // Ouvertures interdites pour une caisse 4C (housse soudée — pas d'ouverture par devant).
 const OUVERTURES_INTERDITES_4C = ["Par dessus et par devant", "Par devant"];
 
-export const VALEURS_STOCK = ["AR_CAISS_00001", "AR_CAISS_00002", "AR_CAISS_00005", "AR_CAISS_00006", "CAISSE RECUP"];
-
 export const TRAITEMENTS = ["NIMP15"];
 
 // Les valeurs des colonnes Moteurs / Module linéaire / Terminaux vivent entièrement en base
@@ -152,7 +150,7 @@ export function contrePlaqueParDefaut(typeEnvoiCaisse: string): boolean {
 // doivent rester équivalents partout où l'app décide qu'une demande est "terminée".
 export function estDemandeValidee(d: Demande): boolean {
   const obs = d.observations.trim().toLowerCase();
-  return d.validee || obs.includes("livrée") || obs.includes("livree") || obs.includes("rapatriée") || obs.includes("rapatriee");
+  return d.validee || obs.includes("livré") || obs.includes("livre") || obs.includes("rapatrié") || obs.includes("rapatrie");
 }
 
 // Compare deux noms d'affaire : égalité stricte (après trim, insensible à la casse). La
@@ -179,5 +177,38 @@ export function demandesActivesPourAffaire(nomAffaire: string, demandes: Demande
 // `demandeMere` gardé en 2e paramètre pour compat des appelants, non utilisé.
 export function estDemandeCaisseValidee(c: DemandeCaisse, _demandeMere?: Demande | undefined): boolean {
   const obs = c.observations.trim().toLowerCase();
-  return obs.includes("livrée") || obs.includes("livree") || obs.includes("rapatriée") || obs.includes("rapatriee");
+  return (
+    obs.includes("livré") ||
+    obs.includes("livre") ||
+    obs.includes("rapatrié") ||
+    obs.includes("rapatrie")
+  );
+}
+
+// Champs requis avant de pouvoir cocher "Ok cde" (ok_pour_passer_cde) — décidés avec
+// l'utilisateur le 2026-09-24 : Affaire, les 3 dimensions (>0), Qté (>0), délai (date demandée
+// à S2C) et position de la fermeture (type d'ouverture). Une commande envoyée au service Achat
+// sans ces infos serait incomplète.
+type DemandePourCommande = Pick<
+  Demande,
+  "affaire" | "longueur_mm" | "largeur_mm" | "hauteur_mm" | "quantite" | "date_demandee_s2c" | "type_ouverture"
+>;
+
+// Libellés des champs manquants pour cette demande précise — pour un message d'alerte qui dit
+// exactement ce qui ne va pas, plutôt que de lister toutes les conditions possibles à chaque
+// fois (retour utilisateur du 2026-09-24 : le message générique n'était pas assez explicite).
+export function champsManquantsPourCommande(d: DemandePourCommande): string[] {
+  const manquants: string[] = [];
+  if (d.affaire.trim() === "") manquants.push("Affaire");
+  if (d.longueur_mm <= 0) manquants.push("Longueur");
+  if (d.largeur_mm <= 0) manquants.push("Largeur");
+  if (d.hauteur_mm <= 0) manquants.push("Hauteur");
+  if (d.quantite <= 0) manquants.push("Qté");
+  if (d.date_demandee_s2c.trim() === "") manquants.push("Date demandée à S2C");
+  if (d.type_ouverture.trim() === "") manquants.push("Type ouverture");
+  return manquants;
+}
+
+export function demandePreteACommander(d: DemandePourCommande): boolean {
+  return champsManquantsPourCommande(d).length === 0;
 }

@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { toBlob } from "html-to-image";
 import type { AfficheCaisse } from "../domain/affiches";
-import { rendreAfficheHtml, rendreAfficheTexte, texteIntroductionMail, MENTION_SOUDURE_4C, couleurAffiche, libelleCategorie } from "../domain/affiches";
+import { rendreAfficheHtml, rendreAfficheTexte, texteIntroductionMail, mettreEnEvidenceS2C, MENTION_SOUDURE_4C, couleurAffiche, libelleCategorie } from "../domain/affiches";
 import { estCaisse4C } from "../domain/demandeOptions";
 import logoUrl from "../assets/logo.png";
 
@@ -122,7 +122,7 @@ const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function Af
           const versHtml = (t: string) =>
             t
               .split("\n")
-              .map((ligne) => `<div>${ligne || "&nbsp;"}</div>`)
+              .map((ligne) => `<div>${ligne ? mettreEnEvidenceS2C(ligne) : "&nbsp;"}</div>`)
               .join("");
           const html = `${versHtml(intro)}${est4C ? versHtml(MENTION_SOUDURE_4C) : ""}<img src="${dataUrl}" alt="" style="display:block;max-width:100%;margin-top:12px;" />`;
           await navigator.clipboard.write([

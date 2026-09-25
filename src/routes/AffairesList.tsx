@@ -40,11 +40,11 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
     reload();
   }, []);
 
-  const nomTropCourt = nom.trim().length > 0 && nom.trim().length < 8;
+  const nomLongueurInvalide = nom.trim().length > 0 && nom.trim().length !== 8;
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (nom.trim().length < 8) return;
+    if (nom.trim().length !== 8) return;
     if (affaires.some((a) => memeNomAffaire(a.nom, nom))) {
       const ok = await confirmerAction(
         `Une affaire « ${nom.trim()} » existe déjà. En créer une seconde du même nom ?`,
@@ -104,17 +104,18 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
           }}
         >
           <div style={{ flex: 1 }}>
-            <label style={labelStyle}>Nom de l'affaire (8 caractères minimum)</label>
+            <label style={labelStyle}>Nom de l'affaire (8 caractères exactement)</label>
             <input
               autoFocus
               value={nom}
               onChange={(e) => setNom(e.target.value)}
               placeholder="Ex : UUSPM01D"
-              style={{ ...inputStyle, ...(nomTropCourt ? { borderColor: "var(--danger-border)" } : null) }}
+              maxLength={8}
+              style={{ ...inputStyle, ...(nomLongueurInvalide ? { borderColor: "var(--danger-border)" } : null) }}
             />
-            {nomTropCourt && (
+            {nomLongueurInvalide && (
               <span style={{ fontSize: 11.5, color: "var(--danger-text)" }}>
-                Le nom doit comporter au moins 8 caractères.
+                Le nom doit comporter exactement 8 caractères.
               </span>
             )}
           </div>
@@ -129,7 +130,7 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
               style={inputStyle}
             />
           </div>
-          <button type="submit" className="btn btn-primary" disabled={nom.trim().length < 8}>
+          <button type="submit" className="btn btn-primary" disabled={nom.trim().length !== 8}>
             Créer
           </button>
           <button type="button" className="btn" onClick={() => setCreating(false)}>
