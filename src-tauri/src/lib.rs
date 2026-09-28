@@ -21,7 +21,12 @@ use commands::demandes::{
     bulk_create_demandes, create_demande, delete_demande, list_demandes, set_demande_validee,
     update_demande,
 };
-use commands::journal::{list_journal, peut_lire_journal};
+use commands::admin::{
+    admin_lock, admin_session_active, admin_unlock, change_mot_de_passe, enregistrer_connexion, get_compte_status,
+    list_utilisateurs, AdminSession,
+};
+use commands::backup::{backup_if_due, backup_now, choose_backup_folder, get_backup_config, set_backup_config};
+use commands::journal::list_journal;
 use commands::locks::{
     acquire_lock, claim_expired_pen, heartbeat, list_locks, release_lock, request_pen, respond_pen_request,
 };
@@ -56,6 +61,7 @@ pub fn run() {
                 }
             }
             app.manage(db::Db::empty());
+            app.manage(AdminSession::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -110,7 +116,18 @@ pub fn run() {
             count_option_liste_usage,
             delete_option_liste,
             list_journal,
-            peut_lire_journal,
+            get_compte_status,
+            admin_unlock,
+            admin_session_active,
+            admin_lock,
+            change_mot_de_passe,
+            enregistrer_connexion,
+            list_utilisateurs,
+            get_backup_config,
+            set_backup_config,
+            choose_backup_folder,
+            backup_now,
+            backup_if_due,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

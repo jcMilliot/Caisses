@@ -444,7 +444,8 @@ export default function DemandesTable({
   async function sauvegarderChamp(demande: Demande, champ: Champ, valeurBrute: string) {
     setCellEnEdition(null);
     const nombre = Number(valeurBrute.replace(",", ".")) || 0;
-    const valeur = CHAMPS_DIM.has(champ) ? nombre * 1000 : CHAMPS_NOMBRE.has(champ) ? nombre : valeurBrute;
+    // Arrondi au mm : 0.56 * 1000 = 560.0000000000001, qui passerait pour une modification.
+    const valeur = CHAMPS_DIM.has(champ) ? Math.round(nombre * 1000) : CHAMPS_NOMBRE.has(champ) ? nombre : valeurBrute;
     if (demande[champ] === valeur) return;
     // Même règle qu'à la création (AjouterDemandesDialog, AffairesList) : exactement 8 caractères.
     if (champ === "affaire" && String(valeur).trim().length !== 8) {
@@ -1112,7 +1113,7 @@ function SousLigneCaisse({
               setChampEnEdition(null);
               if (estDim) {
                 const metres = Number(v.replace(",", ".")) || 0;
-                onEdit({ [champSousLigne]: metres * 1000 });
+                onEdit({ [champSousLigne]: Math.round(metres * 1000) });
               } else if (CHAMPS_NOMBRE_SOUS_LIGNE.has(champSousLigne)) {
                 onEdit({ [champSousLigne]: Math.round(Number(v.replace(",", "."))) || 0 });
               } else if (v !== valeurBrute) {

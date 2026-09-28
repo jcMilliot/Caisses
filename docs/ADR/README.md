@@ -18,3 +18,4 @@ remplaçant référence l'ancien plutôt que de réutiliser son numéro).
 
 - [0001 — SQLite + verrouillage applicatif plutôt qu'un serveur central](0001-sqlite-et-verrouillage-applicatif.md)
 - [0002 — Pas de signature Authenticode de l'installeur](0002-pas-de-signature-authenticode.md)
+- [0003 — Compte admin en base, session en mémoire, sauvegarde par n'importe quel poste](0003-compte-admin-et-sauvegarde.md)

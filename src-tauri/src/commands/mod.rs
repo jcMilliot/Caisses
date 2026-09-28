@@ -1,5 +1,7 @@
+pub mod admin;
 pub mod affaires;
 pub mod articles;
+pub mod backup;
 pub mod caisse_stock;
 pub mod caisses;
 pub mod demande_caisse;

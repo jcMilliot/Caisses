@@ -27,3 +27,11 @@ export function dateEstDansLePasse(iso: string): boolean {
   const auj = `${aujourdhui.getFullYear()}-${String(aujourdhui.getMonth() + 1).padStart(2, "0")}-${String(aujourdhui.getDate()).padStart(2, "0")}`;
   return iso < auj;
 }
+
+// Horodatage stocké en UTC (datetime('now')) → affiché en heure locale JJ/MM/AAAA HH:MM.
+export function formaterHorodatage(iso: string): string {
+  const d = new Date(iso.replace(" ", "T") + "Z");
+  if (Number.isNaN(d.getTime())) return iso;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}

@@ -10,6 +10,28 @@ racine, le fix, et un lien vers l'entrée de journal correspondante pour le dét
 
 ---
 
+## Sélecteur de date en MM/DD/YYYY sur un poste réglé en JJ/MM/AAAA
+
+**Symptôme** : sur le poste du bureau, le champ date natif (`<input type="date">`, dialogue de
+création et édition inline des dates) affiche la date choisie en MM/DD/YYYY, alors que le format
+régional de Windows est JJ/MM/AAAA. Le poste maison, lui, affiche bien JJ/MM/AAAA.
+
+**Cause** : le champ date de WebView2 (Chromium) suit la **langue d'affichage** du WebView (dérivée
+de la langue d'interface de Windows, probablement anglaise sur ce poste), pas le format régional
+de Windows ni l'attribut `lang` de la page. Le stockage n'est pas concerné (toujours ISO
+AAAA-MM-JJ) ; les dates affichées dans le tableau passent par `dateIsoVersAffichage` et étaient
+déjà en JJ/MM/AAAA.
+
+**Fix** : `tauri.conf.json` → `app.windows[0].additionalBrowserArgs` avec `--lang=fr-FR`.
+Attention : ce réglage **remplace** les arguments par défaut de Tauri, qu'il faut donc
+reprendre (`--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`). `index.html` passé
+aussi en `lang="fr"`. Le changement touche la config Rust : il faut une release pour qu'il
+arrive sur les postes installés.
+
+**Journal** : 2026-09-25.
+
+---
+
 ## Dialogue de confirmation jamais visible, l'action s'applique directement
 
 **Symptôme** : mettre une dimension à 0 sur une demande « OK pour être commandée » décochait la

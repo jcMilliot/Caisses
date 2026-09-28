@@ -17,6 +17,7 @@ import {
   demandesActivesPourAffaire,
   memeNomAffaire,
   appliquerReglesCaisse,
+  detacherStockSiDimsModifiees,
   OUVERTURE_PAR_DESSUS,
   champsManquantsPourCommande,
 } from "../domain/demandeOptions";
@@ -197,6 +198,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
 
   async function handleEditLocal(id: number, patch: Partial<Demande>) {
     const demandeActuelle = brouillonRef.current.find((d) => d.id === id);
+    if (demandeActuelle) patch = detacherStockSiDimsModifiees(demandeActuelle, patch);
     const toucheChampConditionnant = CHAMPS_CONDITIONNANT_OK_CDE.some((champ) => champ in patch);
     if (demandeActuelle?.ok_pour_passer_cde && toucheChampConditionnant) {
       const projection = { ...demandeActuelle, ...patch };
@@ -385,7 +387,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   // Édition d'une sous-caisse : purement locale (brouillon) — persistée dans handleEnregistrer,
   // comme les lignes mères. « Annuler » restaure l'état serveur.
   function handleEditDemandeCaisse(id: number, patch: Partial<DemandeCaisse>) {
-    setDemandeCaisses((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    setDemandeCaisses((prev) => prev.map((c) => (c.id === id ? { ...c, ...detacherStockSiDimsModifiees(c, patch) } : c)));
   }
 
   async function handleDeleteDemandeCaisse(id: number) {

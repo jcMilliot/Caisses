@@ -98,8 +98,14 @@ src-tauri/src/
                         table indépendante (pas de FK vers affaire — `affaire` = texte libre)
     demande_caisse.rs → CRUD sous-caisses d'une demande (multi-caisses par demande)
     caisse_stock.rs   → CRUD caisses en stock + transfer + set_caisse_stock_validee
+    admin.rs          → comptes protégés par mot de passe (Argon2) + session admin en mémoire
+                        (AdminSession, require_admin) : get_compte_status / admin_unlock /
+                        admin_session_active / admin_lock / change_mot_de_passe /
+                        enregistrer_connexion / list_utilisateurs
+    backup.rs         → sauvegarde de caisses.sqlite3 (VACUUM INTO) : get/set_backup_config,
+                        choose_backup_folder, backup_now (admin), backup_if_due (tout poste)
     journal.rs        → journal d'audit : journaliser() appelé par les commandes concernées +
-                        list_journal / peut_lire_journal (lecture réservée au trigramme AJC)
+                        list_journal (session admin requise, onglet de la page Admin)
     locks.rs          → verrouillage applicatif multi-poste (acquire/release/heartbeat/
                         request_pen/respond_pen_request/list_locks + require_lock)
     options_liste.rs  → valeurs personnalisées des listes déroulantes Demandes (moteurs /
@@ -107,7 +113,8 @@ src-tauri/src/
                         rename_option_liste répercute la nouvelle valeur sur demande /
                         demande_caisse (transaction)
     setup.rs          → get_db_status / choose_db_folder / set_db_folder / init_db
-    user.rs           → get_user_status / set_trigramme
+    user.rs           → get_user_status / set_trigramme (mot de passe exigé pour un trigramme
+                        protégé — AJC)
 ```
 
 **Système de migrations versionnées** (`db.rs`) : chaque fichier `migrations/000N_*.sql` est
@@ -120,9 +127,9 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-09-25 (inchangé depuis le 2026-09-11) : migrations `0001` à `0021` (dernière :
-`0021_add_demande_caisse_terminaux.sql` ; pas de `0019_reorder` — supprimé avant publication,
-cf. journal des listes).
+État au 2026-09-28 : migrations `0001` à `0022` (dernière :
+`0022_add_compte_utilisateur_parametre.sql` ; pas de `0019_reorder` — supprimé avant
+publication, cf. journal des listes).
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
 triées côté frontend par `demandeOptions.ts::comparerOption` (quantité de tête puis n° de
 référence, ex. `1 MOTEUR` < `2 MOTEURS` < `10 MOTEURS` ; `1 FESTO 426` < `1 FESTO 485` <
@@ -196,7 +203,8 @@ journal (id, horodatage, trigramme, action, entite, entite_id NULL, details)  --
          -- 'modification_dimensions' | 'reference_ajout' | 'reference_modification' |
          -- 'reference_suppression'. `entite` ∈ 'demande' | 'demande_caisse' | 'option_liste'.
          -- Écriture par journaliser() (best-effort, jamais bloquant) ; lecture (list_journal)
-         -- réservée au trigramme AJC — identité = trigramme déclaratif, pas une preuve.
+         -- réservée à la session admin (page Admin, mot de passe AJC). Les auteurs restent des
+         -- trigrammes déclaratifs, pas une preuve.
 
 option_liste (id, liste TEXT, valeur TEXT, ordre, UNIQUE(liste, valeur))  -- 0016 + seed 0017
          -- valeurs des listes déroulantes de la section Demandes ; `liste` ∈ 'moteurs' |
@@ -207,6 +215,19 @@ option_liste (id, liste TEXT, valeur TEXT, ordre, UNIQUE(liste, valeur))  -- 001
          -- (18 modules FESTO fournis le 2026-09-01, libellé complet avec dimensions
          -- informatives entre parenthèses). Migration séparée car 0017 était déjà appliquée
          -- sur les bases de dev sans ces valeurs.
+
+compte (trigramme PK, mot_de_passe_hash, role DEFAULT 'admin', cree_le, modifie_le)  -- 0022
+         -- trigrammes protégés par mot de passe (hash Argon2, format PHC). Seul AJC pour
+         -- l'instant ; `role` = base pour de futurs droits par tâche.
+
+utilisateur (trigramme PK, premiere_connexion, derniere_connexion)  -- 0022
+         -- trigrammes saisis sur les postes (déclaratifs), rafraîchi à chaque démarrage ;
+         -- seedé à la migration depuis `journal` et `section_lock`.
+
+parametre (cle PK, valeur)  -- 0022, paramètres partagés clé/valeur
+         -- backup_dossier, backup_frequence ('desactivee'|'quotidienne'|'hebdomadaire'),
+         -- backup_conservation (nb de fichiers), backup_derniere (UTC), backup_dernier_poste,
+         -- backup_derniere_erreur.
 ```
 
 Note sur `section_lock` (verrouillage applicatif multi-poste, cf. journal 2026-07-30) : table
@@ -254,6 +275,51 @@ release de sa propre initiative en cours de session. À la fin d'un bloc de trav
 validé (`cargo check` + `npx tsc --noEmit` + build de test OK), **proposer** à l'utilisateur de
 créer une release — lui reste décisionnaire à chaque fois, mais c'est à l'assistant de penser à
 le proposer plutôt que d'attendre que l'utilisateur y pense.
+
+### Soumission à Microsoft Defender — fiche à copier-coller
+
+**Contexte** : Defender détecte l'installeur comme `Trojan:Win32/Bearfoos.B!ml` — détection
+par machine learning, faux positif classique des binaires Tauri non signés lancés par
+l'auto-updater. Observé pour la première fois sur v0.8.0 le 2026-09-02 ; première soumission
+**validée comme faux positif** le 2026-09-03 (le 2e poste s'est mis à jour sans problème après
+approbation). Pas de signature Authenticode (abandonnée le 2026-09-09, cf. ADR 0002 et
+« Annulé pour le moment ») → on reste sur cette procédure manuelle, à revoir seulement si le
+nombre de postes grandit nettement ou si les faux positifs deviennent trop pénibles.
+
+**Quand** : à chaque release, dès publication, si Defender bloque l'installeur. Remplacer
+`X.Y.Z` par la version. Traité en 24-72 h en général.
+
+1. **Récupérer l'installeur de la release** (celui de GitHub Actions, jamais celui du build
+   local `src-tauri/target/…`, qui est un autre binaire) :
+   ```
+   & "C:\Program Files\GitHub CLI\gh.exe" release download vX.Y.Z --repo jcMilliot/Caisses --pattern "*setup.exe" --dir "$env:USERPROFILE\Downloads"
+   Get-FileHash "$env:USERPROFILE\Downloads\Caisses_X.Y.Z_x64-setup.exe" -Algorithm SHA256
+   ```
+2. **Formulaire** : https://www.microsoft.com/wdsi/filesubmission — les intitulés exacts des
+   champs peuvent évoluer, les valeurs ci-dessous restent valables :
+
+   | Champ | Valeur |
+   |---|---|
+   | Type de soumission | Software developer (sinon Home customer) |
+   | Produit | Microsoft Defender Antivirus |
+   | Fichier | `Caisses_X.Y.Z_x64-setup.exe` |
+   | Ce que vous pensez du fichier | Incorrectly detected as malware/malicious (faux positif) |
+   | Nom de la détection | `Trojan:Win32/Bearfoos.B!ml` |
+   | Company name (si demandé) | Caisses (outil interne) |
+
+   **Texte « Additional information »** (en anglais, lu par les analystes Microsoft) :
+   ```
+   False positive. Caisses is an internal business desktop application (Tauri 2: Rust
+   backend + WebView2 frontend) that we develop ourselves and distribute only to our own
+   company workstations through its built-in auto-updater. This file is the NSIS installer
+   of release vX.Y.Z, built by our GitHub Actions release workflow from the public source
+   repository https://github.com/jcMilliot/Caisses. The installer is not Authenticode-signed,
+   which we believe triggers the machine-learning detection. Previous versions of the same
+   application were reviewed and confirmed as false positives. SHA-256: <coller le hash>
+   ```
+3. En attendant la réponse, si un poste est bloqué : exclusion Defender du dossier
+   d'installation et du dossier temporaire de l'updater (`%TEMP%\Caisses-*-updater-*`), ou
+   déblocage manuel via la notification Defender.
 
 ## Commandes utiles
 
@@ -578,8 +644,54 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   lui-même n'est pas supprimé (orphelin, gardé au cas où la fonctionnalité reviendrait ailleurs).
 - `cargo check`, `npx tsc --noEmit` et `npm run tauri build -- --debug` (bundle complet MSI+NSIS)
   validés. Version bumpée à `0.8.1` (`tauri.conf.json`/`package.json`/`Cargo.toml`), release à
-  préparer avec l'utilisateur (soumission Microsoft Defender à faire dès publication, cf. « À
-  faire » — procédure manuelle actée le 2026-09-09, pas de signature Authenticode).
+  préparer avec l'utilisateur (soumission Microsoft Defender à faire dès publication, cf.
+  « Distribution et releases › Soumission à Microsoft Defender » — procédure manuelle actée le
+  2026-09-09, pas de signature Authenticode).
+
+### 2026-09-28 — Compte admin (mot de passe AJC), page Admin, sauvegarde automatique
+
+- **Décisions actées avec l'utilisateur** (détail et alternatives :
+  [ADR 0003](docs/ADR/0003-compte-admin-et-sauvegarde.md)) : mot de passe stocké **en base**
+  (table `compte`, valable sur tous les postes) ; demandé **au choix du trigramme AJC** puis **à
+  l'ouverture de la page Admin** une fois par lancement de l'app (inutile si on vient de le
+  saisir au choix du trigramme) ; liste des utilisateurs = trigrammes saisis par les gens
+  eux-mêmes (pas de liste imposée — des droits par tâche viendront plus tard) ; sauvegarde faite
+  par **n'importe quel poste ouvert**, un seul à la fois.
+- **Mot de passe** : Argon2 (`argon2` + `rand_core` feature `getrandom`), 6 caractères min.
+  Premier choix d'AJC sans mot de passe en base → écran de création (+ confirmation).
+  `TrigrammeSetup` passe à une 2e étape si `get_compte_status` indique un trigramme protégé ;
+  `set_trigramme` refuse sans le bon mot de passe. Un poste déjà configuré en AJC avant cette
+  version n'a rien à ressaisir au démarrage — le mot de passe sera créé à la 1re ouverture de
+  l'Admin. **Mot de passe oublié** : pas de procédure dans l'app — supprimer la ligne AJC de la
+  table `compte` (outil SQLite) pour le recréer au prochain passage.
+- **Session admin** : `AdminSession` (état Tauri en mémoire, jamais persisté) ouverte par
+  `set_trigramme` ou `admin_unlock`, refermée par le bouton « Verrouiller » ou la fermeture de
+  l'app. `require_admin` protège `list_journal`, `list_utilisateurs`, la config de sauvegarde et
+  `backup_now` — la garde n'est plus « trigramme == AJC » (qui s'obtient en éditant
+  `user-identity.json`) mais le mot de passe vérifié. `peut_lire_journal` supprimé.
+- **Page Admin** (`routes/Admin.tsx`, entrée « Admin » de la navbar à la place de « Journal »,
+  visible pour AJC) : onglets **Utilisateurs** (trigramme, rôle, première/dernière connexion),
+  **Sauvegarde**, **Journal** (`routes/Journal.tsx`, devenu un onglet). Bouton « Changer le mot
+  de passe ». `formaterHorodatage` déplacé dans `domain/dates.ts`.
+- **Sauvegarde** (`commands/backup.rs`, `hooks/useBackupAuto.ts`) : config en table `parametre`
+  (dossier, fréquence désactivée/quotidienne/hebdomadaire, nb de fichiers conservés, défaut 30).
+  Chaque poste appelle `backup_if_due` 1 min après le démarrage puis toutes les 30 min ; le
+  poste qui « réserve » la sauvegarde par un `UPDATE ... WHERE` conditionnel sur
+  `backup_derniere` est le seul à la faire. Échéance en jours calendaires locaux (quotidienne =
+  pas encore faite aujourd'hui ; hebdo = dernière il y a ≥ 7 jours). Copie via `VACUUM INTO`
+  vers `caisses_JJ-MM-AAAA_HH-MM-SS.sqlite3` (format choisi par l'utilisateur), puis
+  suppression des plus anciens au-delà de la conservation — tri sur la date relue dans le nom
+  (`cle_chronologique`), l'ordre alphabétique n'étant pas chronologique avec le jour en tête ;
+  seuls les fichiers qui suivent exactement ce format sont concernés, aucun autre n'est touché.
+  En cas d'échec (dossier inaccessible depuis un poste…) : réservation annulée, erreur notée en
+  base (`backup_derniere_erreur`, avec le trigramme du poste) et affichée dans l'onglet
+  Sauvegarde. Bouton « Sauvegarder maintenant ». Pas de restauration dans l'app : copier un
+  fichier de sauvegarde à la place de `caisses.sqlite3`, app fermée sur tous les postes.
+- Validation : `cargo check`, `cargo test --lib backup` (2 tests : création/vérification du mot
+  de passe ; réservation unique par jour + rétention), `npx tsc --noEmit`,
+  `npm run tauri build -- --debug` (MSI + NSIS). **Non testé en conditions réelles** (pas
+  d'automation UI) : parcours choix AJC → création du mot de passe, déverrouillage Admin,
+  sauvegarde vers un vrai dossier réseau depuis deux postes.
 
 ## Prochaines étapes
 
@@ -1096,24 +1208,25 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   `contrePlaqueParDefaut()` (coché par défaut pour STANDARD/4B, décoché par défaut pour 4C) est
   bien celui souhaité — le point du 11 septembre demandait une clarification, pas un changement.
 
+- **Création de caisse : choisir une caisse de stock remplace les dimensions déjà saisies** —
+  corrigé le 2026-09-28 (`AjouterDemandesDialog.tsx`, `DemandesList.tsx`, `DemandesTable.tsx`,
+  `domain/demandeOptions.ts`). Cause : `DimInput` (dialogue de création) n'initialisait son
+  texte qu'une fois et affichait l'ancienne saisie alors que l'état contenait les dimensions du
+  stock. Il se resynchronise maintenant quand `valeurMm` change de l'extérieur, sauf si le texte
+  en cours correspond déjà à la valeur (la saisie de « 0.xx » reste intacte). Le tableau
+  n'était pas concerné (cellules rendues depuis les props).
+  **Règle ajoutée à la demande de l'utilisateur** : modifier une dimension d'une caisse liée à
+  une caisse en stock **désélectionne** la caisse en stock (`detacherStockSiDimsModifiees`,
+  appliquée dans le dialogue, sur la ligne mère `handleEditLocal` et sur la sous-ligne
+  `handleEditDemandeCaisse`). Le type d'ouverture « Par dessus » forcé par le stock est gardé
+  tel quel (il reste valide). Au passage, les dimensions saisies en édition inline sont
+  arrondies au mm (`0.56 * 1000` = `560.0000000000001` passait pour une modification et aurait
+  détaché le stock en revalidant une cellule inchangée). `npx tsc --noEmit` validé. **Non testé
+  en conditions réelles** (pas d'automation UI).
+
 ### À faire
 
 *Fiabilité et infrastructure*
-
-- **Faux positif Windows Defender sur l'installeur auto-update** — `Trojan:Win32/Bearfoos.B!ml`
-  (détection ML, faux positif classique des binaires Tauri non signés lancés par l'auto-updater),
-  observé sur v0.8.0 le 2026-09-02.
-  - **Soumission Microsoft** (https://www.microsoft.com/wdsi/filesubmission, produit « Microsoft
-    Defender Antivirus », détection `Trojan:Win32/Bearfoos.B!ml`) : **validée comme faux
-    positif** le 2026-09-03 → le 2e poste s'est mis à jour sans problème après approbation. À
-    refaire à chaque version si la détection revient (rapide, se traite en 24-72 h).
-  - Si un poste reste bloqué en attendant : exclusion Defender du dossier d'install + du dossier
-    temporaire de l'updater (`%TEMP%\Caisses-*-updater-*`), ou déblocage manuel via la notif.
-  - **Solution de fond (signature Authenticode) abandonnée pour l'instant** — voir
-    « Annulé pour le moment » ci-dessous pour le détail des pistes essayées (SignPath, Certum).
-    On reste sur la procédure manuelle : soumission Microsoft à chaque version + exclusion
-    Defender au besoin. Revoir si le nombre de postes/utilisateurs grandit significativement, ou
-    si le rythme des faux positifs Defender devient trop pénible.
 
 - **⚠️ Risque connu — dossier BDD réseau partagé** : décision utilisateur (2026-07-30) d'utiliser
   un dossier réseau partagé pour `caisses.sqlite3` afin que plusieurs postes travaillent sur les
@@ -1123,16 +1236,26 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   verrouillage applicatif (voir "Fait" ci-dessus), mais pas éliminé. **Recommandation en
   attendant** : éviter d'éditer la même affaire depuis deux postes en même temps, et mettre en
   place une sauvegarde régulière (point suivant).
-- **Sauvegarde régulière de `caisses.sqlite3`** — pas encore mise en place. Tant que la base peut
-  vivre sur un dossier réseau partagé (point précédent), une copie de sauvegarde à intervalle
-  régulier vers un autre emplacement (pas le même dossier/serveur, pour survivre à une panne du
-  partage lui-même) est nécessaire. Fréquence à définir avec l'utilisateur — pas encore tranché :
-  candidats évidents quotidien ou hebdomadaire selon le volume réel de saisie. Pourrait être un
-  simple script/tâche planifiée Windows dans un premier temps, ou une fonctionnalité intégrée à
-  l'app plus tard (bouton "Sauvegarder maintenant" + copie automatique périodique).
-- **Tester manuellement en conditions réelles** la section Demandes (collage Excel 19 colonnes,
-  édition inline, cases à cocher, tri) et la navigation par menu — pas d'outil d'automation UI
-  dans l'environnement de dev assisté.
+- **Sauvegarde régulière de `caisses.sqlite3`** — implémentée le 2026-09-28 (page Admin ›
+  Sauvegarde, cf. journal). **Reste à faire par l'utilisateur** : choisir le dossier (ailleurs
+  que le partage de la base, accessible depuis tous les postes) et la fréquence, puis vérifier
+  qu'un fichier `caisses_*.sqlite3` apparaît. **Critère de complétude (pas encore atteint)** :
+  une sauvegarde automatique réelle constatée dans le dossier choisi.
+- **Tester manuellement en conditions réelles** la section Demandes (édition inline, cases à
+  cocher, tri) et la navigation par menu — pas d'outil d'automation UI dans l'environnement de
+  dev assisté. Le collage Excel 19 colonnes n'est plus à tester : il ne servait qu'à la reprise
+  initiale des affaires, l'utilisateur ne collera plus de lignes dans Demandes (2026-09-28).
+
+*Retours utilisateur 2026-09-25*
+
+- **Vérifier le format des dates après la prochaine release** : correctif `--lang=fr-FR`
+  (`tauri.conf.json` → `additionalBrowserArgs`, cf. [Bugs.md](Bugs.md) « Sélecteur de date en
+  MM/DD/YYYY ») pas encore testé — non reproductible sur le poste maison. Une fois la release
+  publiée et le poste du bureau mis à jour : ouvrir un sélecteur de date (création de caisse,
+  édition inline Date picking / Date demandée à S2C) et confirmer l'affichage JJ/MM/AAAA. Si ce
+  n'est pas le cas, piste suivante : remplacer `<input type="date">` par une saisie texte
+  JJ/MM/AAAA contrôlée par l'app. **Critère de complétude (pas encore atteint)** : dates en
+  JJ/MM/AAAA dans les sélecteurs sur le poste du bureau.
 
 *Gestion des caisses — retours utilisateur 2026-09-11* — **tous traités, voir "Fait" ci-dessus**
 (bloc "Gestion des caisses — retours utilisateur 2026-09-11 (lot complet)").
@@ -1173,10 +1296,11 @@ bien celui souhaité, aucun changement de code nécessaire.
 ### À réfléchir plus tard
 
 - **Système de droits/permissions par utilisateur** — décision 2026-09-02 : inutile pour l'usage
-  actuel (3 personnes, mêmes droits, interne bienveillant). À reconsidérer seulement si (a) un
-  poste « consultation seule » apparaît → option légère : `role` dans `user-identity.json` +
-  refus des mutations côté Rust ; (b) besoin d'identités vérifiées → table `utilisateur` + PIN,
-  ou serveur HTTP central (le bon moment = quand le partage SQLite réseau devient un problème).
+  actuel (3 personnes, mêmes droits, interne bienveillant). **Mise à jour 2026-09-28** : un
+  premier socle existe (tables `compte` avec `role` et `utilisateur`, session admin, cf. journal
+  et ADR 0003) ; l'utilisateur prévoit des droits par tâche plus tard. À concevoir alors :
+  quelles tâches, droits portés par `compte.role` ou une table dédiée, et si les autres
+  trigrammes doivent aussi avoir un mot de passe.
 - **Colonne « type d'ouverture » dans le tableau Caisses en stock** — aujourd'hui une caisse en
   stock n'a pas de type d'ouverture ; quand on en sélectionne une dans Demandes, le type
   d'ouverture est forcé à « Par dessus ». Si le besoin d'un autre type par caisse en stock
@@ -1220,6 +1344,14 @@ bien celui souhaité, aucun changement de code nécessaire.
   côté import (référence de carton ? liste des AR qu'il contient ?), et si le rapprochement se
   fait par simple correspondance de référence ou nécessite une étape de vérification manuelle
   avant application.
+- **Alerte « poids total de l'affaire > 350 kg »** (idée notée le 2026-09-28) — dans
+  Simulations, afficher une alerte quand le poids total de l'affaire dépasse 350 kg. Candidat
+  naturel : un bandeau dans `RecapAffaireBandeau` (`AffaireDetail.tsx`), comme l'alerte
+  « volume affaire > capacité des caisses », le poids total étant déjà calculé côté
+  `domain/calculs.ts`. À trancher avant de coder : poids des articles seuls ou poids caisse
+  incluse (le poids du bois n'est pas calculé aujourd'hui) ; tous les articles de l'affaire ou
+  seulement les assignés ; alerte à l'échelle de l'affaire ou aussi par caisse ; seuil fixe ou
+  paramétrable (comme `seuil_defaut`) ; `> 350` ou `>= 350`.
 
 ### À rédiger
 
@@ -1353,6 +1485,6 @@ bien celui souhaité, aucun changement de code nécessaire.
     usage à 2-3 postes internes plutôt qu'une diffusion publique. Le workflow
     `.github/workflows/release.yml` a été remis dans son état d'avant les essais SignPath (aucune
     étape de signature). On reste sur la procédure manuelle : soumission Microsoft Defender à
-    chaque version (cf. « À faire ») + exclusion Defender au besoin. À reconsidérer si le nombre
+    chaque version (cf. « Distribution et releases › Soumission à Microsoft Defender ») + exclusion Defender au besoin. À reconsidérer si le nombre
     de postes/utilisateurs grandit significativement, ou si le rythme des faux positifs Defender
     devient trop pénible.

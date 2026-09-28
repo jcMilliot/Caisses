@@ -1,10 +1,8 @@
+use crate::commands::admin::{require_admin, AdminSession};
 use crate::db::Db;
 use crate::models::JournalEntree;
 use rusqlite::Connection;
 use tauri::State;
-
-// Trigramme autorisé à consulter le journal (décision 2026-09-02 : lecture réservée à AJC).
-const TRIGRAMME_LECTURE: &str = "AJC";
 
 /// Ajoute une entrée au journal d'audit. Best-effort : une erreur d'écriture du journal ne doit
 /// jamais faire échouer l'action métier qui l'a déclenchée — on l'ignore silencieusement.
@@ -35,13 +33,11 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<JournalEntree> {
     })
 }
 
-/// Liste le journal, du plus récent au plus ancien. Réservé au trigramme de lecture (AJC) —
-/// un autre trigramme reçoit une liste vide (pas d'erreur, la section reste juste inaccessible).
+/// Liste le journal, du plus récent au plus ancien. Réservé à la session admin (page Admin,
+/// mot de passe vérifié sur ce poste depuis le lancement).
 #[tauri::command]
-pub fn list_journal(db: State<Db>, trigramme: String, limite: Option<i64>) -> Result<Vec<JournalEntree>, String> {
-    if trigramme != TRIGRAMME_LECTURE {
-        return Ok(Vec::new());
-    }
+pub fn list_journal(db: State<Db>, session: State<AdminSession>, limite: Option<i64>) -> Result<Vec<JournalEntree>, String> {
+    require_admin(&session)?;
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     let limite = limite.unwrap_or(500).clamp(1, 5000);
@@ -53,11 +49,4 @@ pub fn list_journal(db: State<Db>, trigramme: String, limite: Option<i64>) -> Re
         .map_err(|e| e.to_string())?;
     let rows = stmt.query_map([limite], map_row).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
-}
-
-/// Indique si ce trigramme a accès à la consultation du journal (pour afficher/masquer l'entrée
-/// de menu côté UI). La vraie garde reste côté list_journal.
-#[tauri::command]
-pub fn peut_lire_journal(trigramme: String) -> bool {
-    trigramme == TRIGRAMME_LECTURE
 }
