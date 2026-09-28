@@ -115,6 +115,24 @@ export function appliquerReglesCaisse(etat: EtatCaisseRegles): Partial<EtatCaiss
   return patch;
 }
 
+interface EtatDimsStock {
+  longueur_mm: number;
+  largeur_mm: number;
+  hauteur_mm: number;
+  caisse_stock_id: number | null;
+}
+
+// Changer une dimension d'une caisse liée à une caisse en stock la détache de ce stock (les
+// dimensions ne correspondent plus) : le patch reçoit alors `caisse_stock_id: null`. Sans effet
+// si le patch choisit lui-même une caisse en stock (sélection, qui reprend ses dimensions).
+export function detacherStockSiDimsModifiees<P extends Partial<EtatDimsStock>>(actuel: EtatDimsStock, patch: P): P {
+  if (actuel.caisse_stock_id == null || "caisse_stock_id" in patch) return patch;
+  const dimsModifiees = (["longueur_mm", "largeur_mm", "hauteur_mm"] as const).some(
+    (champ) => champ in patch && patch[champ] !== actuel[champ],
+  );
+  return dimsModifiees ? { ...patch, caisse_stock_id: null } : patch;
+}
+
 export const AVERTISSEMENT_MOUSSE_4C =
   "Attention, mousse présente, prévoir 5cm de plus sur les côtés et sur la hauteur.";
 

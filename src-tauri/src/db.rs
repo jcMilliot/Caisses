@@ -94,6 +94,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0021_add_demande_caisse_terminaux",
         include_str!("../../migrations/0021_add_demande_caisse_terminaux.sql"),
     ),
+    (
+        "0022_add_compte_utilisateur_parametre",
+        include_str!("../../migrations/0022_add_compte_utilisateur_parametre.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {

@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { journalApi } from "../data/journal";
+import { formaterHorodatage } from "../domain/dates";
 import type { JournalEntree } from "../domain/types";
-
-interface Props {
-  trigramme: string;
-}
 
 const LIBELLE_ACTION: Record<string, string> = {
   creation: "Création",
@@ -30,15 +27,8 @@ const COULEUR_ACTION: Record<string, string> = {
   reference_suppression: "var(--danger-text)",
 };
 
-// Horodatage stocké en UTC (datetime('now')) → affiché en heure locale JJ/MM/AAAA HH:MM.
-function formaterHorodatage(iso: string): string {
-  const d = new Date(iso.replace(" ", "T") + "Z");
-  if (Number.isNaN(d.getTime())) return iso;
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-export default function Journal({ trigramme }: Props) {
+// Onglet « Journal » de la page Admin (session admin requise côté backend).
+export default function Journal() {
   const [entrees, setEntrees] = useState<JournalEntree[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtreTrigramme, setFiltreTrigramme] = useState("");
@@ -47,10 +37,10 @@ export default function Journal({ trigramme }: Props) {
   useEffect(() => {
     setLoading(true);
     journalApi
-      .list(trigramme, 1000)
+      .list(1000)
       .then(setEntrees)
       .finally(() => setLoading(false));
-  }, [trigramme]);
+  }, []);
 
   const trigrammes = useMemo(
     () => [...new Set(entrees.map((e) => e.trigramme))].sort(),
@@ -64,25 +54,11 @@ export default function Journal({ trigramme }: Props) {
   );
 
   return (
-    <div style={{ padding: "32px 24px" }}>
-      <div style={{ marginBottom: 20 }}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: "var(--accent)",
-            marginBottom: 4,
-          }}
-        >
-          Audit
-        </div>
-        <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Journal des actions</h1>
-        <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "6px 0 0" }}>
-          Création / suppression de caisses et sous-caisses, modification de dimensions, gestion des références.
-        </p>
-      </div>
+    <div>
+      <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 14px" }}>
+        Création / suppression de caisses et sous-caisses, modification de dimensions, gestion des références.
+        Historique conservé 2 mois.
+      </p>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
         <select value={filtreTrigramme} onChange={(e) => setFiltreTrigramme(e.target.value)} style={selectStyle}>
@@ -111,7 +87,7 @@ export default function Journal({ trigramme }: Props) {
       ) : filtrees.length === 0 ? (
         <p style={{ color: "var(--text-muted)" }}>Aucune entrée.</p>
       ) : (
-        <div className="panel" style={{ padding: 0, overflow: "auto", maxHeight: "calc(100vh - 220px)" }}>
+        <div className="panel" style={{ padding: 0, overflow: "auto", maxHeight: "calc(100vh - 300px)" }}>
           <table style={{ width: "100%", fontSize: 13, borderCollapse: "separate", borderSpacing: 0 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>

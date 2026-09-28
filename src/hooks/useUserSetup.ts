@@ -28,8 +28,8 @@ export function useUserSetup() {
     check();
   }, [check]);
 
-  const setTrigramme = useCallback(async (value: string) => {
-    await userApi.setTrigramme(value);
+  const setTrigramme = useCallback(async (value: string, motDePasse?: string) => {
+    await userApi.setTrigramme(value, motDePasse);
     setTrigrammeState(value.trim().toUpperCase());
     setStatus("ready");
   }, []);

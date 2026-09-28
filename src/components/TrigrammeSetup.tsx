@@ -1,25 +1,55 @@
 import { useState } from "react";
+import { adminApi, type CompteStatus } from "../data/admin";
 
 interface Props {
-  onSubmit: (trigramme: string) => Promise<void>;
+  onSubmit: (trigramme: string, motDePasse?: string) => Promise<void>;
 }
 
 export default function TrigrammeSetup({ onSubmit }: Props) {
   const [valeur, setValeur] = useState("");
+  // Renseigné quand le trigramme saisi est protégé : on passe à l'étape mot de passe.
+  const [compte, setCompte] = useState<CompteStatus | null>(null);
+  const [motDePasse, setMotDePasse] = useState("");
+  const [confirmation, setConfirmation] = useState("");
   const [erreur, setErreur] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const creation = compte !== null && !compte.mot_de_passe_defini;
 
   async function handleSubmit() {
     setBusy(true);
     setErreur(null);
     try {
-      await onSubmit(valeur);
+      if (compte === null) {
+        const status = await adminApi.compteStatus(valeur);
+        if (status.requiert_mot_de_passe) {
+          setCompte(status);
+          return;
+        }
+        await onSubmit(valeur);
+      } else {
+        if (creation && motDePasse !== confirmation) {
+          setErreur("Les deux mots de passe ne correspondent pas");
+          return;
+        }
+        await onSubmit(valeur, motDePasse);
+      }
     } catch (e) {
       setErreur(String(e));
     } finally {
       setBusy(false);
     }
   }
+
+  function revenir() {
+    setCompte(null);
+    setMotDePasse("");
+    setConfirmation("");
+    setErreur(null);
+  }
+
+  const peutValider =
+    compte === null ? valeur.length === 3 : motDePasse.length > 0 && (!creation || confirmation.length > 0);
 
   return (
     <div
@@ -34,26 +64,68 @@ export default function TrigrammeSetup({ onSubmit }: Props) {
       }}
     >
       <div className="panel" style={{ width: 480, maxWidth: "92vw", padding: 32, boxShadow: "var(--shadow-lg)" }}>
-        <h1 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>Qui êtes-vous ?</h1>
-        <p style={{ margin: "0 0 20px", fontSize: 13.5, color: "var(--text-muted)" }}>
-          Saisissez votre trigramme (3 lettres). Il permet d'identifier qui travaille sur une
-          affaire ou un écran quand plusieurs personnes utilisent l'application. Ce choix n'est
-          demandé qu'une seule fois sur ce poste.
-        </p>
-        <input
-          className="input mono"
-          value={valeur}
-          maxLength={3}
-          autoFocus
-          onChange={(e) => setValeur(e.target.value.toUpperCase())}
-          onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-          style={{ width: "100%", marginBottom: 16, fontSize: 18, textAlign: "center", letterSpacing: "0.2em" }}
-        />
+        {compte === null ? (
+          <>
+            <h1 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>Qui êtes-vous ?</h1>
+            <p style={{ margin: "0 0 20px", fontSize: 13.5, color: "var(--text-muted)" }}>
+              Saisissez votre trigramme (3 lettres). Il permet d'identifier qui travaille sur une
+              affaire ou un écran quand plusieurs personnes utilisent l'application. Ce choix n'est
+              demandé qu'une seule fois sur ce poste.
+            </p>
+            <input
+              className="input mono"
+              value={valeur}
+              maxLength={3}
+              autoFocus
+              onChange={(e) => setValeur(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === "Enter" && peutValider && handleSubmit()}
+              style={{ width: "100%", marginBottom: 16, fontSize: 18, textAlign: "center", letterSpacing: "0.2em" }}
+            />
+          </>
+        ) : (
+          <>
+            <h1 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>
+              {creation ? `Créer le mot de passe de ${valeur}` : `Mot de passe de ${valeur}`}
+            </h1>
+            <p style={{ margin: "0 0 20px", fontSize: 13.5, color: "var(--text-muted)" }}>
+              {creation
+                ? "Ce trigramme donne accès à la page Admin. Choisissez un mot de passe (6 caractères minimum) : il sera demandé sur chaque poste qui choisit ce trigramme, et à l'ouverture de la page Admin."
+                : "Ce trigramme est protégé par un mot de passe."}
+            </p>
+            <input
+              className="input"
+              type="password"
+              value={motDePasse}
+              autoFocus
+              placeholder="Mot de passe"
+              onChange={(e) => setMotDePasse(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && peutValider && handleSubmit()}
+              style={{ width: "100%", marginBottom: 10 }}
+            />
+            {creation && (
+              <input
+                className="input"
+                type="password"
+                value={confirmation}
+                placeholder="Confirmer le mot de passe"
+                onChange={(e) => setConfirmation(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && peutValider && handleSubmit()}
+                style={{ width: "100%", marginBottom: 10 }}
+              />
+            )}
+            <div style={{ height: 6 }} />
+          </>
+        )}
         {erreur && (
           <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--danger, #c0392b)" }}>{erreur}</p>
         )}
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={busy || valeur.length !== 3}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          {compte !== null && (
+            <button className="btn" onClick={revenir} disabled={busy}>
+              ← Autre trigramme
+            </button>
+          )}
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={busy || !peutValider}>
             {busy ? "…" : "Continuer"}
           </button>
         </div>

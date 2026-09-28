@@ -1,11 +1,11 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Accueil from "./routes/Accueil";
 import AffairesList from "./routes/AffairesList";
 import AffaireDetail from "./routes/AffaireDetail";
 import DemandesList from "./routes/DemandesList";
 import CaissesStockList from "./routes/CaissesStockList";
 import DemandesAchatsList from "./routes/DemandesAchatsList";
-import Journal from "./routes/Journal";
+import Admin from "./routes/Admin";
 import Documentation from "./routes/Documentation";
 import CreerAffaireDialog from "./components/CreerAffaireDialog";
 import FirstLaunchSetup from "./components/FirstLaunchSetup";
@@ -13,15 +13,17 @@ import TrigrammeSetup from "./components/TrigrammeSetup";
 import UpdateAvailableDialog from "./components/UpdateAvailableDialog";
 import ConfirmDialogHost from "./components/ConfirmDialogHost";
 import { confirmerAction } from "./data/confirm";
+import { adminApi, TRIGRAMME_ADMIN } from "./data/admin";
 import { affairesApi } from "./data/affaires";
 import { caissesApi } from "./data/caisses";
 import { demandeCaisseApi } from "./data/demandeCaisse";
 import { useDbSetup } from "./hooks/useDbSetup";
 import { useUserSetup } from "./hooks/useUserSetup";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
+import { useBackupAuto } from "./hooks/useBackupAuto";
 import type { Demande, DemandeCaisse } from "./domain/types";
 
-type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "journal" | "documentation";
+type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "admin" | "documentation";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "demandes", label: "Gestion des caisses" },
@@ -30,13 +32,16 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "achats", label: "Demandes d'achats" },
 ];
 
-// Journal d'audit : accessible au seul trigramme AJC (garde aussi appliquée côté backend).
-const TRIGRAMME_JOURNAL = "AJC";
-
 export default function App() {
   const { status: dbStatus, chooseFolder } = useDbSetup();
   const { status: userStatus, trigramme, setTrigramme } = useUserSetup();
   const { update, installing, confirmInstall, dismiss } = useUpdateCheck(dbStatus === "ready");
+  const utilisateurPret = dbStatus === "ready" && userStatus === "ready" ? trigramme : null;
+  useBackupAuto(utilisateurPret);
+  // Alimente la liste des utilisateurs de la page Admin (dernière connexion).
+  useEffect(() => {
+    if (utilisateurPret) adminApi.enregistrerConnexion(utilisateurPret).catch(() => {});
+  }, [utilisateurPret]);
   const [section, setSection] = useState<Section>("accueil");
   const [affaireId, setAffaireId] = useState<number | null>(null);
   const [creationAffaire, setCreationAffaire] = useState<Demande | null>(null);
@@ -217,19 +222,21 @@ export default function App() {
           >
             Documentation
           </button>
-          {trigramme === TRIGRAMME_JOURNAL && (
+          {trigramme === TRIGRAMME_ADMIN && (
             <button
-              className={section === "journal" ? "btn btn-primary btn-sm" : "btn btn-sm"}
-              onClick={() => handleSelectSection("journal")}
+              className={section === "admin" ? "btn btn-primary btn-sm" : "btn btn-sm"}
+              onClick={() => handleSelectSection("admin")}
             >
-              Journal
+              Admin
             </button>
           )}
         </nav>
       )}
 
       <div style={{ flex: 1 }}>
-        {section === "accueil" && <Accueil onSelect={handleSelectSection} />}
+        {section === "accueil" && (
+          <Accueil onSelect={handleSelectSection} estAdmin={trigramme === TRIGRAMME_ADMIN} />
+        )}
         {section === "demandes" && (
           <DemandesList
             onSimulerAffaire={handleSimulerAffaire}
@@ -245,7 +252,7 @@ export default function App() {
           ))}
         {section === "stock" && <CaissesStockList trigramme={trigramme} />}
         {section === "achats" && <DemandesAchatsList trigramme={trigramme} />}
-        {section === "journal" && trigramme === TRIGRAMME_JOURNAL && <Journal trigramme={trigramme} />}
+        {section === "admin" && trigramme === TRIGRAMME_ADMIN && <Admin trigramme={trigramme} />}
         {section === "documentation" && <Documentation />}
       </div>
 

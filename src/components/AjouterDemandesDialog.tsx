@@ -9,6 +9,7 @@ import {
   AVERTISSEMENT_MOUSSE_4C,
   ouverturesAutorisees,
   appliquerReglesCaisse,
+  detacherStockSiDimsModifiees,
 } from "../domain/demandeOptions";
 import { dateEstDansLePasse } from "../domain/dates";
 import SelectOuAutre from "./SelectOuAutre";
@@ -57,7 +58,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
   const terminaux = optionsListe("terminaux", optionsPersonnalisees);
 
   function majLigne(index: number, patch: Partial<NewDemande>) {
-    setLignes((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+    setLignes((prev) => prev.map((l, i) => (i === index ? { ...l, ...detacherStockSiDimsModifiees(l, patch) } : l)));
     setErreurValidation(null);
   }
 
@@ -394,8 +395,15 @@ function Champ({ label, span, children }: { label: string; span?: number; childr
 
 // Saisie d'une dimension en mètres : state texte local pour ne pas être gêné par un input
 // numérique contrôlé (« 0.5 » restait bloqué à « 0 » avec value = n/1000 || "").
+// Resynchronisé quand la valeur change de l'extérieur (sélection d'une caisse en stock), sauf
+// si le texte saisi correspond déjà à cette valeur (« 0. » en cours de frappe reste intact).
 function DimInput({ valeurMm, onChangeMm }: { valeurMm: number; onChangeMm: (mm: number) => void }) {
-  const [texte, setTexte] = useState(valeurMm === 0 ? "" : String(valeurMm / 1000));
+  const [texte, setTexte] = useState(texteDim(valeurMm));
+  const [valeurPrecedente, setValeurPrecedente] = useState(valeurMm);
+  if (valeurMm !== valeurPrecedente) {
+    setValeurPrecedente(valeurMm);
+    if (mmDepuisTexte(texte) !== valeurMm) setTexte(texteDim(valeurMm));
+  }
   return (
     <input
       type="text"
@@ -406,11 +414,19 @@ function DimInput({ valeurMm, onChangeMm }: { valeurMm: number; onChangeMm: (mm:
       onFocus={(e) => e.target.select()}
       onChange={(e) => {
         setTexte(e.target.value);
-        const n = Number(e.target.value.replace(",", "."));
-        onChangeMm(Number.isFinite(n) ? Math.round(n * 1000) : 0);
+        onChangeMm(mmDepuisTexte(e.target.value));
       }}
     />
   );
+}
+
+function texteDim(mm: number): string {
+  return mm === 0 ? "" : String(mm / 1000);
+}
+
+function mmDepuisTexte(texte: string): number {
+  const n = Number(texte.replace(",", "."));
+  return Number.isFinite(n) ? Math.round(n * 1000) : 0;
 }
 
 const labelStyle: React.CSSProperties = {

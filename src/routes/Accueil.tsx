@@ -4,10 +4,10 @@ import { dateIsoVersAffichage } from "../domain/dates";
 import { caissesACommanderCetteSemaine, caissesARapatrierCetteSemaine, type AffaireACommander } from "../domain/caissesACommander";
 import type { Demande } from "../domain/types";
 
-type Section = "demandes" | "simulations" | "stock" | "achats";
+type Section = "demandes" | "simulations" | "stock" | "achats" | "admin" | "documentation";
 
 interface CardDef {
-  id: Section;
+  id: Exclude<Section, "admin" | "documentation">;
   titre: string;
   description: string;
   icone: string;
@@ -42,9 +42,10 @@ const CARDS: CardDef[] = [
 
 interface Props {
   onSelect: (section: Section) => void;
+  estAdmin: boolean;
 }
 
-export default function Accueil({ onSelect }: Props) {
+export default function Accueil({ onSelect, estAdmin }: Props) {
   const [demandes, setDemandes] = useState<Demande[] | null>(null);
 
   useEffect(() => {
@@ -55,6 +56,17 @@ export default function Accueil({ onSelect }: Props) {
   const aRapatrier = demandes ? caissesARapatrierCetteSemaine(demandes) : [];
 
   return (
+    <>
+    {/* Pas de bandeau sur l'accueil : Admin et Documentation y sont posés aux coins de l'écran
+        (Admin en haut à droite comme dans le bandeau des autres pages). */}
+    {estAdmin && (
+      <button className="btn btn-sm" onClick={() => onSelect("admin")} style={{ position: "fixed", top: 16, right: 24, zIndex: 50 }}>
+        Admin
+      </button>
+    )}
+    <button className="btn btn-sm" onClick={() => onSelect("documentation")} style={{ position: "fixed", bottom: 16, left: 24, zIndex: 50 }}>
+      Documentation
+    </button>
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "48px 24px", display: "flex", gap: 48 }}>
       <div style={{ flex: "0 0 auto", width: 520 }}>
         <h1 style={{ fontSize: 28, fontWeight: 700, margin: "0 0 24px", letterSpacing: "-0.01em" }}>Accueil</h1>
@@ -97,6 +109,7 @@ export default function Accueil({ onSelect }: Props) {
         <ListeAffaires titre="Caisses à rapatrier cette semaine" affaires={aRapatrier} chargement={demandes === null} />
       </div>
     </div>
+    </>
   );
 }
 
