@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
 // Documentation du processus métier, écran statique (pas d'appel data/).
-// Contenu fourni par l'utilisateur le 2026-09-03, mis en forme le 2026-09-04.
-// À compléter au fur et à mesure : captures d'écran à intégrer par section (cf. commentaires
-// <!-- capture: ... --> laissés en repère), sections encore vides à étoffer.
+// Contenu fourni par l'utilisateur le 2026-09-03, mis en forme le 2026-09-04, réécrit le
+// 2026-09-28 d'après son nouveau texte. Ne pas y mentionner le journal ni la page Admin (demande
+// de l'utilisateur, 2026-09-28).
 
 interface SectionDoc {
   id: string;
@@ -18,7 +18,8 @@ const SOMMAIRE: SectionDoc[] = [
   { id: "commande", titre: "5. Passer la commande" },
   { id: "stock", titre: "Caisses en stock" },
   { id: "references", titre: "Gérer les références" },
-  { id: "verrouillage", titre: "Verrouillage & demande de crayon" },
+  { id: "verrouillage", titre: "Verrouillage & demande d'écriture" },
+  { id: "base", titre: "Base de données et sauvegarde" },
 ];
 
 export default function Documentation() {
@@ -127,47 +128,90 @@ export default function Documentation() {
             Comment ça marche
           </h1>
           <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "6px 0 0" }}>
-            Le processus complet, de la demande de caisse jusqu'à la commande. Cette page se
-            complète au fil des sessions — certaines parties restent volontairement courtes en
-            attendant des captures d'écran.
+            Le processus complet, de la demande de caisse jusqu'à la commande.
           </p>
         </div>
 
-        <Bloc id="gestion-caisses" titre="1. Gestion des caisses (ex-Demandes) — point de départ">
+        <Bloc id="gestion-caisses" titre="1. Gestion des caisses — point de départ">
+          <h3>La création</h3>
           <ul>
             <li>
-              « + Créer une nouvelle caisse » : le nom d'affaire et la quantité sont{" "}
-              <strong>obligatoires</strong> (champ au fond orangé tant qu'ils sont vides). Le
+              « + Créer une nouvelle caisse » : le nom d'affaire, la quantité et la date de picking
+              sont <strong>obligatoires</strong> (champ au fond orangé tant qu'ils sont vides). Le
               reste des informations peut être renseigné tout de suite ou plus tard, directement
               dans le tableau.
             </li>
             <li>
-              Dans le dialogue de création : le bouton s'appelle « Créer N caisse(s) » quand il
-              n'y en a qu'une, ou « Ajouter une caisse » pour en saisir plusieurs d'un coup avant
-              de valider.
+              Selon le type d'envoi de la caisse, le traitement « NIMP15 » et le type d'ouverture
+              sont renseignés automatiquement (une caisse 4C s'ouvre toujours par dessus), ainsi
+              qu'une information sur la taille maximum et sur la présence d'une mousse de
+              protection, qui réduit le volume disponible de la caisse.
             </li>
             <li>
-              Une fois créées, les caisses apparaissent dans le tableau principal : édition
-              inline (clic sur une cellule), cases à cocher pour les colonnes oui/non, tri par
-              colonne, filtres, et un menu « Options » (dont l'inversion de l'ordre du tableau).
+              La sélection d'une caisse de stock ou de récup reprend automatiquement ses dimensions
+              et son type d'ouverture (qui n'est alors plus modifiable), et coche « Cde passée sur
+              achat stock ». Pas de caisse de stock pour un envoi 4B ou 4C.
             </li>
             <li>
-              Pour ajouter une autre caisse à une affaire déjà présente dans le tableau : clic
-              droit sur une de ses lignes → « Créer une nouvelle caisse ». La caisse « enfant »
-              hérite automatiquement de la caisse mère : type d'envoi, date de picking,
-              traitement (si renseigné).
+              Pour créer plusieurs caisses d'un coup, cliquer sur « + Ajouter une caisse » et
+              reproduire le même schéma que précédemment.
+            </li>
+            <li>Une fois créées, les caisses apparaissent dans le tableau principal.</li>
+          </ul>
+
+          <h3>La gestion</h3>
+          <ul>
+            <li>
+              Le tableau est trié par défaut de la date de picking la plus lointaine dans le futur
+              à la plus ancienne ; l'ordre se modifie dans le bouton « Options ».
+            </li>
+            <li>
+              Les informations se modifient directement dans le tableau, et certaines modifications
+              en déclenchent d'autres : changer le type d'envoi agit sur le type d'ouverture et le
+              traitement, sélectionner une caisse de stock agit sur les dimensions et le type
+              d'ouverture, etc. Les modifications ne sont enregistrées qu'au clic sur
+              « Enregistrer » (« Annuler » revient à l'état enregistré).
+            </li>
+            <li>
+              La première colonne contient des cases à cocher : dès qu'une ligne est cochée, des
+              boutons permettent de valider ou de dévalider la livraison de toute la sélection.
+            </li>
+            <li>
+              La deuxième colonne, « OK pour être commandée », génère l'affiche à copier dans le
+              mail de demande d'achat, à condition que les informations nécessaires soient
+              remplies (voir « Passer la commande »).
+            </li>
+            <li>
+              Sur la dernière colonne :
+              <ul>
+                <li>
+                  <strong>Livré</strong> valide la livraison de la caisse (« Dévalider » pour
+                  revenir en arrière). Une caisse livrée ne peut plus être modifiée tant qu'elle
+                  n'a pas été dévalidée.
+                </li>
+                <li>
+                  <strong>+ Caisse</strong> ajoute une nouvelle caisse à cette affaire. Elle hérite
+                  de la caisse mère : type d'envoi, date de picking, traitement (s'il y en a un).
+                </li>
+                <li>
+                  <strong>Suppr.</strong> supprime l'affaire du tableau, après confirmation.
+                </li>
+                <li>
+                  <strong>Simuler</strong> ouvre la ou les caisses de cette affaire dans la page
+                  Simulations, pour y ajouter les articles, estimer le volume et vérifier que la
+                  caisse correspond bien au besoin.
+                </li>
+              </ul>
             </li>
           </ul>
-          {/* capture: dialogue "Créer une nouvelle caisse" */}
-          {/* capture: clic droit sur une ligne du tableau Demandes */}
         </Bloc>
 
         <Bloc id="simuler" titre="2. Simuler l'affaire">
           <ul>
             <li>
-              Depuis le tableau Demandes : clic droit sur une ligne → « Simuler l'affaire ». Si
-              l'affaire n'existe pas encore côté Simulations, un message propose de la créer avec
-              une caisse reprenant directement les dimensions saisies dans le tableau.
+              Depuis le tableau Gestion des caisses, au clic sur « Simuler » : si l'affaire n'existe
+              pas encore dans Simulations, une proposition de création apparaît, avec une caisse
+              reprenant les dimensions et le type d'envoi du tableau.
             </li>
             <li>
               L'écran Simulations affiche un bandeau récapitulatif en haut de page (dimensions
@@ -182,10 +226,10 @@ export default function Documentation() {
             </li>
             <li>
               Le bouton « + Nouvelle caisse » permet d'en ajouter d'autres à la volée. Les
-              dimensions restent synchronisées dans les deux sens avec le tableau Demandes.
+              dimensions restent synchronisées dans les deux sens avec le tableau Gestion des
+              caisses.
             </li>
           </ul>
-          {/* capture: bandeau récap + CaisseCard */}
         </Bloc>
 
         <Bloc id="sealedair" titre="3. Récupérer les articles depuis l'intranet SealedAir">
@@ -207,17 +251,16 @@ export default function Documentation() {
               pour dimensionner les caisses.
             </li>
           </ul>
-          {/* capture: export SealedAir */}
-          {/* capture: fichier "Aide colisage dimensions V1" */}
         </Bloc>
 
         <Bloc id="assigner" titre="4. Assigner et vérifier">
           <ul>
             <li>
               Assigner des articles à une caisse : sélection multiple + « Assigner à → », glisser-
-              déposer directement sur la carte de la caisse, ou création d'une caisse à la volée
-              depuis la sélection. Le taux de remplissage indique si le volume rentre, avec un
-              seuil d'alerte réglable par affaire (70 % par défaut) et surchargeable par caisse.
+              déposer directement sur la carte de la caisse (tous les articles cochés partent
+              ensemble si l'on attrape l'un d'eux), ou création d'une caisse à la volée depuis la
+              sélection. Le taux de remplissage indique si le volume rentre, avec un seuil
+              d'alerte réglable par affaire (70 % par défaut) et surchargeable par caisse.
             </li>
             <li>
               Multi-caisses : répartir les articles entre plusieurs caisses d'une même affaire —
@@ -228,15 +271,16 @@ export default function Documentation() {
               caisse, et un volume total d'affaire supérieur à la capacité cumulée des caisses.
             </li>
           </ul>
-          {/* capture: sélection + Assigner à */}
         </Bloc>
 
         <Bloc id="commande" titre="5. Passer la commande">
           <ul>
             <li>
-              Une fois la simulation validée et la date de commande atteinte : cocher « OK CDE »
-              sur l'affaire génère l'affiche destinée au service Achat (les éventuelles
-              multi-caisses sont incluses dans la même demande).
+              Une fois la simulation validée et la date de commande atteinte : cocher « OK pour
+              être commandée » sur l'affaire génère l'affiche destinée au service Achat (les
+              éventuelles multi-caisses sont incluses dans la même demande). La case ne se coche
+              que si l'affaire, les trois dimensions, la quantité, la date demandée à S2C et le
+              type d'ouverture sont renseignés ; sinon, un message indique ce qui manque.
             </li>
             <li>
               Dans la section « Demandes d'achats » : copier une affiche individuellement, ou en
@@ -246,11 +290,11 @@ export default function Documentation() {
               demande est correctement remplie.
             </li>
             <li>
-              Après que la commande a été passée : sélectionner une ou plusieurs affaires puis
-              « Valider la sélection », ou clic droit → « Valider la caisse » pour une seule ligne.
+              Lorsque la ou les caisses ont été livrées : sélectionner une ou plusieurs affaires et
+              cliquer sur le bouton « Valider la sélection », ou cliquer sur le bouton « Livré » de
+              la dernière colonne du tableau, validant ainsi l'affaire.
             </li>
           </ul>
-          {/* capture: affiche générée + copie groupée */}
         </Bloc>
 
         <Bloc id="stock" titre="Caisses en stock (section indépendante)">
@@ -261,13 +305,34 @@ export default function Documentation() {
               indicative.
             </li>
             <li>
-              Les caisses « de récupération » peuvent être affectées à une affaire : depuis la
-              création de la demande ou directement dans le tableau Demandes, en sélectionnant
-              une caisse en stock, ses dimensions sont reprises automatiquement. Une caisse de
-              récup ne peut être affectée qu'à une seule affaire à la fois ; une fois l'affaire
-              validée, elle redevient disponible ou n'est plus proposée (selon le flux en cours).
+              Les caisses « de récupération » peuvent être affectées à une affaire : à la création
+              de la caisse ou directement dans le tableau Gestion des caisses, en sélectionnant la
+              caisse en stock, ses dimensions et son type d'ouverture sont repris
+              automatiquement. Une caisse de récup ne peut être affectée qu'à une seule affaire à
+              la fois ; une fois l'affaire validée, elle n'est plus proposée.
             </li>
-            <li>CRUD complet : nom, dimensions, quantité, observations, édition inline, suppression, verrouillage multi-poste comme les autres écrans.</li>
+            <li>
+              Le tableau est en lecture seule : il affiche nom, dimensions, type d'ouverture,
+              observations et l'affaire à laquelle chaque caisse est affectée.
+            </li>
+          </ul>
+          <h3>Gérer les caisses</h3>
+          <ul>
+            <li>
+              Le bouton « Gérer les caisses » est le seul endroit où l'on crée, modifie ou supprime
+              une caisse en stock : nom, dimensions, type d'ouverture (« Par dessus », « Par
+              devant » ou « Par dessus et par devant ») et observations.
+            </li>
+            <li>
+              Modifier les dimensions ou le type d'ouverture d'une caisse déjà sélectionnée dans
+              Gestion des caisses les reporte, après confirmation, sur les caisses pas encore
+              livrées qui l'utilisent (et sur leurs caisses dans Simulations). Les caisses déjà
+              livrées gardent leurs valeurs.
+            </li>
+            <li>
+              Supprimer une caisse encore utilisée affiche un avertissement : les lignes
+              concernées gardent leurs dimensions, mais la caisse n'y est plus sélectionnée.
+            </li>
           </ul>
         </Bloc>
 
@@ -275,7 +340,7 @@ export default function Documentation() {
           <ul>
             <li>
               Contrôle le contenu des listes déroulantes des colonnes Moteurs / Module linéaire /
-              Terminaux, utilisées à la fois dans l'édition inline du tableau et dans le dialogue
+              Terminaux, utilisées à la fois dans l'édition du tableau et dans le dialogue
               « + Créer une nouvelle caisse ».
             </li>
             <li>
@@ -292,7 +357,7 @@ export default function Documentation() {
           </ul>
         </Bloc>
 
-        <Bloc id="verrouillage" titre="Verrouillage multi-poste et demande de crayon">
+        <Bloc id="verrouillage" titre="Verrouillage multi-poste et demande d'écriture">
           <ul>
             <li>
               Plusieurs postes peuvent travailler sur la même base de données (dossier réseau
@@ -300,9 +365,8 @@ export default function Documentation() {
               même moment.
             </li>
             <li>
-              Portée : un verrou couvre l'écran entier pour Demandes, Caisses en stock et
-              Demandes d'achats ; pour Simulations, le verrou est pris par affaire précise —
-              jamais plus finement.
+              Portée : un verrou couvre l'écran entier pour Gestion des caisses, Caisses en stock
+              et Demandes d'achats ; pour Simulations, le verrou est pris par affaire précise.
             </li>
             <li>
               La prise du verrou est automatique à l'ouverture de l'écran ou de l'affaire — aucune
@@ -310,23 +374,45 @@ export default function Documentation() {
               minutes sans activité (souris ou clavier).
             </li>
             <li>
-              Quand un autre poste détient déjà la main, un bandeau « verrouillé par XYZ »
-              s'affiche : l'écran reste consultable mais passe en lecture seule, sans redirection
-              forcée et sans perte de la saisie en cours.
+              Quand un autre poste détient déjà la main, un bandeau « Verrouillé en écriture par
+              XYZ » s'affiche : l'écran reste consultable mais passe en lecture seule, sans
+              redirection forcée et sans perte de la saisie en cours.
             </li>
             <li>
-              Le bouton « Demander le crayon » du bandeau envoie une demande au titulaire actuel,
+              Le bouton « Demande d'écriture » du bandeau envoie une demande au titulaire actuel,
               qui voit apparaître une bannière lui permettant d'approuver ou de refuser. Si le
               titulaire ne répond pas et que son poste ne donne plus signe d'activité, le
               demandeur reprend automatiquement la main après 90 secondes — sans attendre les 5
               minutes d'expiration classique du verrou.
             </li>
+          </ul>
+        </Bloc>
+
+        <Bloc id="base" titre="Base de données et sauvegarde">
+          <ul>
             <li>
-              Limite connue : il n'existe pas de droits différenciés par utilisateur — une fois la
-              main obtenue, toutes les actions sont possibles pour tout le monde.
+              Toutes les données (caisses, affaires, articles, caisses en stock, références) sont
+              dans un seul fichier, <strong>caisses.sqlite3</strong>, placé dans le dossier choisi
+              au premier lancement de l'application. Ce dossier peut être sur le réseau pour que
+              plusieurs postes partagent les mêmes données.
+            </li>
+            <li>
+              L'enregistrement est immédiat dans Simulations et Caisses en stock. Dans Gestion des
+              caisses, les modifications restent en attente jusqu'au clic sur « Enregistrer ».
+            </li>
+            <li>
+              La base est copiée automatiquement (chaque jour ou chaque semaine) dans un dossier de
+              sauvegarde, sous le nom <strong>caisses_JJ-MM-AAAA_HH-MM-SS.sqlite3</strong>. La
+              copie est faite par le premier poste ouvert au moment où elle est due, un seul poste
+              à la fois ; les plus anciennes sont supprimées au-delà d'un nombre de copies fixé
+              (30 par défaut).
+            </li>
+            <li>
+              En cas de problème, la base peut être remplacée par une sauvegarde plus ancienne.
+              Cette opération est réservée à l'administrateur et nécessite que l'application soit
+              fermée sur tous les autres postes.
             </li>
           </ul>
-          {/* capture: bandeau "verrouillé par XYZ" + bouton "Demander le crayon" */}
         </Bloc>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { confirmerAction } from "../data/confirm";
 import type { NewDemande, CaisseStock, OptionListe } from "../domain/types";
 import {
@@ -10,6 +10,9 @@ import {
   ouverturesAutorisees,
   appliquerReglesCaisse,
   detacherStockSiDimsModifiees,
+  ouvertureImposee,
+  motifOuvertureImposee,
+  stockAutorisePourEnvoi,
 } from "../domain/demandeOptions";
 import { dateEstDansLePasse } from "../domain/dates";
 import SelectOuAutre from "./SelectOuAutre";
@@ -53,30 +56,57 @@ function ligneVide(): NewDemande {
 export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalisees, onAjouter, onClose }: Props) {
   const [lignes, setLignes] = useState<NewDemande[]>([ligneVide()]);
   const [erreurValidation, setErreurValidation] = useState<string | null>(null);
+  // Valeur de la date demandée à S2C à l'entrée dans le champ (un seul champ a le focus à la fois).
+  const dateS2cAvantSaisie = useRef("");
   const moteurs = optionsListe("moteurs", optionsPersonnalisees);
   const modulesLineaires = optionsListe("module_lineaire", optionsPersonnalisees);
   const terminaux = optionsListe("terminaux", optionsPersonnalisees);
 
   function majLigne(index: number, patch: Partial<NewDemande>) {
-    setLignes((prev) => prev.map((l, i) => (i === index ? { ...l, ...detacherStockSiDimsModifiees(l, patch) } : l)));
+    setLignes((prev) =>
+      prev.map((l, i) => (i === index ? synchroCdeAchatStock(l, { ...l, ...detacherStockSiDimsModifiees(l, patch) }) : l)),
+    );
     setErreurValidation(null);
+  }
+
+  // Une caisse en stock sélectionnée → commande passée sur achat stock (ACHSTOCK) cochée ; retirée
+  // (quelle qu'en soit la raison) → décochée.
+  function synchroCdeAchatStock(avant: NewDemande, apres: NewDemande): NewDemande {
+    if (avant.caisse_stock_id == null && apres.caisse_stock_id != null) {
+      return { ...apres, cde_passee_achat_stock: true, cde_passee_affaire: false };
+    }
+    if (avant.caisse_stock_id != null && apres.caisse_stock_id == null) {
+      return { ...apres, cde_passee_achat_stock: false };
+    }
+    return apres;
   }
 
   // Avertissement (pas de blocage strict) si la date demandée à S2C est dans le passé — saisie
   // manuelle uniquement, le collage Excel peut légitimement importer des dates historiques.
-  async function changerDateDemandeeS2c(index: number, valeur: string) {
-    if (dateEstDansLePasse(valeur)) {
+  // Vérifiée en sortie du champ, pas à chaque frappe : pendant la saisie de l'année (« 2 », « 20 »…)
+  // la date est transitoirement dans le passé, et le dialogue ouvert en cours de frappe ou de
+  // sélection au calendrier faisait perdre la saisie. Refus → retour à la valeur d'avant.
+  async function verifierDateDemandeeS2c(index: number, valeur: string, valeurAvant: string) {
+    if (valeur === valeurAvant || !dateEstDansLePasse(valeur)) return;
+    const confirme = await confirmerAction(
+      "La date demandée à S2C est dans le passé. Confirmer cette date ?",
+      "Date passée",
+    );
+    if (!confirme) majLigne(index, { date_demandee_s2c: valeurAvant });
+  }
+
+  // Règles dynamiques (ouverture autorisée, NIMP15, contre-plaqué, pas de stock en 4B/4C) —
+  // cf. appliquerReglesCaisse.
+  async function changerTypeEnvoi(index: number, valeur: string) {
+    const ligne = lignes[index];
+    if (ligne.caisse_stock_id != null && !stockAutorisePourEnvoi(valeur)) {
+      const nomStock = caissesStock.find((c) => c.id === ligne.caisse_stock_id)?.nom ?? "sélectionnée";
       const confirme = await confirmerAction(
-        "La date demandée à S2C est dans le passé. Confirmer cette date ?",
-        "Date passée",
+        `Pas de caisse en stock pour un envoi 4B / 4C : la caisse « ${nomStock} » sera désélectionnée. Continuer ?`,
+        "Caisse en stock",
       );
       if (!confirme) return;
     }
-    majLigne(index, { date_demandee_s2c: valeur });
-  }
-
-  // Règles dynamiques (ouverture autorisée, NIMP15, contre-plaqué) — cf. appliquerReglesCaisse.
-  function changerTypeEnvoi(index: number, valeur: string) {
     setErreurValidation(null);
     setLignes((prev) =>
       prev.map((l, i) => {
@@ -87,7 +117,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
           traitement: l.traitement,
           caisse_stock_id: l.caisse_stock_id,
         });
-        return { ...l, type_envoi_caisse: valeur, ...regles };
+        return synchroCdeAchatStock(l, { ...l, type_envoi_caisse: valeur, ...regles });
       }),
     );
   }
@@ -217,16 +247,26 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
               </Champ>
 
               <Champ label="Type ouverture">
-                <SelectOuAutre
-                  valeur={ligne.type_ouverture}
-                  options={ouverturesAutorisees(ligne)}
-                  onChange={(v) => majLigne(index, { type_ouverture: v })}
-                />
+                {ouvertureImposee(ligne) !== null ? (
+                  <input value={ouvertureImposee(ligne)!} disabled title={motifOuvertureImposee(ligne)} style={inputStyle} />
+                ) : (
+                  <SelectOuAutre
+                    valeur={ligne.type_ouverture}
+                    options={ouverturesAutorisees(ligne)}
+                    onChange={(v) => majLigne(index, { type_ouverture: v })}
+                  />
+                )}
               </Champ>
 
               <Champ label="Stock">
                 <select
                   value={ligne.caisse_stock_id ?? ""}
+                  disabled={!stockAutorisePourEnvoi(ligne.type_envoi_caisse) && ligne.caisse_stock_id == null}
+                  title={
+                    stockAutorisePourEnvoi(ligne.type_envoi_caisse)
+                      ? undefined
+                      : "Pas de caisse en stock pour un envoi 4B / 4C"
+                  }
                   onChange={(e) => {
                     if (e.target.value === "") {
                       majLigne(index, { caisse_stock_id: null });
@@ -239,8 +279,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
                       longueur_mm: cs.longueur_mm,
                       largeur_mm: cs.largeur_mm,
                       hauteur_mm: cs.hauteur_mm,
-                      // Caisse en stock → type d'ouverture forcé « Par dessus ».
-                      type_ouverture: ouverturesAutorisees({ ...ligne, caisse_stock_id: cs.id })[0],
+                      type_ouverture: cs.type_ouverture,
                     });
                   }}
                   style={inputStyle}
@@ -291,7 +330,9 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
                 <input
                   type="date"
                   value={ligne.date_demandee_s2c}
-                  onChange={(e) => changerDateDemandeeS2c(index, e.target.value)}
+                  onFocus={() => (dateS2cAvantSaisie.current = ligne.date_demandee_s2c)}
+                  onChange={(e) => majLigne(index, { date_demandee_s2c: e.target.value })}
+                  onBlur={(e) => verifierDateDemandeeS2c(index, e.target.value, dateS2cAvantSaisie.current)}
                   style={inputStyle}
                 />
               </Champ>

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Journal from "./Journal";
 import { adminApi, type Utilisateur } from "../data/admin";
-import { backupApi, type BackupConfig, type FrequenceBackup } from "../data/backup";
+import { backupApi, type BackupConfig, type FichierSauvegarde, type FrequenceBackup } from "../data/backup";
+import { confirmerAction, confirmerActionRisquee } from "../data/confirm";
 import { formaterHorodatage } from "../domain/dates";
 
 interface Props {
@@ -407,8 +408,123 @@ function SauvegardeOnglet({ trigramme }: { trigramme: string }) {
           </div>
         )}
       </div>
+
+      <RestaurationSection trigramme={trigramme} dossier={config.dossier} />
     </div>
   );
+}
+
+function RestaurationSection({ trigramme, dossier }: { trigramme: string; dossier: string | null }) {
+  const [fichiers, setFichiers] = useState<FichierSauvegarde[] | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setFichiers(null);
+    setErreur(null);
+    backupApi.listSauvegardes().then(setFichiers).catch((e) => setErreur(String(e)));
+  }, [dossier]);
+
+  async function restaurer(chemin: string, libelle: string) {
+    const confirme = await confirmerActionRisquee(
+      `Remplacer toute la base actuelle par ${libelle} ? Tout ce qui a été saisi depuis sera perdu. ` +
+        "Une copie de la base actuelle est faite juste avant, à côté de caisses.sqlite3. " +
+        "Le mot de passe admin et les réglages de sauvegarde actuels sont conservés. L'app redémarrera ensuite.",
+      "Restaurer une sauvegarde",
+    );
+    if (!confirme) return;
+    setBusy(true);
+    setErreur(null);
+    try {
+      const securite = await backupApi.restaurer(chemin, trigramme);
+      await confirmerAction(
+        `Restauration terminée. L'état précédent de la base a été copié dans : ${securite}. L'app va redémarrer.`,
+        "Restauration terminée",
+      );
+      await backupApi.redemarrer();
+    } catch (e) {
+      setErreur(String(e));
+      setBusy(false);
+    }
+  }
+
+  async function autreFichier() {
+    const chemin = await backupApi.chooseFichierRestauration();
+    if (chemin) await restaurer(chemin, `le fichier « ${chemin} »`);
+  }
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 6px" }}>Restaurer une sauvegarde</h3>
+      <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 12px" }}>
+        Remplace la base par une sauvegarde. Impossible tant que l'app est ouverte sur un autre poste : la fermer
+        partout ailleurs d'abord.
+      </p>
+
+      {erreur && (
+        <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--danger-text)", wordBreak: "break-word" }}>{erreur}</p>
+      )}
+
+      <div className="panel" style={{ padding: 0, overflow: "auto", maxHeight: 320 }}>
+        {!dossier ? (
+          <p style={{ margin: 0, padding: 16, fontSize: 13, color: "var(--text-muted)" }}>Aucun dossier de sauvegarde choisi.</p>
+        ) : fichiers === null ? (
+          <p style={{ margin: 0, padding: 16, fontSize: 13, color: "var(--text-muted)" }}>{erreur ? "—" : "Chargement…"}</p>
+        ) : fichiers.length === 0 ? (
+          <p style={{ margin: 0, padding: 16, fontSize: 13, color: "var(--text-muted)" }}>Aucune sauvegarde dans ce dossier.</p>
+        ) : (
+          <table style={{ width: "100%", fontSize: 13, borderCollapse: "separate", borderSpacing: 0 }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
+                <th style={thStyle}>Date</th>
+                <th style={thStyle}>Taille</th>
+                <th style={thStyle} />
+              </tr>
+            </thead>
+            <tbody>
+              {fichiers.map((f) => (
+                <tr key={f.chemin} className="article-row">
+                  <td style={tdStyle} className="mono" title={f.nom}>
+                    {formaterDateSauvegarde(f.date)}
+                  </td>
+                  <td style={tdStyle} className="mono">
+                    {formaterTaille(f.taille_octets)}
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: "right" }}>
+                    <button
+                      className="btn btn-sm"
+                      disabled={busy}
+                      onClick={() => restaurer(f.chemin, `la sauvegarde du ${formaterDateSauvegarde(f.date)}`)}
+                    >
+                      Restaurer
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        <button className="btn btn-sm" onClick={autreFichier} disabled={busy}>
+          {busy ? "Restauration…" : "Autre fichier…"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// "AAAA-MM-JJ HH:MM:SS" → "JJ/MM/AAAA HH:MM"
+function formaterDateSauvegarde(date: string): string {
+  const [jour, heure] = date.split(" ");
+  const [a, m, j] = jour.split("-");
+  return `${j}/${m}/${a} ${heure.slice(0, 5)}`;
+}
+
+function formaterTaille(octets: number): string {
+  if (octets < 1024 * 1024) return `${Math.max(1, Math.round(octets / 1024))} Ko`;
+  return `${(octets / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
 const backdropStyle: React.CSSProperties = {

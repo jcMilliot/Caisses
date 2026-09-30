@@ -12,6 +12,9 @@ import {
   TRAITEMENTS,
   optionsListe,
   ouverturesAutorisees,
+  ouvertureImposee,
+  motifOuvertureImposee,
+  stockAutorisePourEnvoi,
   appliquerReglesCaisse,
   champsManquantsPourCommande,
 } from "../domain/demandeOptions";
@@ -495,13 +498,15 @@ export default function DemandesTable({
   }
 
   function cell(demande: Demande, champ: Champ, align: "left" | "center" = "left", td: React.CSSProperties = tdStyle) {
+    // Ligne livrée / rapatriée : plus rien n'est modifiable (seul « Dévalider » reste possible).
+    const figee = readOnly || estDemandeValidee(demande);
     if (CHAMPS_BOOL.has(champ)) {
       return (
         <td style={{ ...td, textAlign: "center" }}>
           <input
             type="checkbox"
             checked={demande[champ] as boolean}
-            disabled={readOnly}
+            disabled={figee}
             onChange={() => toggleBool(demande, champ as "ok_pour_passer_cde" | "cde_passee_affaire" | "cde_passee_achat_stock")}
           />
         </td>
@@ -513,7 +518,8 @@ export default function DemandesTable({
         <td style={{ ...td, textAlign: align, width: largeurColonne(champ), maxWidth: largeurColonne(champ) }}>
           <select
             value={demande.caisse_stock_id ?? ""}
-            disabled={readOnly}
+            disabled={figee || (!stockAutorisePourEnvoi(demande.type_envoi_caisse) && demande.caisse_stock_id == null)}
+            title={stockAutorisePourEnvoi(demande.type_envoi_caisse) ? undefined : "Pas de caisse en stock pour un envoi 4B / 4C"}
             onChange={(e) => onSelectStock(demande.id, e.target.value === "" ? null : Number(e.target.value))}
             style={{ width: "100%", border: "none", background: "transparent", font: "inherit", color: "inherit" }}
           >
@@ -542,13 +548,15 @@ export default function DemandesTable({
     const avertissementMesures4C = CHAMPS_DIM.has(champ)
       ? depassementMesuresMax4C(demande.type_envoi_caisse, demande.longueur_mm, demande.largeur_mm, demande.hauteur_mm)
       : undefined;
-    const avertissement = avertissementMousse ?? avertissementMesures4C;
+    const ouvertureVerrouillee = champ === "type_ouverture" && ouvertureImposee(demande) !== null;
+    const avertissement = ouvertureVerrouillee ? motifOuvertureImposee(demande) : (avertissementMousse ?? avertissementMesures4C);
+    const nonEditable = figee || ouvertureVerrouillee;
     return (
       <td
         style={{
           ...td,
           textAlign: align,
-          cursor: readOnly ? "default" : "text",
+          cursor: nonEditable ? "default" : "text",
           padding: enEdition ? 2 : td.padding,
           width: largeur,
           maxWidth: largeur,
@@ -558,7 +566,7 @@ export default function DemandesTable({
         }}
         className={estNombre ? "mono" : undefined}
         title={avertissement}
-        onClick={() => !readOnly && !enEdition && setCellEnEdition({ id: demande.id, champ })}
+        onClick={() => !nonEditable && !enEdition && setCellEnEdition({ id: demande.id, champ })}
       >
         {enEdition && champ === "type_ouverture" ? (
           <EditableCellSelect
@@ -822,10 +830,10 @@ export default function DemandesTable({
                           <button className="btn btn-sm btn-pastel-orange" onClick={() => onSimulerAffaire(d)}>
                             Simuler
                           </button>
-                          <button className="btn btn-sm btn-pastel-blue" onClick={() => onCreerDemandeCaisse(d)} disabled={readOnly}>
+                          <button className="btn btn-sm btn-pastel-blue" onClick={() => onCreerDemandeCaisse(d)} disabled={readOnly || estValidee}>
                             + Caisse
                           </button>
-                          <button className="btn btn-sm btn-danger" onClick={() => onDelete(d.id, d.affaire)} disabled={readOnly}>
+                          <button className="btn btn-sm btn-danger" onClick={() => onDelete(d.id, d.affaire)} disabled={readOnly || estValidee}>
                             Suppr.
                           </button>
                         </div>
@@ -840,7 +848,7 @@ export default function DemandesTable({
                           caissesStock={caissesStock}
                           optionsParChamp={optionsParChampSousLigne}
                           td={td}
-                          readOnly={readOnly}
+                          readOnly={readOnly || estValidee || estDemandeCaisseValidee(sc, d)}
                           coloredBackground={
                             estDemandeCaisseValidee(sc, d)
                               ? "var(--success-bg, #d4f4dd)"
@@ -900,7 +908,9 @@ export default function DemandesTable({
                 onCreerDemandeCaisse(menuContextuel.demande);
                 setMenuContextuel(null);
               }}
-              style={menuBoutonStyle}
+              disabled={readOnly || menuContextuel.validee}
+              title={menuContextuel.validee ? "Caisse livrée : dévalider d'abord" : undefined}
+              style={{ ...menuBoutonStyle, opacity: readOnly || menuContextuel.validee ? 0.45 : 1 }}
             >
               Créer une nouvelle caisse
             </button>
@@ -1029,7 +1039,8 @@ function SousLigneCaisse({
         <td style={style}>
           <select
             value={caisse.caisse_stock_id ?? ""}
-            disabled={readOnly}
+            disabled={readOnly || (!stockAutorisePourEnvoi(caisse.type_envoi_caisse) && caisse.caisse_stock_id == null)}
+            title={stockAutorisePourEnvoi(caisse.type_envoi_caisse) ? undefined : "Pas de caisse en stock pour un envoi 4B / 4C"}
             onChange={(e) => onSelectStock(e.target.value === "" ? null : Number(e.target.value))}
             style={{ width: "100%", border: "none", background: "transparent", font: "inherit", color: "inherit" }}
           >
@@ -1062,7 +1073,8 @@ function SousLigneCaisse({
     const estNombre = estDim || CHAMPS_NOMBRE_SOUS_LIGNE.has(champSousLigne);
     const estDate = CHAMPS_DATE_SOUS_LIGNE.has(champSousLigne);
     const verrouille = CHAMPS_VERROUILLES_SOUS_LIGNE.has(champSousLigne);
-    const editable = !readOnly && !verrouille;
+    const ouvertureVerrouillee = champSousLigne === "type_ouverture" && ouvertureImposee(caisse) !== null;
+    const editable = !readOnly && !verrouille && !ouvertureVerrouillee;
     const valeurBrute = caisse[champSousLigne] as string | number;
     const valeurAffichee = estDim
       ? ((valeurBrute as number) / 1000).toFixed(2)
@@ -1081,7 +1093,13 @@ function SousLigneCaisse({
           padding: enEdition ? 2 : style.padding,
         }}
         className={estNombre ? "mono" : undefined}
-        title={verrouille ? "Repris de la demande — non modifiable ici" : avertissementMesures4C}
+        title={
+          verrouille
+            ? "Repris de la demande — non modifiable ici"
+            : ouvertureVerrouillee
+              ? motifOuvertureImposee(caisse)
+              : avertissementMesures4C
+        }
         onClick={() => editable && !enEdition && setChampEnEdition(champSousLigne)}
       >
         {enEdition && champSousLigne === "type_ouverture" ? (

@@ -177,6 +177,7 @@ pub struct CaisseStock {
     pub demande_statut: String,
     pub demande_affaire_cible_id: Option<i64>,
     pub demande_cible_id: Option<i64>,
+    pub type_ouverture: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -188,6 +189,7 @@ pub struct NewCaisseStock {
     pub quantite: i64,
     pub observations: String,
     pub affaire_id: Option<i64>,
+    pub type_ouverture: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

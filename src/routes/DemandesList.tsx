@@ -18,7 +18,7 @@ import {
   memeNomAffaire,
   appliquerReglesCaisse,
   detacherStockSiDimsModifiees,
-  OUVERTURE_PAR_DESSUS,
+  stockAutorisePourEnvoi,
   champsManquantsPourCommande,
 } from "../domain/demandeOptions";
 import type { Affaire, Demande, NewDemande, DemandeCaisse, NewDemandeCaisse, CaisseStock, OptionListe, ListeOption } from "../domain/types";
@@ -199,6 +199,20 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   async function handleEditLocal(id: number, patch: Partial<Demande>) {
     const demandeActuelle = brouillonRef.current.find((d) => d.id === id);
     if (demandeActuelle) patch = detacherStockSiDimsModifiees(demandeActuelle, patch);
+    // Passage en 4B / 4C : les caisses en stock de la ligne et de ses sous-caisses seront retirées
+    // (appliquerReglesCaisse) — on prévient avant.
+    if (patch.type_envoi_caisse !== undefined && !stockAutorisePourEnvoi(patch.type_envoi_caisse)) {
+      const nbStock =
+        (demandeActuelle?.caisse_stock_id != null ? 1 : 0) +
+        demandeCaisses.filter((c) => c.demande_id === id && c.caisse_stock_id != null).length;
+      if (nbStock > 0) {
+        const confirme = await confirmerAction(
+          `Pas de caisse en stock pour un envoi 4B / 4C : ${nbStock} caisse(s) en stock sélectionnée(s) sur cette ligne et ses sous-caisses seront retirées. Continuer ?`,
+          "Caisse en stock",
+        );
+        if (!confirme) return;
+      }
+    }
     const toucheChampConditionnant = CHAMPS_CONDITIONNANT_OK_CDE.some((champ) => champ in patch);
     if (demandeActuelle?.ok_pour_passer_cde && toucheChampConditionnant) {
       const projection = { ...demandeActuelle, ...patch };
@@ -458,7 +472,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
         longueur_mm: cs.longueur_mm,
         largeur_mm: cs.largeur_mm,
         hauteur_mm: cs.hauteur_mm,
-        type_ouverture: OUVERTURE_PAR_DESSUS,
+        type_ouverture: cs.type_ouverture,
       });
       // Si l'affaire est déjà simulée, proposer de répercuter les mesures sur la caisse interne.
       await proposerSyncCaisseSimu(demande!.affaire, cs);
@@ -470,8 +484,8 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
       longueur_mm: cs.longueur_mm,
       largeur_mm: cs.largeur_mm,
       hauteur_mm: cs.hauteur_mm,
-      // Caisse en stock → type d'ouverture forcé « Par dessus ».
-      type_ouverture: OUVERTURE_PAR_DESSUS,
+      // Type d'ouverture de la caisse en stock, verrouillé tant qu'elle est sélectionnée.
+      type_ouverture: cs.type_ouverture,
     });
   }
 
@@ -518,7 +532,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
       longueur_mm: cs.longueur_mm,
       largeur_mm: cs.largeur_mm,
       hauteur_mm: cs.hauteur_mm,
-      type_ouverture: OUVERTURE_PAR_DESSUS,
+      type_ouverture: cs.type_ouverture,
     });
   }
 

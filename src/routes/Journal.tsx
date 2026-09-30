@@ -10,12 +10,14 @@ const LIBELLE_ACTION: Record<string, string> = {
   reference_ajout: "Référence ajoutée",
   reference_modification: "Référence renommée",
   reference_suppression: "Référence supprimée",
+  restauration: "Restauration",
 };
 
 const LIBELLE_ENTITE: Record<string, string> = {
   demande: "Caisse",
   demande_caisse: "Sous-caisse",
   option_liste: "Référence",
+  base: "Base de données",
 };
 
 const COULEUR_ACTION: Record<string, string> = {
@@ -25,6 +27,7 @@ const COULEUR_ACTION: Record<string, string> = {
   reference_ajout: "var(--ok-text)",
   reference_modification: "var(--warn-text)",
   reference_suppression: "var(--danger-text)",
+  restauration: "var(--danger-text)",
 };
 
 // Onglet « Journal » de la page Admin (session admin requise côté backend).

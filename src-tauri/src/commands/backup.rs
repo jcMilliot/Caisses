@@ -21,7 +21,7 @@ const CONSERVATION_PAR_DEFAUT: i64 = 30;
 const PREFIXE_FICHIER: &str = "caisses_";
 const SUFFIXE_FICHIER: &str = ".sqlite3";
 
-fn lire(conn: &Connection, cle: &str) -> Result<Option<String>, String> {
+pub(crate) fn lire(conn: &Connection, cle: &str) -> Result<Option<String>, String> {
     conn.query_row("SELECT valeur FROM parametre WHERE cle = ?1", [cle], |r| r.get(0))
         .optional()
         .map_err(|e| e.to_string())
@@ -47,7 +47,7 @@ pub struct BackupConfig {
     pub derniere_erreur: Option<String>,
 }
 
-fn lire_config(conn: &Connection) -> Result<BackupConfig, String> {
+pub(crate) fn lire_config(conn: &Connection) -> Result<BackupConfig, String> {
     let non_vide = |v: Option<String>| v.filter(|s| !s.is_empty());
     Ok(BackupConfig {
         dossier: non_vide(lire(conn, CLE_DOSSIER)?),
@@ -105,7 +105,7 @@ pub async fn choose_backup_folder(app: AppHandle, session: State<'_, AdminSessio
 
 /// Clé de tri chronologique (`AAAA-MM-JJ_HH-MM-SS`) d'un nom de sauvegarde
 /// `caisses_JJ-MM-AAAA_HH-MM-SS.sqlite3`, ou `None` si le nom ne suit pas ce format.
-fn cle_chronologique(nom: &str) -> Option<String> {
+pub(crate) fn cle_chronologique(nom: &str) -> Option<String> {
     let horodatage = nom.strip_prefix(PREFIXE_FICHIER)?.strip_suffix(SUFFIXE_FICHIER)?;
     let (date, heure) = horodatage.split_once('_')?;
     let parties: Vec<&str> = date.split('-').collect();

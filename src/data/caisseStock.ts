@@ -8,6 +8,9 @@ export const caisseStockApi = {
   update: (id: number, caisse: NewCaisseStock, trigramme: string) =>
     call<void>("update_caisse_stock", { id, caisse, trigramme }),
   delete: (id: number, trigramme: string) => call<void>("delete_caisse_stock", { id, trigramme }),
+  // Lignes de Gestion des caisses non livrées qui utilisent cette caisse (reprendront ses
+  // dimensions et son type d'ouverture si on la modifie).
+  countLignesLiees: (id: number) => call<number>("count_caisse_stock_lignes_liees", { id }),
   transfer: (caisseStockId: number, demandeCibleId: number, trigramme: string) =>
     call<void>("transfer_caisse_stock", { caisseStockId, demandeCibleId, trigramme }),
   setValidee: (id: number, validee: boolean, trigramme: string) =>

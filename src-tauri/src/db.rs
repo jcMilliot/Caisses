@@ -98,6 +98,18 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0022_add_compte_utilisateur_parametre",
         include_str!("../../migrations/0022_add_compte_utilisateur_parametre.sql"),
     ),
+    (
+        "0023_add_poste_actif",
+        include_str!("../../migrations/0023_add_poste_actif.sql"),
+    ),
+    (
+        "0024_add_caisse_stock_type_ouverture",
+        include_str!("../../migrations/0024_add_caisse_stock_type_ouverture.sql"),
+    ),
+    (
+        "0025_ouverture_4c_par_dessus",
+        include_str!("../../migrations/0025_ouverture_4c_par_dessus.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {
@@ -108,13 +120,25 @@ pub fn open_at(db_folder: &Path) -> Connection {
     conn.pragma_update(None, "foreign_keys", "ON")
         .expect("impossible d'activer foreign_keys");
 
+    appliquer_migrations(&conn).unwrap_or_else(|e| panic!("{e}"));
+
+    // Purge du journal d'audit au démarrage (le trigger AFTER INSERT couvre le cas courant ;
+    // ceci gère une base restée longtemps sans écriture). Ignoré si la table n'existe pas encore.
+    let _ = conn.execute("DELETE FROM journal WHERE horodatage < datetime('now', '-2 months')", []);
+
+    conn
+}
+
+/// Applique les migrations absentes de `_migrations`. Appelé à l'ouverture de la base, et après
+/// la restauration d'une sauvegarde (qui peut dater d'un schéma plus ancien).
+pub fn appliquer_migrations(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS _migrations (
             nom TEXT PRIMARY KEY,
             appliquee_le TEXT NOT NULL DEFAULT (datetime('now'))
         )",
     )
-    .expect("impossible de créer la table de suivi des migrations");
+    .map_err(|e| format!("impossible de créer la table de suivi des migrations : {e}"))?;
 
     for (nom, sql) in MIGRATIONS {
         let deja_appliquee: bool = conn
@@ -123,19 +147,14 @@ pub fn open_at(db_folder: &Path) -> Connection {
                 [nom],
                 |row| row.get(0),
             )
-            .expect("échec de vérification de la migration");
+            .map_err(|e| format!("échec de vérification de la migration {nom} : {e}"))?;
         if deja_appliquee {
             continue;
         }
         conn.execute_batch(sql)
-            .unwrap_or_else(|e| panic!("échec de la migration {nom}: {e}"));
+            .map_err(|e| format!("échec de la migration {nom} : {e}"))?;
         conn.execute("INSERT INTO _migrations (nom) VALUES (?1)", [nom])
-            .expect("impossible d'enregistrer la migration appliquée");
+            .map_err(|e| format!("impossible d'enregistrer la migration {nom} : {e}"))?;
     }
-
-    // Purge du journal d'audit au démarrage (le trigger AFTER INSERT couvre le cas courant ;
-    // ceci gère une base restée longtemps sans écriture). Ignoré si la table n'existe pas encore.
-    let _ = conn.execute("DELETE FROM journal WHERE horodatage < datetime('now', '-2 months')", []);
-
-    conn
+    Ok(())
 }

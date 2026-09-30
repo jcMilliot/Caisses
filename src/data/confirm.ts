@@ -30,3 +30,8 @@ export function confirmerSuppression(message: string): Promise<boolean> {
 export function confirmerAction(message: string, titre = "Confirmer"): Promise<boolean> {
   return demander(message, titre);
 }
+
+// Action irréversible qui n'est pas une suppression (ex. restauration d'une sauvegarde).
+export function confirmerActionRisquee(message: string, titre: string): Promise<boolean> {
+  return demander(message, titre, true);
+}

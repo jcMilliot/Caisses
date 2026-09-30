@@ -76,21 +76,48 @@ interface EtatCaisseRegles {
   caisse_stock_id?: number | null;
 }
 
-// Types d'ouverture réellement sélectionnables selon l'état de la caisse :
+// Types d'ouverture sélectionnables selon le type d'envoi :
 //  - 4C : uniquement « Par dessus » (housse soudée, pas d'ouverture par devant)
-//  - caisse en stock : uniquement « Par dessus » (pas de type d'ouverture par caisse en stock,
-//    cf. « À réfléchir plus tard » — ajouter la colonne côté Caisses en stock)
 //  - sinon : toutes les valeurs de TYPES_OUVERTURE
-export function ouverturesAutorisees(etat: Pick<EtatCaisseRegles, "type_envoi_caisse" | "caisse_stock_id">): string[] {
-  if (etat.caisse_stock_id != null) return [OUVERTURE_PAR_DESSUS];
+// Une ligne liée à une caisse en stock prend le type d'ouverture de cette caisse, non modifiable
+// (cf. ouvertureVerrouilleeParStock).
+export function ouverturesAutorisees(etat: Pick<EtatCaisseRegles, "type_envoi_caisse">): string[] {
   if (estCaisse4C(etat.type_envoi_caisse)) {
     return TYPES_OUVERTURE.filter((o) => !OUVERTURES_INTERDITES_4C.includes(o));
   }
   return TYPES_OUVERTURE;
 }
 
+// Pas de caisse en stock pour un envoi 4B / 4C (décision 2026-09-28) : seules les caisses
+// STANDARD (ou sans type) peuvent reprendre une caisse du stock.
+export function stockAutorisePourEnvoi(typeEnvoiCaisse: string): boolean {
+  return !necessiteNimp15(typeEnvoiCaisse);
+}
+
+// Type d'ouverture imposé (non modifiable, affiché sans menu déroulant), ou null s'il est libre :
+//  - ligne liée à une caisse en stock : celui de la caisse (géré dans Caisses en stock › Gérer
+//    les caisses), déjà recopié dans `type_ouverture` à la sélection
+//  - 4C : « Par dessus » (housse soudée)
+export function ouvertureImposee(etat: {
+  type_envoi_caisse: string;
+  type_ouverture: string;
+  caisse_stock_id: number | null;
+}): string | null {
+  if (etat.caisse_stock_id != null) return etat.type_ouverture;
+  if (estCaisse4C(etat.type_envoi_caisse)) return OUVERTURE_PAR_DESSUS;
+  return null;
+}
+
+export function motifOuvertureImposee(etat: { caisse_stock_id: number | null }): string {
+  return etat.caisse_stock_id != null
+    ? "Type d'ouverture de la caisse en stock (modifiable dans Caisses en stock › Gérer les caisses)"
+    : "Caisse 4C : ouverture par dessus uniquement";
+}
+
 // Corrige l'état d'une caisse après un changement, pour respecter les règles métier :
-//  - type d'ouverture ramené à « Par dessus » s'il n'est plus autorisé (4C, ou caisse en stock)
+//  - caisse en stock retirée si le type d'envoi ne l'autorise plus (4B / 4C)
+//  - type d'ouverture imposé à « Par dessus » en 4C (une ligne 4C n'a jamais de caisse en
+//    stock, dont le type d'ouverture serait sinon repris)
 //  - traitement NIMP15 : forcé si 4B/4C, retiré si STANDARD (on ne touche pas à un autre
 //    traitement saisi manuellement)
 //  - contre-plaqué recalculé (STANDARD/4B requis, 4C non)
@@ -98,8 +125,14 @@ export function ouverturesAutorisees(etat: Pick<EtatCaisseRegles, "type_envoi_ca
 export function appliquerReglesCaisse(etat: EtatCaisseRegles): Partial<EtatCaisseRegles> & { contre_plaque?: boolean } {
   const patch: Partial<EtatCaisseRegles> & { contre_plaque?: boolean } = {};
 
-  const autorisees = ouverturesAutorisees(etat);
-  if (etat.type_ouverture !== "" && !autorisees.includes(etat.type_ouverture)) {
+  let caisseStockId = etat.caisse_stock_id ?? null;
+  if (caisseStockId != null && !stockAutorisePourEnvoi(etat.type_envoi_caisse)) {
+    patch.caisse_stock_id = null;
+    caisseStockId = null;
+  }
+
+  // 4C : « Par dessus » imposé, même si rien n'était saisi.
+  if (caisseStockId == null && estCaisse4C(etat.type_envoi_caisse) && etat.type_ouverture !== OUVERTURE_PAR_DESSUS) {
     patch.type_ouverture = OUVERTURE_PAR_DESSUS;
   }
 

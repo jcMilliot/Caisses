@@ -97,13 +97,18 @@ src-tauri/src/
     demandes.rs       → CRUD demande + bulk_create_demandes (collage Excel) + set_demande_validee,
                         table indépendante (pas de FK vers affaire — `affaire` = texte libre)
     demande_caisse.rs → CRUD sous-caisses d'une demande (multi-caisses par demande)
-    caisse_stock.rs   → CRUD caisses en stock + transfer + set_caisse_stock_validee
+    caisse_stock.rs   → CRUD caisses en stock + transfer + set_caisse_stock_validee ;
+                        update répercute dims / type d'ouverture sur les lignes non livrées
+                        liées (+ count_caisse_stock_lignes_liees pour la confirmation)
     admin.rs          → comptes protégés par mot de passe (Argon2) + session admin en mémoire
                         (AdminSession, require_admin) : get_compte_status / admin_unlock /
                         admin_session_active / admin_lock / change_mot_de_passe /
                         enregistrer_connexion / list_utilisateurs
     backup.rs         → sauvegarde de caisses.sqlite3 (VACUUM INTO) : get/set_backup_config,
                         choose_backup_folder, backup_now (admin), backup_if_due (tout poste)
+    restauration.rs   → présence des postes (PosteId, signaler_presence) + restauration d'une
+                        sauvegarde (admin) : list_sauvegardes, choose_fichier_restauration,
+                        restore_sauvegarde
     journal.rs        → journal d'audit : journaliser() appelé par les commandes concernées +
                         list_journal (session admin requise, onglet de la page Admin)
     locks.rs          → verrouillage applicatif multi-poste (acquire/release/heartbeat/
@@ -127,8 +132,8 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-09-28 : migrations `0001` à `0022` (dernière :
-`0022_add_compte_utilisateur_parametre.sql` ; pas de `0019_reorder` — supprimé avant
+État au 2026-09-28 : migrations `0001` à `0025` (dernière :
+`0025_ouverture_4c_par_dessus.sql` ; pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes).
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
 triées côté frontend par `demandeOptions.ts::comparerOption` (quantité de tête puis n° de
@@ -192,6 +197,8 @@ caisse_stock (id, nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observatio
          validee BOOL,                    -- 0012
          demandeur, demande_le, demande_statut,  -- 0012, 'aucune'|'en_attente'|… (réaffectation)
          demande_affaire_cible_id INTEGER NULL, demande_cible_id INTEGER NULL,  -- 0013
+         type_ouverture TEXT DEFAULT 'Par dessus',  -- 0024, repris (et verrouillé) sur la
+                                                    --   ligne de demande qui sélectionne la caisse
          ordre, date_creation)
 
 section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" | "affaire:{id}"
@@ -201,7 +208,8 @@ section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" 
 journal (id, horodatage, trigramme, action, entite, entite_id NULL, details)  -- 0019
          -- journal d'audit des actions à effet fort. `action` ∈ 'creation' | 'suppression' |
          -- 'modification_dimensions' | 'reference_ajout' | 'reference_modification' |
-         -- 'reference_suppression'. `entite` ∈ 'demande' | 'demande_caisse' | 'option_liste'.
+         -- 'reference_suppression' | 'restauration'. `entite` ∈ 'demande' | 'demande_caisse' |
+         -- 'option_liste' | 'base' (restauration d'une sauvegarde).
          -- Écriture par journaliser() (best-effort, jamais bloquant) ; lecture (list_journal)
          -- réservée à la session admin (page Admin, mot de passe AJC). Les auteurs restent des
          -- trigrammes déclaratifs, pas une preuve.
@@ -228,6 +236,11 @@ parametre (cle PK, valeur)  -- 0022, paramètres partagés clé/valeur
          -- backup_dossier, backup_frequence ('desactivee'|'quotidienne'|'hebdomadaire'),
          -- backup_conservation (nb de fichiers), backup_derniere (UTC), backup_dernier_poste,
          -- backup_derniere_erreur.
+
+poste_actif (poste_id PK, trigramme, dernier_battement)  -- 0023
+         -- postes qui ont l'app ouverte : identifiant tiré au hasard au lancement (PosteId),
+         -- battement toutes les 30 s (usePresence). Sert à refuser une restauration tant qu'un
+         -- autre poste a battu dans les 2 dernières minutes.
 ```
 
 Note sur `section_lock` (verrouillage applicatif multi-poste, cf. journal 2026-07-30) : table
@@ -685,13 +698,99 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   seuls les fichiers qui suivent exactement ce format sont concernés, aucun autre n'est touché.
   En cas d'échec (dossier inaccessible depuis un poste…) : réservation annulée, erreur notée en
   base (`backup_derniere_erreur`, avec le trigramme du poste) et affichée dans l'onglet
-  Sauvegarde. Bouton « Sauvegarder maintenant ». Pas de restauration dans l'app : copier un
-  fichier de sauvegarde à la place de `caisses.sqlite3`, app fermée sur tous les postes.
+  Sauvegarde. Bouton « Sauvegarder maintenant ». Restauration depuis l'app ajoutée le même jour
+  (bloc suivant).
 - Validation : `cargo check`, `cargo test --lib backup` (2 tests : création/vérification du mot
   de passe ; réservation unique par jour + rétention), `npx tsc --noEmit`,
   `npm run tauri build -- --debug` (MSI + NSIS). **Non testé en conditions réelles** (pas
   d'automation UI) : parcours choix AJC → création du mot de passe, déverrouillage Admin,
   sauvegarde vers un vrai dossier réseau depuis deux postes.
+
+### 2026-09-28 — Restauration d'une sauvegarde depuis la page Admin
+
+- **Décisions actées avec l'utilisateur** : choix dans la **liste des sauvegardes** du dossier
+  configuré (plus récente en haut) + bouton « Autre fichier… » (n'importe quel `.sqlite3`) ;
+  restauration **bloquée si un autre poste a l'app ouverte**. Détail dans
+  [ADR 0003](docs/ADR/0003-compte-admin-et-sauvegarde.md).
+- **Présence des postes** : table `poste_actif` (migration `0023`), identifiant tiré au hasard
+  au lancement (`PosteId`, état Tauri — pas le trigramme, deux postes pouvant partager le même),
+  `signaler_presence` toutes les 30 s (`hooks/usePresence.ts`). Un poste qui n'a pas battu
+  depuis 2 min est considéré fermé.
+- **Restauration** (`commands/restauration.rs::restaurer`, onglet Admin › Sauvegarde) :
+  1. refus si un autre poste est actif (message listant les trigrammes) ;
+  2. vérification du fichier (`PRAGMA quick_check`, présence des tables `_migrations` et
+     `affaire` — refuse un fichier qui n'est pas une base Caisses) ;
+  3. copie de sécurité de la base actuelle à côté d'elle,
+     `caisses_avant-restauration_JJ-MM-AAAA_HH-MM-SS.sqlite3` (hors format des sauvegardes :
+     jamais listée ni supprimée par la rétention ; pour annuler, « Autre fichier… ») ;
+  4. copie par l'API backup de SQLite (`Connection::restore`, feature rusqlite `backup`) dans la
+     connexion ouverte — pas de copie de fichier à la main ;
+  5. migrations rejouées (`db::appliquer_migrations`, extrait de `open_at`) si la sauvegarde
+     date d'un schéma plus ancien ;
+  6. **comptes (mot de passe AJC) et paramètres `backup_*` actuels réécrits** : ce sont des
+     réglages, une vieille sauvegarde les ferait revenir en arrière. `section_lock` et
+     `poste_actif` vidés. Entrée `restauration` au journal ;
+  7. l'app redémarre (`relaunch`) : l'interface gardait l'ancien état en mémoire.
+- Validation : `cargo test --lib` (3 tests, dont restauration : blocage par un autre poste,
+  données remplacées, compte et config conservés, copie de sécurité correcte, faux fichier
+  refusé), `npx tsc --noEmit`. **Non testé en conditions réelles** (pas d'automation UI).
+
+### 2026-09-28 — Caisses en stock : « Gérer les caisses » et type d'ouverture
+
+- **Décisions actées avec l'utilisateur** :
+  - le tableau Caisses en stock passe en **lecture seule** ; création / modification /
+    suppression uniquement dans le dialogue « Gérer les caisses »
+    (`components/GererCaissesStockDialog.tsx`, même principe que « Gérer les références ») ;
+  - nouvelle colonne **type d'ouverture** (`caisse_stock.type_ouverture`, migration `0024`,
+    défaut « Par dessus » = ce qui était imposé jusqu'ici) : « Par dessus » / « Par devant » /
+    « Par dessus et par devant » ;
+  - dans Gestion des caisses, sélectionner une caisse en stock reprend ses dimensions **et son
+    type d'ouverture**, qui devient **non modifiable** tant qu'elle est sélectionnée
+    (`ouvertureVerrouilleeParStock` — dialogue de création, ligne mère, sous-ligne) ;
+  - **pas de caisse en stock en 4B / 4C** (`stockAutorisePourEnvoi`) : le menu Stock est
+    désactivé pour ces types, et passer une ligne en 4B/4C retire la caisse en stock (d'elle et
+    de ses sous-caisses) après confirmation — règle portée par `appliquerReglesCaisse`, qui ne
+    force plus « Par dessus » sur une ligne liée au stock ;
+  - modifier les dimensions ou le type d'ouverture d'une caisse en stock est **répercuté sur les
+    lignes non livrées** qui l'utilisent (demandes, sous-caisses, et leurs caisses Simulations
+    liées par `demande_id` / `demande_caisse_id`), après confirmation indiquant le nombre de
+    lignes. Les lignes livrées / rapatriées gardent leurs valeurs. Côté backend
+    (`update_caisse_stock`, une transaction), avec une entrée `modification_dimensions` au
+    journal par ligne si les dimensions changent. Règle « non livrée » dupliquée en SQL
+    (`OBSERVATION_NON_LIVREE`) — **à garder alignée** avec `estDemandeValidee` /
+    `estDemandeCaisseValidee`.
+- Inchangé : modifier une dimension sur une ligne de Gestion des caisses désélectionne toujours
+  la caisse en stock (le type d'ouverture reste celui repris, redevient modifiable).
+- Validation : `cargo test --lib` (4 tests, dont répercussion : lignes non livrées et caisse
+  Simulations mises à jour, lignes livrées intactes), `npx tsc --noEmit`. **Non testé en
+  conditions réelles** (pas d'automation UI).
+
+### 2026-09-28 — 4C « Par dessus » imposé, lignes livrées figées
+
+- **4C** : type d'ouverture imposé à « Par dessus », affiché sans menu déroulant (dialogue de
+  création, ligne mère, sous-ligne). `demandeOptions.ts::ouvertureImposee` réunit les deux cas de
+  type d'ouverture imposé (caisse en stock → celui de la caisse ; 4C → « Par dessus ») et
+  `motifOuvertureImposee` le texte d'infobulle ; `appliquerReglesCaisse` pose « Par dessus » dès
+  le passage en 4C, même si rien n'était saisi. Migration `0025` : aligne les lignes 4C
+  existantes (`demande` et `demande_caisse`) sur « Par dessus » — sinon le champ verrouillé
+  resterait vide et bloquerait « OK pour être commandée ».
+- **Ligne livrée / rapatriée figée** (`estDemandeValidee`) dans `DemandesTable` : cellules,
+  cases à cocher, menu Stock, « + Caisse », « Suppr. », « Créer une nouvelle caisse » du clic
+  droit et sous-caisses non modifiables. Restent actifs : **« Dévalider »** (seul moyen de
+  revenir en édition) et « Simuler » (navigation). Choix de l'assistant, à confirmer à l'usage :
+  la suppression est aussi bloquée (dévalider d'abord).
+- **Création de caisse + caisse en stock → « Cde passée sur achat stock » cochée**
+  (`AjouterDemandesDialog::synchroCdeAchatStock`, « Cde passée sur affaire » décochée) ; retirer
+  la caisse en stock (« — Choisir — », dimension modifiée, passage en 4B/4C) la décoche.
+  Dialogue de création uniquement (demande de l'utilisateur) — pas l'édition inline du tableau.
+- **Simulations — glisser-déposer de plusieurs articles** (`AffaireDetail::articlesGlisses` /
+  `handleDropArticle`) : attraper un article **coché** emporte toute la sélection (sinon l'article
+  seul, comme avant) → un seul `assign_articles`. Une seule confirmation listant les caisses
+  d'origine si certains sont déjà dans une autre caisse ; ceux déjà dans la caisse cible sont
+  ignorés. L'étiquette qui suit la souris affiche « N articles ». Sélection vidée après un dépôt
+  groupé (même convention que « Assigner à → »).
+- Validation : `cargo test --lib` (4 tests, migrations appliquées sur base neuve),
+  `npx tsc --noEmit`. **Non testé en conditions réelles**.
 
 ## Prochaines étapes
 
@@ -1146,7 +1245,9 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   importer des dates historiques lors d'une reprise de fichier existant. **Avertissement avec
   confirmation**, pas de blocage strict : une date passée déclenche `confirmerAction` (« La date
   demandée à S2C est dans le passé. Confirmer cette date ? ») ; si refusé, la saisie n'est pas
-  appliquée. Trois points d'interception : `AjouterDemandesDialog::changerDateDemandeeS2c`,
+  appliquée. Trois points d'interception : `AjouterDemandesDialog::verifierDateDemandeeS2c`
+  (en sortie du champ depuis le 2026-09-28 — vérifier à chaque frappe cassait la saisie, cf.
+  [Bugs.md](Bugs.md)),
   `DemandesTable::sauvegarderChamp` (ligne mère, devenu async), et le `onCommit` de
   `EditableCellInput` dans `SousLigneCaisse` (sous-ligne). **✅ Fait quand** : saisir une date
   passée dans l'un de ces trois points déclenche la confirmation, et le refus annule la saisie —
@@ -1301,10 +1402,6 @@ bien celui souhaité, aucun changement de code nécessaire.
   et ADR 0003) ; l'utilisateur prévoit des droits par tâche plus tard. À concevoir alors :
   quelles tâches, droits portés par `compte.role` ou une table dédiée, et si les autres
   trigrammes doivent aussi avoir un mot de passe.
-- **Colonne « type d'ouverture » dans le tableau Caisses en stock** — aujourd'hui une caisse en
-  stock n'a pas de type d'ouverture ; quand on en sélectionne une dans Demandes, le type
-  d'ouverture est forcé à « Par dessus ». Si le besoin d'un autre type par caisse en stock
-  apparaît, ajouter la colonne (migration + CRUD `caisse_stock`) et lever le forçage.
 - **Alias de caisse affiché dans le tableau Demandes** — quand on renomme une caisse dans
   Simulations (souvent pour la rendre explicite, ex. « caisse moteurs »), afficher ce nom sous
   le nom de l'affaire dans la colonne Affaire de la ligne de demande correspondante (caisse
@@ -1353,108 +1450,17 @@ bien celui souhaité, aucun changement de code nécessaire.
   seulement les assignés ; alerte à l'échelle de l'affaire ou aussi par caisse ; seuil fixe ou
   paramétrable (comme `seuil_defaut`) ; `> 350` ou `>= 350`.
 
-### À rédiger
+### Documentation utilisateur
 
-- **Bouton « Documentation » dans la navbar** — à ajouter dans le bandeau de menu principal
-  (`App.tsx`, à côté des sections). Ouvre une page/section `src/routes/Documentation.tsx` (ou un
-  panneau) expliquant le processus métier complet de bout en bout. **Contenu fourni par
-  l'utilisateur le 2026-09-03, à mettre en forme** (titres, captures éventuelles, liens internes
-  vers les sections). Trame :
-
-  **1. Gestion des caisses (ex-Demandes) — point de départ**
-  - « + Créer une nouvelle caisse » : nom d'affaire et Qté **obligatoires** (fond orangé).
-    Renseigner les infos maintenant ou plus tard dans le tableau.
-  - Dans le dialogue : bouton « Créer N caisse(s) » si une seule ; sinon « Ajouter une caisse »
-    (⚠ le libellé actuel est « + Ajouter une ligne » — **à renommer « Ajouter une caisse »**)
-    pour en saisir plusieurs.
-  - Les caisses arrivent dans le tableau, éditables (édition inline, cases à cocher, tri,
-    filtres, menu Options).
-  - Ajouter une autre caisse à une affaire existante : clic droit sur la ligne → « Créer une
-    nouvelle caisse ». Les caisses **enfants héritent** de la caisse mère : type d'envoi, date
-    de picking, traitement (s'il y en a un).
-
-  **2. Simuler l'affaire**
-  - Clic droit sur une ligne → « Simuler l'affaire ». Si l'affaire n'existe pas encore, un
-    message propose de la créer avec une caisse reprenant les dimensions du tableau Demandes.
-  - Décrire l'écran Simulations : le bandeau récap du haut (dimensions max, volume total, poids
-    total, mousse 4C, + les alertes « article > caisse » et « volume affaire > capacité des
-    caisses »), le détail de chaque `CaisseCard` (volume interne/occupé/disponible, poids, seuil,
-    dim. max articles, taux de remplissage, code couleur), le bouton « + Nouvelle caisse » et la
-    synchro bidirectionnelle des dimensions avec le tableau Demandes.
-
-  **3. Récupérer les articles depuis l'intranet SealedAir**
-  - Sur le picking de l'affaire (intranet SealedAir) : Options → « Exporter toutes les lignes »
-    → fichier Excel. (Captures à fournir.)
-  - Copier les colonnes « Ref B+ » et « Qte att » du fichier Excel ainsi généré par le Picking.
-  - Ouvrir le fichier « Aide colisage dimensions V1 » : coller les `AR` dans la 1ʳᵉ colonne et
-    les quantités dans la colonne Qté, puis « Récupérer les infos » → références, désignations,
-    dimensions, poids par article.
-  - Sélectionner + copier cette liste, la coller dans « Coller depuis Excel » (section
-    Simulations), puis Importer. L'outil détecte immédiatement la plus grande Longueur / Largeur
-    / Hauteur → indice pour dimensionner les caisses.
-
-  **4. Assigner et vérifier**
-  - Assigner des articles à une caisse (sélection + « Assigner à → », drag & drop, ou création à
-    la volée). Le taux de remplissage indique si le volume rentre, seuil d'alerte réglable
-    (70 % par défaut).
-  - Multi-caisses : répartir les articles ; le nom de la caisse s'affiche sur chaque ligne d'AR.
-  - Alertes : article dont une dimension ne rentre pas dans sa caisse ; volume total de
-    l'affaire supérieur à la capacité des caisses.
-
-  **5. Passer la commande**
-  - Simulation OK + date de commande atteinte → cocher « OK CDE » sur l'affaire → génère
-    l'affiche pour le service Achat (les multi-caisses sont incluses dans la demande).
-  - Section « Demandes d'achats » : copier une affiche unitairement, ou en sélectionner
-    plusieurs / toutes et « Copier la sélection » → coller dans le mail et envoyer. Mise en
-    forme et mentions de prestation (soudure/fermeture 4C…) détectées automatiquement si la
-    demande est bien remplie.
-  - Après commande passée : sélectionner une ou plusieurs affaires → « Valider la sélection »,
-    ou clic droit → « Valider la caisse ».
-
-  ---
-
-  **Partie séparée A — Caisses en stock** (section indépendante du process principal)
-  - Répertorie les caisses en stock. Les `AR_CAISS` n'ont pas de quantité, rien n'est connecté à
-    la base — purement indicatif.
-  - Caisses « de récup » : système d'affectation. À la création de la demande ou dans le tableau
-    Demandes, on affecte une caisse à une affaire → ses dimensions sont reprises automatiquement.
-    Une caisse de récup ne peut être affectée qu'à **une seule** affaire ; une fois l'affaire
-    validée, la caisse n'est plus disponible.
-  - CRUD complet (nom, dimensions, quantité, observations), édition inline, verrouillage
-    multi-poste, suppression.
-
-  **Partie séparée B — Gérer les références** (section indépendante, bouton en tête de « Gestion
-  des caisses »)
-  - Ce que c'est : le contenu des listes déroulantes des colonnes **Moteurs / Module linéaire /
-    Terminaux** du tableau (édition inline et dialogue « + Créer une nouvelle caisse »).
-  - Par colonne : ajouter une valeur, **renommer** (le nouveau libellé est répercuté
-    automatiquement sur toutes les lignes qui l'utilisent, avec confirmation si des lignes sont
-    concernées), **supprimer** une ou plusieurs valeurs (sélection multiple ; la valeur disparaît
-    de la liste, les lignes qui la portaient gardent le texte, avertissement si utilisée).
-  - Tri automatique des valeurs par quantité puis par n° de référence (ex. `1 MOTEUR` avant
-    `2 MOTEURS` avant `10 MOTEURS` ; `1 FESTO 426` avant `1 FESTO 485` avant `2 FESTO 494`) — vaut
-    aussi pour les valeurs ajoutées via l'outil.
-  - Toutes les valeurs vivent en base (partagées entre postes) ; il n'y a plus de « valeurs de
-    base » figées : tout est modifiable.
-
-  **Partie séparée C — Verrouillage multi-poste et demande de crayon** (transverse aux 4
-  sections, à expliquer une seule fois)
-  - Pourquoi : plusieurs postes peuvent travailler sur la même base (dossier réseau partagé) ;
-    le verrou évite que deux personnes modifient la même chose en même temps.
-  - Portée : un verrou par écran entier pour Demandes / Caisses en stock / Demandes d'achats, un
-    verrou par affaire précise pour Simulations — jamais plus fin qu'une affaire.
-  - Prise automatique à l'ouverture de l'écran/affaire (pas d'action volontaire de l'utilisateur) ;
-    libéré en quittant l'écran, ou après 5 min sans activité (souris/clavier).
-  - Bandeau « verrouillé par XYZ » quand un autre poste tient déjà la main : l'écran reste
-    consultable mais passe en lecture seule (pas de redirection forcée, pas de perte de saisie en
-    cours).
-  - « Demander le crayon » : bouton dans le bandeau pour demander la main au titulaire actuel, qui
-    voit une bannière et peut approuver ou refuser. Si le titulaire ne répond pas et ne bat plus
-    (poste inactif) pendant 90 s, le demandeur reprend automatiquement la main sans attendre les
-    5 min d'expiration classique.
-  - Limite connue à mentionner : pas de droits par utilisateur (tout le monde peut tout faire une
-    fois qu'il a la main) — voir « À réfléchir plus tard » du journal technique si le besoin
-    évolue.
+- Page **Documentation** (`src/routes/Documentation.tsx`, bouton de la navbar et en bas à gauche de
+  l'accueil). Texte **réécrit le 2026-09-28 d'après celui fourni par l'utilisateur** : Gestion des
+  caisses (création / gestion), Simuler, SealedAir, Assigner, Passer la commande, Caisses en
+  stock (+ Gérer les caisses), Gérer les références, Verrouillage et demande d'écriture, Base de
+  données et sauvegarde. **Consigne** : n'y mentionner ni le journal ni la page Admin pour
+  l'instant. À tenir à jour quand un comportement décrit change.
+- Terme « demande de crayon » remplacé par **« demande d'écriture »** dans l'app (bouton du
+  bandeau de verrouillage, 2026-09-28). Les identifiants du code (`request_pen`, `onRequestPen`…)
+  et les entrées historiques de ce fichier gardent l'ancien terme.
 
 ### Annulé pour le moment
 

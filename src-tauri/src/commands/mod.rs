@@ -9,5 +9,6 @@ pub mod demandes;
 pub mod journal;
 pub mod locks;
 pub mod options_liste;
+pub mod restauration;
 pub mod setup;
 pub mod user;
