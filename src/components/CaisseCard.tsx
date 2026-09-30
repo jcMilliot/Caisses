@@ -70,16 +70,16 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
   // ailleurs (calculs, base de données) — conversion faite uniquement aux frontières de ce
   // composant.
   const [form, setForm] = useState({
-    nom: caisse.nom,
     l: caisse.longueur_mm / 1000,
     w: caisse.largeur_mm / 1000,
     h: caisse.hauteur_mm / 1000,
-    seuil: caisse.seuil_pct,
     couleur: caisse.couleur,
   });
 
+  // Nom fixe (pas d'alias de caisse) et plus de seuil propre à une caisse : le seuil d'alerte
+  // est celui de l'affaire, réglé dans l'Admin (décision 2026-09-30).
   async function save() {
-    await onUpdate(form.nom, form.l * 1000, form.w * 1000, form.h * 1000, form.seuil, form.couleur);
+    await onUpdate(caisse.nom, form.l * 1000, form.w * 1000, form.h * 1000, null, form.couleur);
     setEditing(false);
   }
 
@@ -105,13 +105,7 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
     >
       {editing ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-          <input
-            style={inputStyle}
-            value={form.nom}
-            autoFocus
-            onFocus={(e) => e.target.select()}
-            onChange={(e) => setForm({ ...form, nom: e.target.value })}
-          />
+          <div style={{ fontSize: 15, fontWeight: 700 }}>{caisse.nom}</div>
           <div style={{ display: "flex", gap: 6 }}>
             <DimensionInput value={form.l} placeholder="L (m)" onChange={(v) => setForm({ ...form, l: v })} disabled={dimensionsReadOnly} />
             <DimensionInput value={form.w} placeholder="l (m)" onChange={(v) => setForm({ ...form, w: v })} disabled={dimensionsReadOnly} />
@@ -122,14 +116,6 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
               Dimensions héritées d'une caisse en stock — non modifiables ici.
             </p>
           )}
-          <input
-            type="number"
-            style={inputStyle}
-            value={form.seuil ?? ""}
-            placeholder="Seuil % (vide = hérite de l'affaire)"
-            onFocus={(e) => e.target.select()}
-            onChange={(e) => setForm({ ...form, seuil: e.target.value === "" ? null : Number(e.target.value) })}
-          />
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6, letterSpacing: "0.02em" }}>
               COULEUR
@@ -249,7 +235,7 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
               <Row label="Volume disponible" value={`${formaterVolumeM3(caisse.volumeDisponibleM3)} m³`} />
             )}
             <Row label="Poids total" value={`${caisse.poidsTotalKg.toFixed(3)} kg`} />
-            <Row label="Seuil d'alerte" value={`${caisse.seuilEffectif}%${caisse.seuil_pct === null ? " (défaut)" : ""}`} />
+            <Row label="Seuil d'alerte" value={`${caisse.seuilEffectif}%`} />
           </div>
 
           {!readOnly && (

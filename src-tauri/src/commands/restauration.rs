@@ -134,23 +134,33 @@ fn verifier_source(source: &Path) -> Result<(), String> {
     Ok(())
 }
 
-type Compte = (String, String, String, String, String);
+type Compte = (String, String, String, String, String, Option<String>);
 
 fn lire_comptes(conn: &Connection) -> Result<Vec<Compte>, String> {
     let mut stmt = conn
-        .prepare("SELECT trigramme, mot_de_passe_hash, role, cree_le, modifie_le FROM compte")
+        .prepare("SELECT trigramme, mot_de_passe_hash, role, cree_le, modifie_le, code_secours_hash FROM compte")
         .map_err(|e| e.to_string())?;
     let lignes = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<Compte>, _>>()
         .map_err(|e| e.to_string())?;
     Ok(lignes)
 }
 
+fn lire_roles(conn: &Connection) -> Result<Vec<(String, String)>, String> {
+    let mut stmt = conn.prepare("SELECT trigramme, role FROM utilisateur").map_err(|e| e.to_string())?;
+    let lignes = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<(String, String)>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(lignes)
+}
+
 fn lire_parametres_sauvegarde(conn: &Connection) -> Result<Vec<(String, String)>, String> {
     let mut stmt = conn
-        .prepare("SELECT cle, valeur FROM parametre WHERE cle LIKE 'backup\\_%' ESCAPE '\\'")
+        .prepare("SELECT cle, valeur FROM parametre WHERE cle LIKE 'backup\\_%' ESCAPE '\\' OR cle = 'seuil_alerte_general'")
         .map_err(|e| e.to_string())?;
     let lignes = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -179,6 +189,7 @@ fn restaurer(conn: &mut Connection, poste_id: &str, chemin: &str, trigramme: &st
 
     let comptes = lire_comptes(conn)?;
     let parametres = lire_parametres_sauvegarde(conn)?;
+    let roles = lire_roles(conn)?;
 
     // Copie de sécurité de la base actuelle, à côté d'elle. Son nom ne suit pas le format des
     // sauvegardes : jamais supprimée par la rétention, jamais listée comme sauvegarde.
@@ -203,10 +214,11 @@ fn restaurer(conn: &mut Connection, poste_id: &str, chemin: &str, trigramme: &st
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM compte", []).map_err(|e| e.to_string())?;
-    for (tri, hash, role, cree, modifie) in &comptes {
+    for (tri, hash, role, cree, modifie, code) in &comptes {
         tx.execute(
-            "INSERT INTO compte (trigramme, mot_de_passe_hash, role, cree_le, modifie_le) VALUES (?1, ?2, ?3, ?4, ?5)",
-            [tri, hash, role, cree, modifie],
+            "INSERT INTO compte (trigramme, mot_de_passe_hash, role, cree_le, modifie_le, code_secours_hash)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![tri, hash, role, cree, modifie, code],
         )
         .map_err(|e| e.to_string())?;
     }
@@ -215,6 +227,15 @@ fn restaurer(conn: &mut Connection, poste_id: &str, chemin: &str, trigramme: &st
             "INSERT INTO parametre (cle, valeur) VALUES (?1, ?2)
              ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur",
             [cle, valeur],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    // Rôles actuels (cohérents avec les mots de passe conservés ci-dessus).
+    for (tri, role) in &roles {
+        tx.execute(
+            "INSERT INTO utilisateur (trigramme, role) VALUES (?1, ?2)
+             ON CONFLICT(trigramme) DO UPDATE SET role = excluded.role",
+            [tri, role],
         )
         .map_err(|e| e.to_string())?;
     }

@@ -24,9 +24,9 @@ pub fn get_user_status(app: AppHandle) -> Result<UserStatus, String> {
     }
 }
 
-/// Enregistre le trigramme du poste. Un trigramme protégé (AJC, ou tout trigramme ayant un
-/// compte) exige son mot de passe — créé au premier choix pour AJC — et ouvre alors la session
-/// admin pour ce lancement.
+/// Enregistre le trigramme du poste. Un administrateur doit donner son mot de passe — créé au
+/// premier choix s'il n'existe pas encore, le code de secours étant alors renvoyé pour être
+/// affiché une seule fois — ce qui ouvre la session admin pour ce lancement.
 #[tauri::command]
 pub async fn set_trigramme(
     app: AppHandle,
@@ -34,17 +34,19 @@ pub async fn set_trigramme(
     session: State<'_, AdminSession>,
     trigramme: String,
     mot_de_passe: Option<String>,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     let trigramme = trigramme.trim().to_uppercase();
     if trigramme.len() != 3 || !trigramme.chars().all(|c| c.is_ascii_alphabetic()) {
         return Err("Le trigramme doit contenir exactement 3 lettres".to_string());
     }
-    let protege = {
+    let (protege, code_secours) = {
         let guard = db.0.lock().map_err(|e| e.to_string())?;
         let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+        let creation = !admin::mot_de_passe_defini(conn, &trigramme)?;
         let protege = admin::verifier_ou_creer(conn, &trigramme, mot_de_passe.as_deref())?;
+        let code = if protege && creation { Some(admin::creer_code_secours(conn, &trigramme)?) } else { None };
         let _ = admin::noter_connexion(conn, &trigramme);
-        protege
+        (protege, code)
     };
     let app_config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     user_config::write(&app_config_dir, &user_config::UserConfig { trigramme: trigramme.clone() })
@@ -52,5 +54,5 @@ pub async fn set_trigramme(
     if protege {
         *session.0.lock().map_err(|e| e.to_string())? = Some(trigramme);
     }
-    Ok(())
+    Ok(code_secours)
 }

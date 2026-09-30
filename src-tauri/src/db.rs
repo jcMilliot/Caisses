@@ -114,6 +114,22 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0026_add_demande_ok_cde_par",
         include_str!("../../migrations/0026_add_demande_ok_cde_par.sql"),
     ),
+    (
+        "0027_seuil_general",
+        include_str!("../../migrations/0027_seuil_general.sql"),
+    ),
+    (
+        "0028_add_utilisateur_role",
+        include_str!("../../migrations/0028_add_utilisateur_role.sql"),
+    ),
+    (
+        "0029_add_article_non_colle",
+        include_str!("../../migrations/0029_add_article_non_colle.sql"),
+    ),
+    (
+        "0030_add_compte_code_secours",
+        include_str!("../../migrations/0030_add_compte_code_secours.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {

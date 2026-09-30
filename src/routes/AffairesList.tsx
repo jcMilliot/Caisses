@@ -1,3 +1,4 @@
+import { estLectureSeuleRole } from "../hooks/useSectionLock";
 import { useEffect, useState } from "react";
 import { affairesApi } from "../data/affaires";
 import { locksApi } from "../data/locks";
@@ -11,12 +12,12 @@ interface Props {
 }
 
 export default function AffairesList({ onOpen, trigramme }: Props) {
+  const lectureSeule = estLectureSeuleRole();
   const [affaires, setAffaires] = useState<Affaire[]>([]);
   const [verrous, setVerrous] = useState<Map<number, SectionLock>>(new Map());
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [nom, setNom] = useState("");
-  const [seuilDefaut, setSeuilDefaut] = useState(70);
   const [recherche, setRecherche] = useState("");
 
   async function reload() {
@@ -52,9 +53,8 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
       );
       if (!ok) return;
     }
-    const affaire = await affairesApi.create(nom.trim(), seuilDefaut);
+    const affaire = await affairesApi.create(nom.trim(), trigramme);
     setNom("");
-    setSeuilDefaut(70);
     setCreating(false);
     await reload();
     onOpen(affaire.id);
@@ -77,7 +77,12 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
           </div>
           <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Affaires</h1>
         </div>
-        <button className="btn btn-primary" onClick={() => setCreating((v) => !v)}>
+        <button
+          className="btn btn-primary"
+          onClick={() => setCreating((v) => !v)}
+          disabled={lectureSeule}
+          title={lectureSeule ? "Rôle Lecteur : lecture seule" : undefined}
+        >
           + Nouvelle affaire
         </button>
       </div>
@@ -118,17 +123,6 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
                 Le nom doit comporter exactement 8 caractères.
               </span>
             )}
-          </div>
-          <div style={{ width: 160 }}>
-            <label style={labelStyle}>Seuil de remplissage par défaut (%)</label>
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={seuilDefaut}
-              onChange={(e) => setSeuilDefaut(Number(e.target.value))}
-              style={inputStyle}
-            />
           </div>
           <button type="submit" className="btn btn-primary" disabled={nom.trim().length !== 8}>
             Créer
@@ -203,12 +197,12 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
                   )}
                 </div>
                 <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 2 }}>
-                  Créée le {new Date(a.date_creation).toLocaleDateString("fr-FR")} · seuil par défaut {a.seuil_defaut}%
+                  Créée le {new Date(a.date_creation).toLocaleDateString("fr-FR")} · seuil d'alerte {a.seuil_defaut}%
                 </div>
               </div>
               <button
                 className="btn btn-sm btn-danger"
-                disabled={verrouilleeParAutre}
+                disabled={verrouilleeParAutre || lectureSeule}
                 title={verrouilleeParAutre ? `Verrouillée par ${verrou!.titulaire} — suppression impossible` : undefined}
                 onClick={(e) => {
                   e.stopPropagation();

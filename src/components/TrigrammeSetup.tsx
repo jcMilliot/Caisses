@@ -1,11 +1,18 @@
 import { useState } from "react";
 import { adminApi, type CompteStatus } from "../data/admin";
+import CodeSecoursDialog from "./CodeSecoursDialog";
+import MotDePasseOublie from "./MotDePasseOublie";
 
 interface Props {
-  onSubmit: (trigramme: string, motDePasse?: string) => Promise<void>;
+  // Renvoie le code de secours si un mot de passe administrateur vient d'être créé.
+  onSubmit: (trigramme: string, motDePasse?: string) => Promise<string | null>;
+  onTermine: (trigramme: string) => void;
 }
 
-export default function TrigrammeSetup({ onSubmit }: Props) {
+export default function TrigrammeSetup({ onSubmit, onTermine }: Props) {
+  // Code de secours à afficher, et suite une fois qu'il a été noté.
+  const [codeAffiche, setCodeAffiche] = useState<{ code: string; ensuite: () => void } | null>(null);
+  const [oubli, setOubli] = useState(false);
   const [valeur, setValeur] = useState("");
   // Renseigné quand le trigramme saisi est protégé : on passe à l'étape mot de passe.
   const [compte, setCompte] = useState<CompteStatus | null>(null);
@@ -32,7 +39,8 @@ export default function TrigrammeSetup({ onSubmit }: Props) {
           setErreur("Les deux mots de passe ne correspondent pas");
           return;
         }
-        await onSubmit(valeur, motDePasse);
+        const code = await onSubmit(valeur, motDePasse);
+        if (code) setCodeAffiche({ code, ensuite: () => onTermine(valeur) });
       }
     } catch (e) {
       setErreur(String(e));
@@ -41,7 +49,23 @@ export default function TrigrammeSetup({ onSubmit }: Props) {
     }
   }
 
+  // Mot de passe oublié réussi : on montre le nouveau code, puis on poursuit la connexion avec le
+  // nouveau mot de passe.
+  function apresReinitialisation(nouveauMotDePasse: string, nouveauCode: string) {
+    setOubli(false);
+    setCodeAffiche({
+      code: nouveauCode,
+      ensuite: () => {
+        setBusy(true);
+        onSubmit(valeur, nouveauMotDePasse)
+          .catch((e) => setErreur(String(e)))
+          .finally(() => setBusy(false));
+      },
+    });
+  }
+
   function revenir() {
+    setOubli(false);
     setCompte(null);
     setMotDePasse("");
     setConfirmation("");
@@ -82,6 +106,11 @@ export default function TrigrammeSetup({ onSubmit }: Props) {
               style={{ width: "100%", marginBottom: 16, fontSize: 18, textAlign: "center", letterSpacing: "0.2em" }}
             />
           </>
+        ) : oubli ? (
+          <>
+            <h1 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>Mot de passe oublié — {valeur}</h1>
+            <MotDePasseOublie trigramme={valeur} onReinitialise={apresReinitialisation} onAnnuler={() => setOubli(false)} />
+          </>
         ) : (
           <>
             <h1 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>
@@ -113,13 +142,22 @@ export default function TrigrammeSetup({ onSubmit }: Props) {
                 style={{ width: "100%", marginBottom: 10 }}
               />
             )}
+            {!creation && (
+              <button
+                type="button"
+                onClick={() => setOubli(true)}
+                style={{ background: "none", border: "none", padding: 0, color: "var(--accent)", fontSize: 12.5, cursor: "pointer" }}
+              >
+                Mot de passe oublié ?
+              </button>
+            )}
             <div style={{ height: 6 }} />
           </>
         )}
         {erreur && (
           <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--danger, #c0392b)" }}>{erreur}</p>
         )}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        {!oubli && <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           {compte !== null && (
             <button className="btn" onClick={revenir} disabled={busy}>
               ← Autre trigramme
@@ -128,8 +166,18 @@ export default function TrigrammeSetup({ onSubmit }: Props) {
           <button className="btn btn-primary" onClick={handleSubmit} disabled={busy || !peutValider}>
             {busy ? "…" : "Continuer"}
           </button>
-        </div>
+        </div>}
       </div>
+      {codeAffiche && (
+        <CodeSecoursDialog
+          code={codeAffiche.code}
+          onFermer={() => {
+            const ensuite = codeAffiche.ensuite;
+            setCodeAffiche(null);
+            ensuite();
+          }}
+        />
+      )}
     </div>
   );
 }

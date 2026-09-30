@@ -1,4 +1,6 @@
 interface Props {
+  // Rôle Lecteur : bandeau de lecture seule, sans demande d'écriture possible.
+  lectureSeule?: boolean;
   holderTrigramme: string | null;
   incomingRequest: string | null;
   outgoingRequestStatus: "none" | "pending" | "denied";
@@ -8,6 +10,7 @@ interface Props {
 }
 
 export default function LockBanner({
+  lectureSeule,
   holderTrigramme,
   incomingRequest,
   outgoingRequestStatus,
@@ -15,6 +18,16 @@ export default function LockBanner({
   onApprove,
   onDeny,
 }: Props) {
+  if (lectureSeule) {
+    return (
+      <div style={bannerStyle("var(--border-strong)")}>
+        <span>
+          Accès en <strong>lecture seule</strong> (rôle Lecteur) — aucune modification possible.
+        </span>
+      </div>
+    );
+  }
+
   if (incomingRequest) {
     return (
       <div style={bannerStyle("var(--accent)")}>

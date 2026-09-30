@@ -1,23 +1,29 @@
 import { useCallback, useEffect, useState } from "react";
 import Journal from "./Journal";
-import { adminApi, type Utilisateur } from "../data/admin";
+import AdminFeuilleDeRoute from "./AdminFeuilleDeRoute";
+import { adminApi, ADMIN_PERMANENT, LIBELLE_ROLE, type Role, type Utilisateur } from "../data/admin";
+import { affairesApi } from "../data/affaires";
 import { backupApi, type BackupConfig, type FichierSauvegarde, type FrequenceBackup } from "../data/backup";
 import { confirmerAction, confirmerActionRisquee } from "../data/confirm";
 import { formaterHorodatage } from "../domain/dates";
+import CodeSecoursDialog from "../components/CodeSecoursDialog";
+import MotDePasseOublie from "../components/MotDePasseOublie";
 
 interface Props {
   trigramme: string;
 }
 
-type Onglet = "utilisateurs" | "sauvegarde" | "journal";
+type Onglet = "utilisateurs" | "parametres" | "sauvegarde" | "journal" | "feuille";
 
 const ONGLETS: { id: Onglet; label: string }[] = [
   { id: "utilisateurs", label: "Utilisateurs" },
+  { id: "parametres", label: "Paramètres" },
   { id: "sauvegarde", label: "Sauvegarde" },
   { id: "journal", label: "Journal" },
+  { id: "feuille", label: "Feuille de route" },
 ];
 
-// Page Admin : réservée au trigramme AJC, mot de passe redemandé une fois par lancement de l'app
+// Page Admin : réservée au rôle Administrateur, mot de passe personnel redemandé une fois par lancement de l'app
 // (sauf s'il vient d'être saisi au choix du trigramme). La garde réelle est côté Rust
 // (`require_admin` sur chaque commande admin).
 export default function Admin({ trigramme }: Props) {
@@ -55,6 +61,7 @@ export default function Admin({ trigramme }: Props) {
           <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Admin</h1>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <CodeSecours trigramme={trigramme} />
           <ChangerMotDePasse />
           <button className="btn btn-sm" onClick={verrouiller} title="Refermer la page Admin sur ce poste">
             Verrouiller
@@ -74,15 +81,19 @@ export default function Admin({ trigramme }: Props) {
         ))}
       </div>
 
-      {onglet === "utilisateurs" && <UtilisateursOnglet />}
+      {onglet === "utilisateurs" && <UtilisateursOnglet trigramme={trigramme} />}
+      {onglet === "parametres" && <ParametresOnglet />}
       {onglet === "sauvegarde" && <SauvegardeOnglet trigramme={trigramme} />}
       {onglet === "journal" && <Journal />}
+      {onglet === "feuille" && <AdminFeuilleDeRoute />}
     </div>
   );
 }
 
 function DeverrouillageAdmin({ trigramme, onOk }: { trigramme: string; onOk: () => void }) {
   const [defini, setDefini] = useState<boolean | null>(null);
+  const [oubli, setOubli] = useState(false);
+  const [codeAffiche, setCodeAffiche] = useState<string | null>(null);
   const [motDePasse, setMotDePasse] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [erreur, setErreur] = useState<string | null>(null);
@@ -104,8 +115,9 @@ function DeverrouillageAdmin({ trigramme, onOk }: { trigramme: string; onOk: () 
     setBusy(true);
     setErreur(null);
     try {
-      await adminApi.unlock(trigramme, motDePasse);
-      onOk();
+      const code = await adminApi.unlock(trigramme, motDePasse);
+      if (code) setCodeAffiche(code);
+      else onOk();
     } catch (e) {
       setErreur(String(e));
     } finally {
@@ -114,6 +126,27 @@ function DeverrouillageAdmin({ trigramme, onOk }: { trigramme: string; onOk: () 
   }
 
   if (defini === null) return null;
+  if (codeAffiche) return <CodeSecoursDialog code={codeAffiche} onFermer={onOk} />;
+  if (oubli) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", padding: "80px 24px" }}>
+        <div className="panel" style={{ width: 420, maxWidth: "92vw", padding: 28 }}>
+          <h1 style={{ margin: "0 0 10px", fontSize: 18, fontWeight: 700 }}>Mot de passe oublié — {trigramme}</h1>
+          <MotDePasseOublie
+            trigramme={trigramme}
+            onReinitialise={(nouveau, code) => {
+              setOubli(false);
+              adminApi
+                .unlock(trigramme, nouveau)
+                .then(() => setCodeAffiche(code))
+                .catch((e) => setErreur(String(e)));
+            }}
+            onAnnuler={() => setOubli(false)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", justifyContent: "center", padding: "80px 24px" }}>
@@ -148,6 +181,15 @@ function DeverrouillageAdmin({ trigramme, onOk }: { trigramme: string; onOk: () 
           />
         )}
         {erreur && <p style={{ margin: "4px 0 12px", fontSize: 13, color: "var(--danger-text)" }}>{erreur}</p>}
+        {!creation && (
+          <button
+            type="button"
+            onClick={() => setOubli(true)}
+            style={{ background: "none", border: "none", padding: 0, color: "var(--accent)", fontSize: 12.5, cursor: "pointer" }}
+          >
+            Mot de passe oublié ?
+          </button>
+        )}
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
           <button className="btn btn-primary" onClick={valider} disabled={busy || !peutValider}>
             {busy ? "…" : "Déverrouiller"}
@@ -155,6 +197,46 @@ function DeverrouillageAdmin({ trigramme, onOk }: { trigramme: string; onOk: () 
         </div>
       </div>
     </div>
+  );
+}
+
+// Nouveau code de secours pour l'admin connecté (l'ancien ne sert plus). Signale son absence
+// (ex. AJC, mot de passe créé avant l'arrivée des codes de secours).
+function CodeSecours({ trigramme }: { trigramme: string }) {
+  const [defini, setDefini] = useState<boolean | null>(null);
+  const [code, setCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    adminApi.compteStatus(trigramme).then((s) => setDefini(s.code_secours_defini)).catch(() => {});
+  }, [trigramme]);
+
+  async function generer() {
+    const ok = await confirmerAction(
+      defini
+        ? "Générer un nouveau code de secours ? L'ancien ne fonctionnera plus."
+        : "Générer votre code de secours ? Il permet de choisir un nouveau mot de passe en cas d'oubli.",
+      "Code de secours",
+    );
+    if (!ok) return;
+    try {
+      setCode(await adminApi.regenererCodeSecours());
+      setDefini(true);
+    } catch (e) {
+      await confirmerAction(String(e), "Code de secours");
+    }
+  }
+
+  return (
+    <>
+      <button
+        className={defini === false ? "btn btn-sm btn-pastel-orange" : "btn btn-sm"}
+        onClick={generer}
+        title={defini === false ? "Aucun code de secours : en cas d'oubli du mot de passe, impossible de le réinitialiser seul" : undefined}
+      >
+        {defini === false ? "⚠ Créer un code de secours" : "Nouveau code de secours"}
+      </button>
+      {code && <CodeSecoursDialog code={code} onFermer={() => setCode(null)} />}
+    </>
   );
 }
 
@@ -228,24 +310,77 @@ function ChangerMotDePasse() {
   );
 }
 
-function UtilisateursOnglet() {
+function UtilisateursOnglet({ trigramme }: { trigramme: string }) {
   const [utilisateurs, setUtilisateurs] = useState<Utilisateur[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [nouveauTrigramme, setNouveauTrigramme] = useState("");
+  const [nouveauRole, setNouveauRole] = useState<Role>("utilisateur");
 
-  useEffect(() => {
+  const recharger = useCallback(() => {
     adminApi.listUtilisateurs().then(setUtilisateurs).catch((e) => setErreur(String(e)));
   }, []);
 
-  if (erreur) return <p style={{ color: "var(--danger-text)" }}>{erreur}</p>;
-  if (!utilisateurs) return <p style={{ color: "var(--text-muted)" }}>Chargement…</p>;
+  useEffect(() => {
+    recharger();
+  }, [recharger]);
+
+  async function changerRole(u: Utilisateur, role: Role) {
+    if (role === u.role) return;
+    const message =
+      u.role === "admin"
+        ? `${u.trigramme} ne sera plus administrateur : son mot de passe sera supprimé. Continuer ?`
+        : role === "admin"
+          ? `${u.trigramme} deviendra administrateur. Il créera son mot de passe à sa première ouverture de la page Admin. Continuer ?`
+          : `Passer ${u.trigramme} en « ${LIBELLE_ROLE[role]} » ? (pris en compte sur son poste au prochain changement d'écran)`;
+    if (!(await confirmerAction(message, "Changer le rôle"))) return;
+    setErreur(null);
+    try {
+      await adminApi.setRole(u.trigramme, role);
+      recharger();
+    } catch (e) {
+      setErreur(String(e));
+    }
+  }
+
+  async function reinitialiserMotDePasse(u: Utilisateur) {
+    const ok = await confirmerAction(
+      `Effacer le mot de passe de ${u.trigramme} ? Il en choisira un nouveau (avec un nouveau code de secours) à sa prochaine ouverture de la page Admin ou au choix de son trigramme.`,
+      "Réinitialiser le mot de passe",
+    );
+    if (!ok) return;
+    setErreur(null);
+    try {
+      await adminApi.reinitialiserMotDePasseAdmin(u.trigramme);
+      recharger();
+    } catch (e) {
+      setErreur(String(e));
+    }
+  }
+
+  async function ajouter() {
+    setErreur(null);
+    try {
+      await adminApi.ajouterUtilisateur(nouveauTrigramme, nouveauRole);
+      setNouveauTrigramme("");
+      setNouveauRole("utilisateur");
+      recharger();
+    } catch (e) {
+      setErreur(String(e));
+    }
+  }
+
+  if (!utilisateurs) return erreur ? <p style={{ color: "var(--danger-text)" }}>{erreur}</p> : <p style={{ color: "var(--text-muted)" }}>Chargement…</p>;
 
   return (
     <div>
       <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 14px" }}>
         Trigrammes saisis sur les postes qui utilisent cette base. Un trigramme apparaît ici dès que quelqu'un l'a
-        choisi au premier lancement ; la dernière connexion est mise à jour à chaque démarrage de l'app.
+        choisi au premier lancement ; la dernière connexion est mise à jour à chaque démarrage de l'app. Rôles :
+        Utilisateur (accès normal), Lecteur (lecture seule partout), Administrateur (page Admin, mot de passe
+        personnel). Il reste toujours au moins un administrateur.
       </p>
-      <div className="panel" style={{ padding: 0, overflow: "auto", maxWidth: 640 }}>
+      {erreur && <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--danger-text)" }}>{erreur}</p>}
+      <div className="panel" style={{ padding: 0, overflow: "auto", maxWidth: 760 }}>
         <table style={{ width: "100%", fontSize: 13, borderCollapse: "separate", borderSpacing: 0 }}>
           <thead>
             <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
@@ -261,7 +396,33 @@ function UtilisateursOnglet() {
                 <td style={{ ...tdStyle, fontWeight: 700 }} className="mono">
                   {u.trigramme}
                 </td>
-                <td style={tdStyle}>{u.role === "admin" ? "Administrateur" : "Utilisateur"}</td>
+                <td style={tdStyle}>
+                  <select
+                    value={u.role}
+                    onChange={(e) => changerRole(u, e.target.value as Role)}
+                    disabled={u.trigramme === ADMIN_PERMANENT}
+                    title={u.trigramme === ADMIN_PERMANENT ? `${ADMIN_PERMANENT} reste toujours administrateur` : undefined}
+                    style={{ ...selectStyle, width: 190 }}
+                  >
+                    {(Object.keys(LIBELLE_ROLE) as Role[]).map((r) => (
+                      <option key={r} value={r}>
+                        {LIBELLE_ROLE[r]}
+                      </option>
+                    ))}
+                  </select>
+                  {u.role === "admin" && !u.mot_de_passe_defini && (
+                    <div style={{ fontSize: 11.5, color: "var(--warn-text)", marginTop: 3 }}>Mot de passe pas encore créé</div>
+                  )}
+                  {u.role === "admin" && u.mot_de_passe_defini && u.trigramme !== trigramme && (
+                    <button
+                      type="button"
+                      onClick={() => reinitialiserMotDePasse(u)}
+                      style={{ display: "block", background: "none", border: "none", padding: 0, marginTop: 3, color: "var(--accent)", fontSize: 11.5, cursor: "pointer" }}
+                    >
+                      Réinitialiser le mot de passe
+                    </button>
+                  )}
+                </td>
                 <td style={tdStyle} className="mono">
                   {formaterHorodatage(u.premiere_connexion)}
                 </td>
@@ -273,6 +434,106 @@ function UtilisateursOnglet() {
           </tbody>
         </table>
       </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14 }}>
+        <input
+          className="input"
+          value={nouveauTrigramme}
+          onChange={(e) => setNouveauTrigramme(e.target.value.toUpperCase())}
+          placeholder="Trigramme"
+          maxLength={3}
+          style={{ width: 100 }}
+        />
+        <select value={nouveauRole} onChange={(e) => setNouveauRole(e.target.value as Role)} style={{ ...selectStyle, width: 190 }}>
+          {(Object.keys(LIBELLE_ROLE) as Role[]).map((r) => (
+            <option key={r} value={r}>
+              {LIBELLE_ROLE[r]}
+            </option>
+          ))}
+        </select>
+        <button className="btn btn-sm" onClick={ajouter} disabled={nouveauTrigramme.trim().length !== 3}>
+          Ajouter un utilisateur
+        </button>
+      </div>
+      <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: "6px 0 0" }}>
+        Pour déclarer quelqu'un avant son premier lancement (par exemple un nouvel administrateur).
+      </p>
+    </div>
+  );
+}
+
+// Seuil d'alerte général (décision 2026-09-30) : seul endroit où il se règle. L'enregistrer
+// l'applique aux nouvelles affaires et écrase celui des affaires dont la caisse n'est pas
+// encore livrée ; les affaires livrées gardent le leur.
+function ParametresOnglet() {
+  const [actuel, setActuel] = useState<number | null>(null);
+  const [saisie, setSaisie] = useState("");
+  const [message, setMessage] = useState<{ ok: boolean; texte: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    affairesApi
+      .getSeuilGeneral()
+      .then((s) => {
+        setActuel(s);
+        setSaisie(String(s));
+      })
+      .catch((e) => setMessage({ ok: false, texte: String(e) }));
+  }, []);
+
+  const valeur = Number(saisie.replace(",", "."));
+  const valide = saisie.trim() !== "" && Number.isFinite(valeur) && valeur >= 1 && valeur <= 100;
+  const modifie = actuel !== null && valide && valeur !== actuel;
+
+  async function enregistrer() {
+    if (!modifie) return;
+    const ok = await confirmerAction(
+      `Le seuil d'alerte passera à ${valeur} % pour les nouvelles affaires et pour toutes les affaires dont la caisse n'est pas encore livrée (même si leur seuil avait été changé). Les affaires livrées gardent leur seuil. Continuer ?`,
+      "Seuil d'alerte général",
+    );
+    if (!ok) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const nb = await affairesApi.setSeuilGeneral(valeur);
+      setActuel(valeur);
+      setMessage({ ok: true, texte: `Seuil enregistré — ${nb} affaire(s) mise(s) à jour.` });
+    } catch (e) {
+      setMessage({ ok: false, texte: String(e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (actuel === null) return message ? <p style={{ color: "var(--danger-text)" }}>{message.texte}</p> : null;
+
+  return (
+    <div style={{ maxWidth: 640 }}>
+      <div className="panel" style={{ padding: 20, display: "grid", gap: 14 }}>
+        <label style={labelStyle}>
+          <span style={libelleStyle}>Seuil d'alerte général (%)</span>
+          <input
+            className="input"
+            type="number"
+            min={1}
+            max={100}
+            value={saisie}
+            onChange={(e) => setSaisie(e.target.value)}
+            style={{ width: 90 }}
+          />
+        </label>
+        <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: 0 }}>
+          Taux de remplissage au-delà duquel une caisse passe en alerte dans Simulations. Il s'applique aux nouvelles
+          affaires et, à l'enregistrement, remplace celui des affaires dont la caisse n'est pas encore livrée.
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button className="btn btn-primary" onClick={enregistrer} disabled={!modifie || busy}>
+            Enregistrer
+          </button>
+        </div>
+      </div>
+      {message && (
+        <p style={{ margin: "12px 0 0", fontSize: 13, color: message.ok ? "var(--ok-text)" : "var(--danger-text)" }}>{message.texte}</p>
+      )}
     </div>
   );
 }

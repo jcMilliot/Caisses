@@ -28,11 +28,22 @@ export function useUserSetup() {
     check();
   }, [check]);
 
-  const setTrigramme = useCallback(async (value: string, motDePasse?: string) => {
-    await userApi.setTrigramme(value, motDePasse);
+  const confirmerTrigramme = useCallback((value: string) => {
     setTrigrammeState(value.trim().toUpperCase());
     setStatus("ready");
   }, []);
 
-  return { status, error, trigramme, setTrigramme };
+  // Renvoie le code de secours d'un administrateur qui vient de créer son mot de passe : l'écran
+  // l'affiche, puis appelle confirmerTrigramme. Sinon, le trigramme est confirmé tout de suite.
+  const setTrigramme = useCallback(
+    async (value: string, motDePasse?: string): Promise<string | null> => {
+      const code = await userApi.setTrigramme(value, motDePasse);
+      if (code) return code;
+      confirmerTrigramme(value);
+      return null;
+    },
+    [confirmerTrigramme],
+  );
+
+  return { status, error, trigramme, setTrigramme, confirmerTrigramme };
 }

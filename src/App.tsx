@@ -13,7 +13,8 @@ import TrigrammeSetup from "./components/TrigrammeSetup";
 import UpdateAvailableDialog from "./components/UpdateAvailableDialog";
 import ConfirmDialogHost from "./components/ConfirmDialogHost";
 import { confirmerAction } from "./data/confirm";
-import { adminApi, TRIGRAMME_ADMIN } from "./data/admin";
+import { adminApi, type Role } from "./data/admin";
+import { definirLectureSeuleRole } from "./hooks/useSectionLock";
 import { affairesApi } from "./data/affaires";
 import { caissesApi } from "./data/caisses";
 import { demandeCaisseApi } from "./data/demandeCaisse";
@@ -36,7 +37,7 @@ const SECTIONS: { id: Section; label: string }[] = [
 
 export default function App() {
   const { status: dbStatus, chooseFolder } = useDbSetup();
-  const { status: userStatus, trigramme, setTrigramme } = useUserSetup();
+  const { status: userStatus, trigramme, setTrigramme, confirmerTrigramme } = useUserSetup();
   const { update, installing, confirmInstall, dismiss } = useUpdateCheck(dbStatus === "ready");
   const utilisateurPret = dbStatus === "ready" && userStatus === "ready" ? trigramme : null;
   useBackupAuto(utilisateurPret);
@@ -46,6 +47,21 @@ export default function App() {
     if (utilisateurPret) adminApi.enregistrerConnexion(utilisateurPret).catch(() => {});
   }, [utilisateurPret]);
   const [section, setSection] = useState<Section>("accueil");
+  // Rôle du trigramme, relu à chaque changement d'écran (un admin peut le changer depuis un autre
+  // poste). Les écrans ne s'affichent qu'une fois connu : un Lecteur ne doit jamais prendre de
+  // verrou, même brièvement.
+  const [role, setRole] = useState<Role | null>(null);
+  useEffect(() => {
+    if (!utilisateurPret) return;
+    adminApi
+      .getRole(utilisateurPret)
+      .then((r) => {
+        definirLectureSeuleRole(r === "lecteur");
+        setRole(r);
+      })
+      .catch(() => setRole((prev) => prev ?? "utilisateur"));
+  }, [utilisateurPret, section]);
+  const estAdmin = role === "admin";
   useAlerteCommande(utilisateurPret !== null, section);
   const [affaireId, setAffaireId] = useState<number | null>(null);
   const [creationAffaire, setCreationAffaire] = useState<Demande | null>(null);
@@ -143,7 +159,7 @@ export default function App() {
 
   async function handleConfirmerCreationAffaire() {
     if (!creationAffaire || !trigramme) return;
-    const affaire = await affairesApi.create(creationAffaire.affaire, 70);
+    const affaire = await affairesApi.create(creationAffaire.affaire, trigramme);
     for (const sc of creationSousCaisses) {
       await caissesApi.create(
         affaire.id,
@@ -185,10 +201,10 @@ export default function App() {
   }
 
   if (userStatus === "needs-setup") {
-    return <TrigrammeSetup onSubmit={setTrigramme} />;
+    return <TrigrammeSetup onSubmit={setTrigramme} onTermine={confirmerTrigramme} />;
   }
 
-  if (userStatus !== "ready" || !trigramme) {
+  if (userStatus !== "ready" || !trigramme || role === null) {
     return null;
   }
 
@@ -226,7 +242,7 @@ export default function App() {
           >
             Documentation
           </button>
-          {trigramme === TRIGRAMME_ADMIN && (
+          {estAdmin && (
             <button
               className={section === "admin" ? "btn btn-primary btn-sm" : "btn btn-sm"}
               onClick={() => handleSelectSection("admin")}
@@ -239,7 +255,7 @@ export default function App() {
 
       <div style={{ flex: 1 }}>
         {section === "accueil" && (
-          <Accueil onSelect={handleSelectSection} estAdmin={trigramme === TRIGRAMME_ADMIN} />
+          <Accueil onSelect={handleSelectSection} estAdmin={estAdmin} />
         )}
         {section === "demandes" && (
           <DemandesList
@@ -252,12 +268,12 @@ export default function App() {
           (affaireId === null ? (
             <AffairesList onOpen={setAffaireId} trigramme={trigramme} />
           ) : (
-            <AffaireDetail affaireId={affaireId} onBack={() => setAffaireId(null)} trigramme={trigramme} />
+            <AffaireDetail affaireId={affaireId} onBack={() => setAffaireId(null)} trigramme={trigramme} estAdmin={estAdmin} />
           ))}
         {section === "stock" && <CaissesStockList trigramme={trigramme} />}
         {section === "achats" && <DemandesAchatsList trigramme={trigramme} />}
-        {section === "admin" && trigramme === TRIGRAMME_ADMIN && <Admin trigramme={trigramme} />}
-        {section === "documentation" && <Documentation />}
+        {section === "admin" && estAdmin && <Admin trigramme={trigramme} />}
+        {section === "documentation" && <Documentation trigramme={trigramme} estAdmin={estAdmin} />}
       </div>
 
       {creationAffaire && (

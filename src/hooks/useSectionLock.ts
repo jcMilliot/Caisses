@@ -6,10 +6,21 @@ const POLL_INTERVAL_MS = 7_000;
 const INACTIVITY_TIMEOUT_MS = 5 * 60_000;
 
 type Status = "acquiring" | "held" | "readonly" | "error";
+
+// Rôle Lecteur du poste (défini par App au démarrage, avant l'affichage des écrans) : les écrans
+// restent en lecture seule et ne prennent jamais le verrou — un lecteur ne bloque personne.
+let lectureSeuleRole = false;
+export function definirLectureSeuleRole(valeur: boolean) {
+  lectureSeuleRole = valeur;
+}
+export function estLectureSeuleRole(): boolean {
+  return lectureSeuleRole;
+}
 type OutgoingRequestStatus = "none" | "pending" | "denied";
 
 export function useSectionLock(sectionKey: string, trigramme: string) {
-  const [status, setStatus] = useState<Status>("acquiring");
+  const lectureSeule = lectureSeuleRole;
+  const [status, setStatus] = useState<Status>(lectureSeule ? "readonly" : "acquiring");
   const [holderTrigramme, setHolderTrigramme] = useState<string | null>(null);
   const [incomingRequest, setIncomingRequest] = useState<string | null>(null);
   const [outgoingRequestStatus, setOutgoingRequestStatus] = useState<OutgoingRequestStatus>("none");
@@ -53,6 +64,7 @@ export function useSectionLock(sectionKey: string, trigramme: string) {
   );
 
   useEffect(() => {
+    if (lectureSeule) return;
     let cancelled = false;
 
     async function acquire() {
@@ -123,6 +135,7 @@ export function useSectionLock(sectionKey: string, trigramme: string) {
   }, [sectionKey, trigramme]);
 
   return {
+    lectureSeule,
     status,
     holderTrigramme,
     incomingRequest,
