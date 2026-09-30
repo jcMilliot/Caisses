@@ -72,6 +72,7 @@ export interface Demande {
   validee: boolean;
   ordre: number;
   caisse_stock_id: number | null;
+  ok_cde_par: string; // trigramme de qui a coché « OK pour être commandée » (vide sinon)
 }
 
 export interface NewDemande {
@@ -96,6 +97,7 @@ export interface NewDemande {
   observations: string;
   contre_plaque: boolean;
   caisse_stock_id: number | null;
+  ok_cde_par: string; // trigramme de qui a coché « OK pour être commandée » (vide sinon)
 }
 
 export interface DemandeCaisse {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { demandesApi } from "../data/demandes";
 import { dateIsoVersAffichage } from "../domain/dates";
-import { caissesACommanderCetteSemaine, caissesARapatrierCetteSemaine, type AffaireACommander } from "../domain/caissesACommander";
+import { MESSAGE_ALERTE_COMMANDE, caissesACommanderCetteSemaine, caissesARapatrierCetteSemaine, type AffaireACommander } from "../domain/caissesACommander";
 import type { Demande } from "../domain/types";
 
 type Section = "demandes" | "simulations" | "stock" | "achats" | "admin" | "documentation";
@@ -132,7 +132,7 @@ function ListeAffaires({
           <p style={{ margin: 0 }}>Aucune affaire pour l'instant.</p>
         ) : (
           <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-            {affaires.map(({ demande, datePickingAffichage }) => (
+            {affaires.map(({ demande, datePickingAffichage, urgent }) => (
               <li
                 key={demande.id}
                 style={{
@@ -141,9 +141,16 @@ function ListeAffaires({
                   gap: 12,
                   padding: "10px 16px",
                   borderBottom: "1px solid var(--border)",
+                  background: urgent ? "var(--danger-bg)" : undefined,
                 }}
+                title={urgent ? MESSAGE_ALERTE_COMMANDE : undefined}
               >
-                <span style={{ fontWeight: 600, color: "var(--text)" }}>{demande.affaire}</span>
+                <span style={{ fontWeight: 600, color: "var(--text)" }}>
+                  {demande.affaire}
+                  {urgent && (
+                    <span style={{ marginLeft: 10, fontSize: 12.5, fontWeight: 700, color: "var(--danger-text)" }}>À commander</span>
+                  )}
+                </span>
                 <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
                   Picking {dateIsoVersAffichage(datePickingAffichage)}
                 </span>

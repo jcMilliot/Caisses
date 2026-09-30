@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { demandesApi } from "../data/demandes";
 import { demandeCaisseApi } from "../data/demandeCaisse";
-import { locksApi } from "../data/locks";
 import { useSectionLock } from "../hooks/useSectionLock";
 import LockBanner from "../components/LockBanner";
 import AfficheCaisseCard, { type AfficheCaisseCardHandle } from "../components/AfficheCaisseCard";
@@ -26,7 +25,6 @@ export default function DemandesAchatsList({ trigramme }: Props) {
   const readOnly = lock.status !== "held";
   const [demandes, setDemandes] = useState<Demande[]>([]);
   const [demandeCaisses, setDemandeCaisses] = useState<DemandeCaisse[]>([]);
-  const [trigrammesConnus, setTrigrammesConnus] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [envoyees, setEnvoyees] = useState<Set<string>>(new Set());
   const [selection, setSelection] = useState<Set<string>>(new Set());
@@ -36,16 +34,9 @@ export default function DemandesAchatsList({ trigramme }: Props) {
   async function reload() {
     setLoading(true);
     try {
-      const [d, dc, locks] = await Promise.all([demandesApi.list(), demandeCaisseApi.listAll(), locksApi.list()]);
+      const [d, dc] = await Promise.all([demandesApi.list(), demandeCaisseApi.listAll()]);
       setDemandes(d);
       setDemandeCaisses(dc);
-      const set = new Set<string>();
-      for (const l of locks) {
-        if (l.titulaire) set.add(l.titulaire);
-        if (l.demandeur) set.add(l.demandeur);
-      }
-      set.add(trigramme);
-      setTrigrammesConnus([...set].sort());
     } finally {
       setLoading(false);
     }
@@ -291,8 +282,6 @@ export default function DemandesAchatsList({ trigramme }: Props) {
                 else cardsRef.current.delete(a.cle);
               }}
               affiche={a}
-              trigrammesConnus={trigrammesConnus}
-              trigrammeParDefaut={trigramme}
               readOnly={readOnly}
               selectionnee={selection.has(a.cle)}
               onToggleSelection={(v) => handleToggleSelection(a.cle, v)}

@@ -22,6 +22,7 @@ import { useUserSetup } from "./hooks/useUserSetup";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
 import { useBackupAuto } from "./hooks/useBackupAuto";
 import { usePresence } from "./hooks/usePresence";
+import { useAlerteCommande } from "./hooks/useAlerteCommande";
 import type { Demande, DemandeCaisse } from "./domain/types";
 
 type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "admin" | "documentation";
@@ -45,6 +46,7 @@ export default function App() {
     if (utilisateurPret) adminApi.enregistrerConnexion(utilisateurPret).catch(() => {});
   }, [utilisateurPret]);
   const [section, setSection] = useState<Section>("accueil");
+  useAlerteCommande(utilisateurPret !== null, section);
   const [affaireId, setAffaireId] = useState<number | null>(null);
   const [creationAffaire, setCreationAffaire] = useState<Demande | null>(null);
   const [creationSousCaisses, setCreationSousCaisses] = useState<DemandeCaisse[]>([]);

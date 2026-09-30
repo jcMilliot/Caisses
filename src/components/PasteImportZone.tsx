@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { NewArticle } from "../domain/types";
-import { decouperColonnesTsv, decouperLignesTsv } from "../domain/tsv";
+import { decouperTableauTsv } from "../domain/tsv";
 
 interface Props {
   onImport: (articles: NewArticle[]) => Promise<void>;
@@ -13,15 +13,16 @@ interface Props {
 const COLONNES = ["AR", "Référence", "Désignation", "Dim1 (mm)", "Dim2 (mm)", "Dim3 (mm)", "Poids unit. (kg)", "Quantité"];
 
 function parseColle(texte: string): { articles: NewArticle[]; erreurs: string[] } {
-  const lignes = decouperLignesTsv(texte).map((l) => l.trim());
+  // Pas de trim() de la ligne : il supprimait la tabulation de tête d'une ligne sans AR et
+  // décalait toutes les colonnes. Chaque champ est trimé à l'usage.
+  const lignes = decouperTableauTsv(texte).filter((cols) => cols.some((c) => c.trim() !== ""));
 
   const articles: NewArticle[] = [];
   const erreurs: string[] = [];
   let colonnesEnTrop = 0;
   let colonneMax = 0;
 
-  lignes.forEach((ligne, i) => {
-    const colsBrutes = decouperColonnesTsv(ligne);
+  lignes.forEach((colsBrutes, i) => {
     // Colonnes au-delà des 8 attendues : on les ignore (le fichier Excel a souvent 2 colonnes
     // de volume calculé en plus — l'app le recalcule elle-même). On compte pour un avertissement
     // global unique, on ne rejette pas la ligne.
@@ -49,7 +50,8 @@ function parseColle(texte: string): { articles: NewArticle[]; erreurs: string[] 
     articles.push({
       ar: ar.trim(),
       reference: reference.trim(),
-      designation: designation.trim(),
+      // Cellule Excel sur plusieurs lignes (Alt+Entrée) → une seule ligne dans l'app.
+      designation: designation.replace(/\s*[\r\n]+\s*/g, " ").trim(),
       dim1_mm,
       dim2_mm,
       dim3_mm,
@@ -181,7 +183,7 @@ export default function PasteImportZone({ onImport, onClose, texteInitial = "" }
                     </tr>
                   </thead>
                   <tbody>
-                    {articles.slice(0, 20).map((a, i) => (
+                    {articles.map((a, i) => (
                       <tr key={i}>
                         <td style={tdStyle}>{a.ar}</td>
                         <td style={tdStyle}>{a.reference}</td>
@@ -195,11 +197,6 @@ export default function PasteImportZone({ onImport, onClose, texteInitial = "" }
                     ))}
                   </tbody>
                 </table>
-              )}
-              {articles.length > 20 && (
-                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
-                  … et {articles.length - 20} de plus
-                </div>
               )}
             </div>
           )}

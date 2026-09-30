@@ -248,7 +248,7 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
             {estCaisse4C(caisse.type_envoi_caisse) && (
               <Row label="Volume disponible" value={`${formaterVolumeM3(caisse.volumeDisponibleM3)} m³`} />
             )}
-            <Row label="Poids total" value={`${caisse.poidsTotalKg.toFixed(1)} kg`} />
+            <Row label="Poids total" value={`${caisse.poidsTotalKg.toFixed(3)} kg`} />
             <Row label="Seuil d'alerte" value={`${caisse.seuilEffectif}%${caisse.seuil_pct === null ? " (défaut)" : ""}`} />
           </div>
 

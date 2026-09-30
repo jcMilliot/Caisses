@@ -7,8 +7,6 @@ import logoUrl from "../assets/logo.png";
 
 interface Props {
   affiche: AfficheCaisse;
-  trigrammesConnus: string[];
-  trigrammeParDefaut: string;
   selectionnee: boolean;
   onToggleSelection: (v: boolean) => void;
   onContrePlaqueChange: (v: boolean) => Promise<void>;
@@ -79,10 +77,11 @@ async function capturerAvecRetries(conteneur: HTMLElement | null): Promise<Blob 
 }
 
 const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function AfficheCaisseCard(
-  { affiche, trigrammesConnus, trigrammeParDefaut, selectionnee, onToggleSelection, onContrePlaqueChange, onMarqueeEnvoyee, readOnly },
+  { affiche, selectionnee, onToggleSelection, onContrePlaqueChange, onMarqueeEnvoyee, readOnly },
   ref,
 ) {
-  const [demandeur, setDemandeur] = useState(trigrammeParDefaut);
+  // Demandeur = qui a coché « OK pour être commandée » (plus de choix manuel, 2026-09-30).
+  const demandeur = affiche.okCdePar;
   const [dateDemande, setDateDemande] = useState(aujourdhuiIso());
   const [copie, setCopie] = useState(false);
   const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>(undefined);
@@ -187,19 +186,21 @@ const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function Af
 
         <div>
           <label style={labelStyle}>Demandeur</label>
-          <select
-            value={demandeur}
-            onChange={(e) => setDemandeur(e.target.value)}
-            disabled={readOnly}
-            style={inputStyle}
+          <div
+            style={{
+              display: "inline-block",
+              padding: "3px 12px",
+              borderRadius: "var(--radius)",
+              background: demandeur ? "var(--ok-bg)" : "transparent",
+              border: demandeur ? "1px solid var(--ok-border)" : "none",
+              color: demandeur ? "var(--ok-text)" : "var(--text-muted)",
+              fontSize: 17,
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+            }}
           >
-            {!trigrammesConnus.includes(demandeur) && <option value={demandeur}>{demandeur}</option>}
-            {trigrammesConnus.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+            {demandeur || "—"}
+          </div>
         </div>
 
         <div>

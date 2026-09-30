@@ -34,13 +34,14 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<Demande> {
         validee: row.get(21)?,
         ordre: row.get(22)?,
         caisse_stock_id: row.get(23)?,
+        ok_cde_par: row.get(24)?,
     })
 }
 
 const SELECT_COLS: &str = "id, ok_pour_passer_cde, affaire, type_envoi_caisse, type_ouverture, stock,
     longueur_mm, largeur_mm, hauteur_mm, quantite, date_picking, date_demandee_s2c,
     moteurs, module_lineaire, terminaux, traitement, informations_supp,
-    cde_passee_affaire, cde_passee_achat_stock, observations, contre_plaque, validee, ordre, caisse_stock_id";
+    cde_passee_affaire, cde_passee_achat_stock, observations, contre_plaque, validee, ordre, caisse_stock_id, ok_cde_par";
 
 #[tauri::command]
 pub fn list_demandes(db: State<Db>) -> Result<Vec<Demande>, String> {
@@ -58,8 +59,8 @@ fn insert_demande(conn: &rusqlite::Connection, d: &NewDemande, ordre: i64) -> Re
             ok_pour_passer_cde, affaire, type_envoi_caisse, type_ouverture, stock,
             longueur_mm, largeur_mm, hauteur_mm, quantite, date_picking, date_demandee_s2c,
             moteurs, module_lineaire, terminaux, traitement, informations_supp,
-            cde_passee_affaire, cde_passee_achat_stock, observations, contre_plaque, ordre, caisse_stock_id
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+            cde_passee_affaire, cde_passee_achat_stock, observations, contre_plaque, ordre, caisse_stock_id, ok_cde_par
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
         rusqlite::params![
             d.ok_pour_passer_cde,
             d.affaire,
@@ -83,6 +84,7 @@ fn insert_demande(conn: &rusqlite::Connection, d: &NewDemande, ordre: i64) -> Re
             d.contre_plaque,
             ordre,
             d.caisse_stock_id,
+            d.ok_cde_par,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -126,40 +128,7 @@ pub fn bulk_create_demandes(db: State<Db>, demandes: Vec<NewDemande>, trigramme:
             .query_row("SELECT COALESCE(MAX(ordre), -1) + 1 FROM demande", [], |row| row.get(0))
             .map_err(|e| e.to_string())?;
         for d in &demandes {
-            tx.execute(
-                "INSERT INTO demande (
-                    ok_pour_passer_cde, affaire, type_envoi_caisse, type_ouverture, stock,
-                    longueur_mm, largeur_mm, hauteur_mm, quantite, date_picking, date_demandee_s2c,
-                    moteurs, module_lineaire, terminaux, traitement, informations_supp,
-                    cde_passee_affaire, cde_passee_achat_stock, observations, contre_plaque, ordre, caisse_stock_id
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
-                rusqlite::params![
-                    d.ok_pour_passer_cde,
-                    d.affaire,
-                    d.type_envoi_caisse,
-                    d.type_ouverture,
-                    d.stock,
-                    d.longueur_mm,
-                    d.largeur_mm,
-                    d.hauteur_mm,
-                    d.quantite,
-                    d.date_picking,
-                    d.date_demandee_s2c,
-                    d.moteurs,
-                    d.module_lineaire,
-                    d.terminaux,
-                    d.traitement,
-                    d.informations_supp,
-                    d.cde_passee_affaire,
-                    d.cde_passee_achat_stock,
-                    d.observations,
-                    d.contre_plaque,
-                    ordre,
-                    d.caisse_stock_id,
-                ],
-            )
-            .map_err(|e| e.to_string())?;
-            let nid = tx.last_insert_rowid();
+            let nid = insert_demande(&tx, d, ordre)?;
             journaliser(
                 &tx,
                 &trigramme,
@@ -205,8 +174,8 @@ pub fn update_demande(db: State<Db>, id: i64, demande: NewDemande, trigramme: St
             longueur_mm = ?6, largeur_mm = ?7, hauteur_mm = ?8, quantite = ?9, date_picking = ?10,
             date_demandee_s2c = ?11, moteurs = ?12, module_lineaire = ?13, terminaux = ?14, traitement = ?15,
             informations_supp = ?16, cde_passee_affaire = ?17, cde_passee_achat_stock = ?18, observations = ?19,
-            contre_plaque = ?20, caisse_stock_id = ?21
-        WHERE id = ?22",
+            contre_plaque = ?20, caisse_stock_id = ?21, ok_cde_par = ?22
+        WHERE id = ?23",
         rusqlite::params![
             demande.ok_pour_passer_cde,
             demande.affaire,
@@ -229,6 +198,7 @@ pub fn update_demande(db: State<Db>, id: i64, demande: NewDemande, trigramme: St
             demande.observations,
             demande.contre_plaque,
             demande.caisse_stock_id,
+            demande.ok_cde_par,
             id,
         ],
     )
