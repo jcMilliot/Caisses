@@ -1,7 +1,7 @@
 {
   "name": "caisses",
   "private": true,
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Application de bureau pour dimensionner des caisses en bois d'expédition (volume, poids, taux de remplissage).",
   "license": "MIT",
   "repository": {

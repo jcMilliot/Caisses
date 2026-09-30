@@ -24,6 +24,10 @@ partage réseau utilisé par plusieurs postes.
 - **Sauvegarde par n'importe quel poste ouvert** : configuration partagée en base (`parametre`),
   réservation atomique par `UPDATE ... WHERE` conditionnel pour qu'un seul poste la fasse, copie
   cohérente par `VACUUM INTO`.
+- **Restauration depuis la page Admin** (ajoutée le 2026-09-28) : choix dans la liste des
+  sauvegardes ou d'un autre fichier ; **refusée tant qu'un autre poste a l'app ouverte**
+  (présence signalée toutes les 30 s, table `poste_actif`) ; copie de sécurité de la base
+  remplacée ; comptes et réglages de sauvegarde actuels conservés ; redémarrage de l'app.
 
 ## Alternatives écartées
 
@@ -35,6 +39,9 @@ partage réseau utilisé par plusieurs postes.
 - **Liste d'utilisateurs gérée par l'admin** (trigrammes autorisés) : pas souhaité pour l'instant.
 - **Sauvegarde seulement sur le poste AJC**, ou **tâche planifiée Windows** : aucune sauvegarde
   quand ce poste est éteint ; la tâche planifiée serait en plus à installer poste par poste.
+- **Restauration avec simple avertissement** (« fermez l'app ailleurs ») : remplacer la base
+  pendant qu'un poste l'utilise sur le partage réseau risque de la corrompre ; on préfère un
+  blocage vérifiable.
 
 ## Conséquences acceptées
 
@@ -45,6 +52,8 @@ partage réseau utilisé par plusieurs postes.
   outil SQLite pour le recréer.
 - Le dossier de sauvegarde doit être accessible depuis tous les postes ; sinon le poste concerné
   échoue, l'erreur est notée en base et un autre poste réessaie.
+- Restauration : après fermeture d'un autre poste, attendre jusqu'à 2 minutes avant de pouvoir
+  restaurer. Un poste planté ou débranché bloque aussi pendant ces 2 minutes.
 
 ## Quand reconsidérer
 

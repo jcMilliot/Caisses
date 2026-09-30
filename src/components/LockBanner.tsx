@@ -38,7 +38,7 @@ export default function LockBanner({
         {outgoingRequestStatus === "denied" && " Votre demande a été refusée."}
       </span>
       <button className="btn btn-sm" onClick={onRequestPen} disabled={outgoingRequestStatus === "pending"}>
-        {outgoingRequestStatus === "pending" ? "Demande envoyée…" : "Demander le crayon"}
+        {outgoingRequestStatus === "pending" ? "Demande envoyée…" : "Demande d'écriture"}
       </button>
     </div>
   );

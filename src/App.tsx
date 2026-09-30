@@ -21,6 +21,7 @@ import { useDbSetup } from "./hooks/useDbSetup";
 import { useUserSetup } from "./hooks/useUserSetup";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
 import { useBackupAuto } from "./hooks/useBackupAuto";
+import { usePresence } from "./hooks/usePresence";
 import type { Demande, DemandeCaisse } from "./domain/types";
 
 type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "admin" | "documentation";
@@ -38,6 +39,7 @@ export default function App() {
   const { update, installing, confirmInstall, dismiss } = useUpdateCheck(dbStatus === "ready");
   const utilisateurPret = dbStatus === "ready" && userStatus === "ready" ? trigramme : null;
   useBackupAuto(utilisateurPret);
+  usePresence(utilisateurPret);
   // Alimente la liste des utilisateurs de la page Admin (dernière connexion).
   useEffect(() => {
     if (utilisateurPret) adminApi.enregistrerConnexion(utilisateurPret).catch(() => {});

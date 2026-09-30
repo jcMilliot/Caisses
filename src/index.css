@@ -282,3 +282,18 @@ table {
 .doc-bloc li {
   margin: 0;
 }
+
+.doc-bloc li > ul {
+  margin-top: 6px;
+  gap: 4px;
+}
+
+.doc-bloc h3 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.doc-bloc ul + h3 {
+  margin-top: 18px;
+}

@@ -76,7 +76,7 @@ export function useSectionLock(sectionKey: string, trigramme: string) {
       const renew = isHolderRef.current && Date.now() - lastActivityRef.current < INACTIVITY_TIMEOUT_MS;
       try {
         let lock = await locksApi.heartbeat(sectionKey, trigramme, renew);
-        // Notre demande de crayon est restée sans réponse et le titulaire est injoignable
+        // Notre demande d'écriture est restée sans réponse et le titulaire est injoignable
         // (>= 90 s des deux côtés) : on reprend la main automatiquement, sans attendre les 5 min
         // d'expiration du verrou lui-même.
         if (

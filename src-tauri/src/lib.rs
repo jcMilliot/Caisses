@@ -10,7 +10,7 @@ use commands::articles::{
     update_article,
 };
 use commands::caisse_stock::{
-    create_caisse_stock, delete_caisse_stock, list_caisses_stock, set_caisse_stock_validee, transfer_caisse_stock,
+    count_caisse_stock_lignes_liees, create_caisse_stock, delete_caisse_stock, list_caisses_stock, set_caisse_stock_validee, transfer_caisse_stock,
     update_caisse_stock,
 };
 use commands::caisses::{
@@ -32,6 +32,9 @@ use commands::locks::{
 };
 use commands::options_liste::{
     count_option_liste_usage, create_option_liste, delete_option_liste, list_options_liste, rename_option_liste,
+};
+use commands::restauration::{
+    choose_fichier_restauration, list_sauvegardes, restore_sauvegarde, signaler_presence, PosteId,
 };
 use commands::setup::{choose_db_folder, get_db_status, init_db, set_db_folder};
 use commands::user::{get_user_status, set_trigramme};
@@ -62,6 +65,7 @@ pub fn run() {
             }
             app.manage(db::Db::empty());
             app.manage(AdminSession::default());
+            app.manage(PosteId::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -101,6 +105,7 @@ pub fn run() {
             delete_caisse_stock,
             transfer_caisse_stock,
             set_caisse_stock_validee,
+            count_caisse_stock_lignes_liees,
             acquire_lock,
             release_lock,
             heartbeat,
@@ -128,6 +133,10 @@ pub fn run() {
             choose_backup_folder,
             backup_now,
             backup_if_due,
+            signaler_presence,
+            list_sauvegardes,
+            choose_fichier_restauration,
+            restore_sauvegarde,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

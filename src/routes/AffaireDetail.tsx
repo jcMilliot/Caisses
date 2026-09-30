@@ -111,19 +111,33 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
     setSelectedIds(new Set());
   }
 
+  // Articles emportés par un glisser : toute la sélection si l'article attrapé est coché (comme
+  // dans l'Explorateur Windows), sinon l'article seul.
+  function articlesGlisses(articleId: number) {
+    const ids = selectedIds.has(articleId) ? selectedIds : new Set([articleId]);
+    return articles.filter((a) => ids.has(a.id));
+  }
+
   async function handleDropArticle(articleId: number, caisseCible: { id: number; nom: string }) {
     if (readOnly) return;
-    const article = articles.find((a) => a.id === articleId);
-    if (!article || article.caisse_id === caisseCible.id) return;
-    if (article.caisse_id !== null) {
-      const caisseSource = caissesCalculees.find((c) => c.id === article.caisse_id);
-      const confirme = await confirmerAction(
-        `Déplacer cet article de « ${caisseSource?.nom ?? "?"} » vers « ${caisseCible.nom} » ?`,
-        "Déplacer l'article",
-      );
-      if (!confirme) return;
+    const glisses = articlesGlisses(articleId);
+    const aAssigner = glisses.filter((a) => a.caisse_id !== caisseCible.id);
+    if (aAssigner.length === 0) return;
+    const aDeplacer = aAssigner.filter((a) => a.caisse_id !== null);
+    if (aDeplacer.length > 0) {
+      const sources = [...new Set(aDeplacer.map((a) => caissesCalculees.find((c) => c.id === a.caisse_id)?.nom ?? "?"))];
+      const message =
+        aAssigner.length === 1
+          ? `Déplacer cet article de « ${sources[0]} » vers « ${caisseCible.nom} » ?`
+          : `${aDeplacer.length} des ${aAssigner.length} articles sont déjà dans une autre caisse (${sources.map((s) => `« ${s} »`).join(", ")}). Les déplacer vers « ${caisseCible.nom} » ?`;
+      if (!(await confirmerAction(message, aAssigner.length === 1 ? "Déplacer l'article" : "Déplacer les articles"))) return;
     }
-    await assignerArticles([articleId], caisseCible.id);
+    await assignerArticles(
+      aAssigner.map((a) => a.id),
+      caisseCible.id,
+    );
+    // Même convention que « Assigner à → » : la sélection est consommée par l'assignation.
+    if (glisses.length > 1) setSelectedIds(new Set());
   }
 
   const { drag, startDrag } = usePointerDrag((articleId, targetEl) => {
@@ -471,7 +485,9 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
             textOverflow: "ellipsis",
           }}
         >
-          {articleEnCoursDeDrag.ar || articleEnCoursDeDrag.reference || "Article"}
+          {articlesGlisses(articleEnCoursDeDrag.id).length > 1
+            ? `${articlesGlisses(articleEnCoursDeDrag.id).length} articles`
+            : articleEnCoursDeDrag.ar || articleEnCoursDeDrag.reference || "Article"}
           {survolCaisseId && (
             <span style={{ color: "var(--accent)", marginLeft: 6 }}>
               → {caissesCalculees.find((c) => c.id === survolCaisseId)?.nom}

@@ -10,6 +10,26 @@ racine, le fix, et un lien vers l'entrée de journal correspondante pour le dét
 
 ---
 
+## Alerte « date dans le passé » en boucle pendant la frappe, date du calendrier perdue
+
+**Symptôme** : dans « Créer une nouvelle caisse », saisir la date demandée à S2C au clavier
+déclenche l'alerte « date dans le passé » avant d'avoir fini l'année (et à nouveau à chaque
+chiffre) ; choisir la date à la souris dans le calendrier ne l'enregistre pas, comme un clic à
+côté.
+
+**Cause** : la vérification était faite dans le `onChange` du `<input type="date">`, qui se
+déclenche à chaque frappe — pendant la saisie de l'année, la date vaut transitoirement 0002,
+0020, 0202… (passé). La valeur n'était appliquée qu'après la confirmation, et le dialogue ouvert
+en pleine saisie / sélection faisait perdre la valeur.
+
+**Fix** (2026-09-28, `AjouterDemandesDialog.tsx`) : `onChange` applique la valeur telle quelle ;
+la vérification se fait au `onBlur` (sortie du champ), en comparant à la valeur mémorisée au
+`onFocus` — refus → retour à cette valeur. L'édition inline du tableau n'était pas concernée
+(`EditableCellInput` ne valide déjà qu'à la sortie de la cellule / Entrée). **Règle** : ne
+jamais ouvrir de dialogue depuis le `onChange` d'un champ date.
+
+---
+
 ## Sélecteur de date en MM/DD/YYYY sur un poste réglé en JJ/MM/AAAA
 
 **Symptôme** : sur le poste du bureau, le champ date natif (`<input type="date">`, dialogue de
