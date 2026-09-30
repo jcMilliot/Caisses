@@ -1,0 +1,115 @@
+// Onglet « Feuille de route » de la page Admin : ce qui reste à faire et ce qui reste à décider,
+// en langage non technique (demande de l'utilisateur du 2026-09-30). Texte statique, à tenir à
+// jour à la main en même temps que « Prochaines étapes » de CLAUDE.md, dont il est la version
+// lisible par les administrateurs.
+
+interface Point {
+  titre: string;
+  detail: string;
+}
+
+const A_FAIRE: Point[] = [];
+
+const A_VERIFIER: Point[] = [
+  {
+    titre: "Sauvegarde automatique",
+    detail:
+      "Choisir le dossier et la fréquence dans l'onglet Sauvegarde, puis vérifier qu'une copie apparaît bien dans le dossier.",
+  },
+  {
+    titre: "Format des dates",
+    detail: "Sur le poste du bureau, vérifier que les calendriers affichent les dates en JJ/MM/AAAA.",
+  },
+  {
+    titre: "Alerte « À commander »",
+    detail:
+      "Vérifier que la pastille rouge apparaît sur l'icône de l'application dans la barre des tâches quand une affaire est en alerte.",
+  },
+  {
+    titre: "Rôles",
+    detail:
+      "Passer un utilisateur en Lecteur et vérifier qu'il ne peut rien modifier ; nommer un 2e administrateur et vérifier qu'il crée son mot de passe à sa première ouverture de l'Admin.",
+  },
+  {
+    titre: "Code de secours",
+    detail:
+      "AJC : cliquer sur « Créer un code de secours » en haut de la page Admin et le noter en lieu sûr. Il sert si le mot de passe est oublié.",
+  },
+  {
+    titre: "Seuil d'alerte général",
+    detail: "Le régler dans l'onglet Paramètres et vérifier qu'il s'applique aux affaires non livrées, pas aux affaires livrées.",
+  },
+  {
+    titre: "Collage des lignes « AR / ZR »",
+    detail:
+      "Coller une ligne dont l'AR ne commence ni par AR ni par ZR : la fenêtre de choix doit apparaître, et les lignes non cochées doivent être listées sous le tableau.",
+  },
+  {
+    titre: "Documentation modifiable",
+    detail: "Modifier un texte de la documentation, enregistrer, puis vérifier qu'il apparaît sur un autre poste.",
+  },
+];
+
+const A_DECIDER: Point[] = [
+  {
+    titre: "Alerte de poids d'affaire (350 kg)",
+    detail:
+      "Idée : alerter quand une affaire dépasse 350 kg. À décider : poids des articles seuls ou avec la caisse, tous les articles ou seulement ceux rangés, seuil fixe ou réglable.",
+  },
+  {
+    titre: "Aide au dimensionnement des caisses",
+    detail:
+      "Idée : proposer des dimensions de caisse à partir des plus grands articles, avec une marge. Marge à définir (en cm ou en %, différente pour les caisses 4C ?).",
+  },
+  {
+    titre: "Caisses enfants à la création",
+    detail: "Idée : pouvoir créer directement les caisses enfants dans la fenêtre « Créer une nouvelle caisse ».",
+  },
+  {
+    titre: "Cartons standards (outil de colisage)",
+    detail:
+      "Idée : retirer d'une simulation les articles déjà rangés dans des cartons standards, et les remplacer par ces cartons. Il faut d'abord un exemple du fichier produit par l'outil de colisage.",
+  },
+  {
+    titre: "Base de données partagée sur le réseau",
+    detail:
+      "Le partage réseau reste fragile si deux postes écrivent en même temps, malgré le verrouillage. À terme, un serveur central serait plus sûr ; en attendant, la sauvegarde automatique limite le risque.",
+  },
+  {
+    titre: "Alerte Windows Defender à chaque mise à jour",
+    detail:
+      "L'installeur n'est pas signé, d'où le blocage possible par Defender. Un certificat de signature payant n'est pas prévu, à revoir si le nombre de postes augmente.",
+  },
+];
+
+export default function AdminFeuilleDeRoute() {
+  return (
+    <div style={{ maxWidth: 820, display: "grid", gap: 20 }}>
+      <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: 0 }}>
+        Ce qui est prévu pour les prochaines versions, ce qu'il reste à vérifier sur les postes, et les questions encore
+        ouvertes.
+      </p>
+      {A_FAIRE.length > 0 && (
+        <Liste titre="Reste à faire" sousTitre="Décidé, à développer" points={A_FAIRE} couleur="var(--info-text)" />
+      )}
+      <Liste titre="À vérifier" sousTitre="Sur les postes, après mise à jour" points={A_VERIFIER} couleur="var(--ok-text)" />
+      <Liste titre="À réfléchir" sousTitre="Questions ouvertes et idées" points={A_DECIDER} couleur="var(--warn-text)" />
+    </div>
+  );
+}
+
+function Liste({ titre, sousTitre, points, couleur }: { titre: string; sousTitre: string; points: Point[]; couleur: string }) {
+  return (
+    <section className="panel" style={{ padding: "18px 22px", borderLeft: `4px solid ${couleur}` }}>
+      <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>{titre}</h2>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "2px 0 12px" }}>{sousTitre}</div>
+      <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 8, fontSize: 13.5, lineHeight: 1.5 }}>
+        {points.map((p) => (
+          <li key={p.titre}>
+            <strong>{p.titre}</strong> — {p.detail}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}

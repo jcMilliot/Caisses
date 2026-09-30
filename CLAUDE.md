@@ -91,7 +91,12 @@ src-tauri/src/
   models.rs         → structs serde partagées (Affaire, Caisse, Article, NewArticle, Demande,
                       NewDemande, CaisseStock, DemandeCaisse, section_lock…)
   commands/
-    affaires.rs       → CRUD affaire
+    affaires.rs       → CRUD affaire (création au seuil général, nom seul modifiable) +
+                        get/set_seuil_general (admin, appliqué aux affaires non livrées)
+    articles_non_colles.rs → lignes écartées au collage (AR ni « AR » ni « ZR ») : list/create
+                        (tout utilisateur) + update/delete/integrer (admin)
+    documentation.rs  → get/set_documentation_textes (textes modifiés de la page Documentation,
+                        JSON en `parametre`, écriture admin)
     caisses.rs        → CRUD caisse (+ type_envoi_caisse, contre_plaque, link_caisse_demande_caisse)
     articles.rs       → CRUD article + bulk_create_articles (collage Excel) + assign_articles
     demandes.rs       → CRUD demande + bulk_create_demandes (collage Excel) + set_demande_validee,
@@ -102,10 +107,14 @@ src-tauri/src/
                         liées (+ count_caisse_stock_lignes_liees pour la confirmation)
     alerte.rs         → set_alerte_barre_taches : pastille rouge (overlay icon Windows) sur
                         l'icône de la barre des tâches, dessinée en Rust
-    admin.rs          → comptes protégés par mot de passe (Argon2) + session admin en mémoire
-                        (AdminSession, require_admin) : get_compte_status / admin_unlock /
-                        admin_session_active / admin_lock / change_mot_de_passe /
-                        enregistrer_connexion / list_utilisateurs
+    admin.rs          → rôles (`utilisateur.role`, role_de / refuser_lecteur / changer_role,
+                        AJC admin permanent) + mots de passe des admins (Argon2) + session admin
+                        en mémoire (AdminSession, require_admin) : get_compte_status /
+                        admin_unlock / admin_session_active / admin_lock / change_mot_de_passe /
+                        enregistrer_connexion / list_utilisateurs / get_role /
+                        set_role_utilisateur / ajouter_utilisateur + mot de passe oublié
+                        (reinitialiser_mot_de_passe_par_code, regenerer_code_secours,
+                        reinitialiser_mot_de_passe_admin)
     backup.rs         → sauvegarde de caisses.sqlite3 (VACUUM INTO) : get/set_backup_config,
                         choose_backup_folder, backup_now (admin), backup_if_due (tout poste)
     restauration.rs   → présence des postes (PosteId, signaler_presence) + restauration d'une
@@ -134,8 +143,8 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-09-30 : migrations `0001` à `0026` (dernière :
-`0026_add_demande_ok_cde_par.sql` ; pas de `0019_reorder` — supprimé avant
+État au 2026-09-30 : migrations `0001` à `0030` (dernière :
+`0030_add_compte_code_secours.sql` ; pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes).
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
 triées côté frontend par `demandeOptions.ts::comparerOption` (quantité de tête puis n° de
@@ -227,18 +236,28 @@ option_liste (id, liste TEXT, valeur TEXT, ordre, UNIQUE(liste, valeur))  -- 001
          -- informatives entre parenthèses). Migration séparée car 0017 était déjà appliquée
          -- sur les bases de dev sans ces valeurs.
 
-compte (trigramme PK, mot_de_passe_hash, role DEFAULT 'admin', cree_le, modifie_le)  -- 0022
-         -- trigrammes protégés par mot de passe (hash Argon2, format PHC). Seul AJC pour
-         -- l'instant ; `role` = base pour de futurs droits par tâche.
+compte (trigramme PK, mot_de_passe_hash, role DEFAULT 'admin', cree_le, modifie_le,  -- 0022
+        code_secours_hash NULL)  -- 0030, code de secours (hash Argon2), NULL = aucun
+         -- mots de passe des administrateurs (hash Argon2, format PHC), créés à leur première
+         -- saisie, supprimés quand l'admin est rétrogradé. `compte.role` n'est plus lu : le rôle
+         -- vit dans `utilisateur.role` depuis 0028.
 
-utilisateur (trigramme PK, premiere_connexion, derniere_connexion)  -- 0022
-         -- trigrammes saisis sur les postes (déclaratifs), rafraîchi à chaque démarrage ;
-         -- seedé à la migration depuis `journal` et `section_lock`.
+utilisateur (trigramme PK, premiere_connexion, derniere_connexion,  -- 0022
+             role DEFAULT 'utilisateur')  -- 0028 : 'utilisateur' | 'lecteur' | 'admin'
+         -- trigrammes saisis sur les postes (déclaratifs, ou ajoutés à l'avance par un admin),
+         -- rafraîchi à chaque démarrage ; seedé à 0022 depuis `journal` et `section_lock`.
+         -- AJC = admin permanent (non modifiable) ; au moins un admin toujours.
+
+article_non_colle (id, affaire_id REFERENCES affaire ON DELETE CASCADE, ar, reference,  -- 0029
+         designation, dim1_mm, dim2_mm, dim3_mm, poids_unitaire_kg, quantite,
+         ligne_brute, cree_le, cree_par)
+         -- lignes écartées au collage Excel (AR ne commençant ni par « AR » ni par « ZR »).
 
 parametre (cle PK, valeur)  -- 0022, paramètres partagés clé/valeur
          -- backup_dossier, backup_frequence ('desactivee'|'quotidienne'|'hebdomadaire'),
          -- backup_conservation (nb de fichiers), backup_derniere (UTC), backup_dernier_poste,
-         -- backup_derniere_erreur.
+         -- backup_derniere_erreur ; seuil_alerte_general (défaut 70) ;
+         -- documentation_textes (JSON { clé: texte } des textes modifiés de la Documentation).
 
 poste_actif (poste_id PK, trigramme, dernier_battement)  -- 0023
          -- postes qui ont l'app ouverte : identifiant tiré au hasard au lancement (PosteId),
@@ -678,8 +697,9 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   `TrigrammeSetup` passe à une 2e étape si `get_compte_status` indique un trigramme protégé ;
   `set_trigramme` refuse sans le bon mot de passe. Un poste déjà configuré en AJC avant cette
   version n'a rien à ressaisir au démarrage — le mot de passe sera créé à la 1re ouverture de
-  l'Admin. **Mot de passe oublié** : pas de procédure dans l'app — supprimer la ligne AJC de la
-  table `compte` (outil SQLite) pour le recréer au prochain passage.
+  l'Admin. **Mot de passe oublié** : procédure dans l'app depuis le 2026-09-30 (code de secours
+  ou réinitialisation par un autre admin, cf. journal du même jour) ; en dernier recours,
+  supprimer la ligne du trigramme dans `compte` (outil SQLite).
 - **Session admin** : `AdminSession` (état Tauri en mémoire, jamais persisté) ouverte par
   `set_trigramme` ou `admin_unlock`, refermée par le bouton « Verrouiller » ou la fermeture de
   l'app. `require_admin` protège `list_journal`, `list_utilisateurs`, la config de sauvegarde et
@@ -833,6 +853,67 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   sous-caisses, élargie 20 → 44 px, les deux cohabitent ; en-tête « Actions » sur la colonne des
   boutons ; trigramme de l'affiche plus gros sur fond vert pastel (`--ok-bg`) ; aperçu de
   « Coller depuis Excel » (Simulations) affiché en entier (plus de « … et N de plus »).
+
+### 2026-09-30 — Rôles, seuil général, collage AR/ZR, documentation modifiable
+
+Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur en italique).
+
+- **Lot A — Simulations et seuil** :
+  - pastille d'en-tête « Seuil d'alerte N% », 15px, orange pastel (`--warn-*`) ;
+  - « Modifier » une caisse (`CaisseCard`) : nom affiché en dur (*pas d'alias pour l'instant*),
+    plus de champ seuil ; migration `0027` remet `caisse.seuil_pct` à NULL (toutes les caisses
+    héritent du seuil de l'affaire) ;
+  - « Manque d'informations » actif par défaut (`surlignerManques` = true) ;
+  - **seuil général** (`affaires.rs`, paramètre `seuil_alerte_general`, défaut 70) : réglé
+    uniquement dans Admin › Paramètres ; *l'enregistrer écrase le seuil des affaires non livrées*
+    (`AFFAIRE_LIVREE` : demande de même nom — trim + casse — ou liée par `caisse.demande_id`,
+    livrée selon la règle de `estDemandeValidee` ; *caisses d'une affaire traitées ensemble* ;
+    *affaire sans demande = en cours*). `create_affaire` prend le seuil général (plus de
+    paramètre), `update_affaire` ne change plus que le nom, champ seuil retiré de `AffairesList`.
+- **Lot B — Rôles** (`utilisateur.role`, migration `0028`) : Utilisateur / Lecteur /
+  Administrateur, choisis dans Admin › Utilisateurs (+ « Ajouter un utilisateur » pour déclarer un
+  trigramme à l'avance). *Un mot de passe par administrateur*, créé à sa première saisie
+  (`verifier_ou_creer` ne dépend plus d'AJC mais du rôle) ; rétrograder un admin supprime son mot
+  de passe ; impossible de retirer le dernier admin ; *AJC reste toujours administrateur*
+  (`ADMIN_PERMANENT`, garde Rust + menu grisé). **Lecteur** : `require_lock` appelle
+  `refuser_lecteur` (toutes les commandes d'écriture) + `create_affaire` ; côté UI,
+  `useSectionLock` ne prend jamais de verrou pour un lecteur (`definirLectureSeuleRole`, posé par
+  `App` avant l'affichage des écrans), `LockBanner` affiche « lecture seule (rôle Lecteur) »,
+  `AffairesList` désactive création / suppression. Entrée « Admin » et accès = rôle admin
+  (`TRIGRAMME_ADMIN` supprimé). Rôle relu à chaque changement d'écran. La restauration de
+  sauvegarde conserve aussi les rôles et le seuil général actuels.
+- **Lot C — Collage AR/ZR** (`PasteImportZone::arValide`, `/^(AR|ZR)/i` après trim — une ligne
+  sans AR compte comme douteuse) : à l'import, *une seule fenêtre à cases* liste les lignes
+  douteuses (ligne entière collée), cochées = ajoutées ; les autres sont *gardées en base avec
+  l'affaire* (`article_non_colle`, migration `0029`) et listées sous le tableau
+  (`ArticlesNonCollesBloc`, « Ces lignes n'ont pas été collées : ») ; *modifier / ajouter au
+  tableau / supprimer réservés aux admins* (commandes `require_admin` + `require_lock`).
+  `hooks/useSessionAdmin` + `MotDePasseAdminDialog` : demande le mot de passe admin si la session
+  n'est pas ouverte (réutilisé par la Documentation).
+- **Lot D — Documentation modifiable** (*textes seulement*, sections et points fixes) : contenu
+  par défaut déplacé dans `domain/documentation.ts` (données : sections, `h3` / points / sous-
+  points, `**gras**`) ; page `Documentation.tsx` pilotée par ces données ; bouton « Modifier »
+  (admins, mot de passe si besoin) → titre, intro, sommaire, titres et textes éditables ;
+  « Enregistrer » (`.btn-success-solid`) et « Annuler » (`.btn-pastel-orange`) n'apparaissent que
+  s'il y a une modification. Seuls les textes différents du défaut sont stockés (clés
+  `<section>.<n°>`) : **modifier la structure de `SECTIONS_DOC` décale les clés** des points
+  suivants (textes modifiés rattachés au mauvais point) — à éviter, ou à migrer.
+- **Mot de passe oublié** (demande du même jour, *autre admin + code de secours*) :
+  - **code de secours** (`compte.code_secours_hash`, migration `0030`, format `XXXX-XXXX-XXXX`,
+    alphabet sans caractères ambigus, casse / tirets / espaces ignorés à la saisie) : généré à la
+    création du mot de passe (`set_trigramme` / `admin_unlock` le renvoient alors) et affiché
+    **une seule fois** (`CodeSecoursDialog`, case « J'ai noté ce code » obligatoire) ;
+  - « Mot de passe oublié ? » (`MotDePasseOublie`, dans `TrigrammeSetup`, le déverrouillage de
+    l'Admin et `MotDePasseAdminDialog`) : code + nouveau mot de passe → mot de passe remplacé,
+    **nouveau code** généré et affiché (l'ancien ne sert plus), connexion poursuivie ;
+  - Admin (en-tête) : « Nouveau code de secours » — en orange « ⚠ Créer un code de secours »
+    tant qu'il n'y en a pas (cas d'AJC, mot de passe créé avant cette version) ;
+  - Admin › Utilisateurs : « Réinitialiser le mot de passe » sur les **autres** admins → mot de
+    passe (et code) effacés, recréés à leur prochaine saisie ;
+  - la restauration d'une sauvegarde conserve aussi les codes de secours actuels.
+- Validation : `cargo check`, `cargo test --lib` (7 tests : + seuil général, rôles / mot de passe
+  / dernier admin / AJC permanent / lecteur / code de secours, intégration d'une ligne non
+  collée), `npx tsc --noEmit`. **Non testé en conditions réelles**.
 
 ## Prochaines étapes
 
@@ -1369,6 +1450,11 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
 
 ### À faire
 
+> **Version lisible par les administrateurs** : onglet Admin › « Feuille de route »
+> (`src/routes/AdminFeuilleDeRoute.tsx`, 2026-09-30) — Reste à faire / À vérifier / À réfléchir,
+> **sans termes techniques**. Texte statique : **le mettre à jour en même temps que cette section
+> et « À réfléchir plus tard »** (ajout d'un point, point terminé → le retirer).
+
 *Fiabilité et infrastructure*
 
 - **⚠️ Risque connu — dossier BDD réseau partagé** : décision utilisateur (2026-07-30) d'utiliser
@@ -1389,16 +1475,9 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   dev assisté. Le collage Excel 19 colonnes n'est plus à tester : il ne servait qu'à la reprise
   initiale des affaires, l'utilisateur ne collera plus de lignes dans Demandes (2026-09-28).
 
-*Retours utilisateur 2026-09-30*
-
-- **Poids à 0.000 → 0.001 ?** Demande de l'utilisateur (« si il est à 0.000, noter 0.001 »),
-  **mise en attente à sa demande** — ne rien modifier pour l'instant. Contexte : au collage
-  Excel, un petit poids arrive souvent à `0` exactement (Excel copie la valeur affichée, arrondie),
-  et un poids à 0 est aujourd'hui signalé par « Manque d'informations ». Options présentées :
-  enregistrer 0.001 à la place de 0 (collage, saisie, et articles existants — le poids ne serait
-  plus signalé comme manquant), ou seulement afficher 0.001 pour un poids > 0 qui s'arrondirait à
-  0.000 (arrondi par excès, comme les volumes), un vrai 0 restant signalé. À trancher avec
-  l'utilisateur avant tout code.
+*Retours utilisateur 2026-09-30* — **tous traités le même jour** (seuil, caisse, manque
+d'informations, seuil général, rôles, collage AR/ZR, documentation modifiable) : voir le journal
+« 2026-09-30 — Rôles, seuil général, collage AR/ZR, documentation modifiable ».
 
 *Retours utilisateur 2026-09-25*
 
@@ -1449,12 +1528,10 @@ bien celui souhaité, aucun changement de code nécessaire.
 
 ### À réfléchir plus tard
 
-- **Système de droits/permissions par utilisateur** — décision 2026-09-02 : inutile pour l'usage
-  actuel (3 personnes, mêmes droits, interne bienveillant). **Mise à jour 2026-09-28** : un
-  premier socle existe (tables `compte` avec `role` et `utilisateur`, session admin, cf. journal
-  et ADR 0003) ; l'utilisateur prévoit des droits par tâche plus tard. À concevoir alors :
-  quelles tâches, droits portés par `compte.role` ou une table dédiée, et si les autres
-  trigrammes doivent aussi avoir un mot de passe.
+- **Droits par tâche** — les rôles Utilisateur / Lecteur / Administrateur existent depuis le
+  2026-09-30 (`utilisateur.role`, cf. journal). Si des droits plus fins deviennent utiles
+  (par section ou par action), les porter par ce même rôle ou une table dédiée ; seuls les
+  administrateurs ont un mot de passe, les autres trigrammes restent déclaratifs.
 - **Alias de caisse affiché dans le tableau Demandes** — quand on renomme une caisse dans
   Simulations (souvent pour la rendre explicite, ex. « caisse moteurs »), afficher ce nom sous
   le nom de l'affaire dans la colonne Affaire de la ligne de demande correspondante (caisse

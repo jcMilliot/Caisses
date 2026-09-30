@@ -4,10 +4,16 @@ mod db;
 mod models;
 mod user_config;
 
-use commands::affaires::{create_affaire, delete_affaire, list_affaires, update_affaire};
+use commands::affaires::{
+    create_affaire, delete_affaire, get_seuil_general, list_affaires, set_seuil_general, update_affaire,
+};
 use commands::articles::{
     assign_articles, bulk_create_articles, create_article, delete_article, list_articles,
     update_article,
+};
+use commands::articles_non_colles::{
+    create_articles_non_colles, delete_article_non_colle, integrer_article_non_colle, list_articles_non_colles,
+    update_article_non_colle,
 };
 use commands::caisse_stock::{
     count_caisse_stock_lignes_liees, create_caisse_stock, delete_caisse_stock, list_caisses_stock, set_caisse_stock_validee, transfer_caisse_stock,
@@ -23,10 +29,12 @@ use commands::demandes::{
 };
 use commands::alerte::set_alerte_barre_taches;
 use commands::admin::{
-    admin_lock, admin_session_active, admin_unlock, change_mot_de_passe, enregistrer_connexion, get_compte_status,
-    list_utilisateurs, AdminSession,
+    admin_lock, admin_session_active, admin_unlock, ajouter_utilisateur, change_mot_de_passe, enregistrer_connexion,
+    get_compte_status, get_role, list_utilisateurs, regenerer_code_secours, reinitialiser_mot_de_passe_admin,
+    reinitialiser_mot_de_passe_par_code, set_role_utilisateur, AdminSession,
 };
 use commands::backup::{backup_if_due, backup_now, choose_backup_folder, get_backup_config, set_backup_config};
+use commands::documentation::{get_documentation_textes, set_documentation_textes};
 use commands::journal::list_journal;
 use commands::locks::{
     acquire_lock, claim_expired_pen, heartbeat, list_locks, release_lock, request_pen, respond_pen_request,
@@ -78,6 +86,8 @@ pub fn run() {
             create_affaire,
             update_affaire,
             delete_affaire,
+            get_seuil_general,
+            set_seuil_general,
             list_caisses,
             create_caisse,
             update_caisse,
@@ -90,6 +100,11 @@ pub fn run() {
             update_article,
             delete_article,
             assign_articles,
+            list_articles_non_colles,
+            create_articles_non_colles,
+            update_article_non_colle,
+            delete_article_non_colle,
+            integrer_article_non_colle,
             list_demandes,
             create_demande,
             bulk_create_demandes,
@@ -122,6 +137,8 @@ pub fn run() {
             count_option_liste_usage,
             delete_option_liste,
             list_journal,
+            get_documentation_textes,
+            set_documentation_textes,
             get_compte_status,
             admin_unlock,
             admin_session_active,
@@ -129,6 +146,12 @@ pub fn run() {
             change_mot_de_passe,
             enregistrer_connexion,
             list_utilisateurs,
+            get_role,
+            set_role_utilisateur,
+            ajouter_utilisateur,
+            reinitialiser_mot_de_passe_par_code,
+            regenerer_code_secours,
+            reinitialiser_mot_de_passe_admin,
             get_backup_config,
             set_backup_config,
             choose_backup_folder,

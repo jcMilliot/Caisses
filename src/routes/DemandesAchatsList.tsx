@@ -251,6 +251,7 @@ export default function DemandesAchatsList({ trigramme }: Props) {
 
       {(readOnly || lock.incomingRequest) && (
         <LockBanner
+          lectureSeule={lock.lectureSeule}
           holderTrigramme={lock.holderTrigramme}
           incomingRequest={lock.incomingRequest}
           outgoingRequestStatus={lock.outgoingRequestStatus}

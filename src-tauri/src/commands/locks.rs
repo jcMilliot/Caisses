@@ -7,6 +7,8 @@ use tauri::State;
 /// cohérent avec le fait qu'une ressource jamais ouverte par ce poste (ex: suppression d'une
 /// affaire depuis AffairesList, sans passer par AffaireDetail) n'a pas encore de verrou à elle.
 pub fn require_lock(conn: &rusqlite::Connection, section_key: &str, trigramme: &str) -> Result<(), String> {
+    // Point de passage de toutes les commandes d'écriture : on y refuse aussi le rôle Lecteur.
+    crate::commands::admin::refuser_lecteur(conn, trigramme)?;
     let sql = format!("SELECT {} FROM section_lock WHERE section_key = ?1", SELECT_COLS);
     let result = conn.query_row(&sql, [section_key], map_row);
     match result {

@@ -27,7 +27,7 @@ pub(crate) fn lire(conn: &Connection, cle: &str) -> Result<Option<String>, Strin
         .map_err(|e| e.to_string())
 }
 
-fn ecrire(conn: &Connection, cle: &str, valeur: &str) -> Result<(), String> {
+pub(crate) fn ecrire(conn: &Connection, cle: &str, valeur: &str) -> Result<(), String> {
     conn.execute(
         "INSERT INTO parametre (cle, valeur) VALUES (?1, ?2)
          ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur",

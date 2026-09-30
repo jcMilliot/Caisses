@@ -716,6 +716,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
 
       {(readOnly || lock.incomingRequest) && (
         <LockBanner
+          lectureSeule={lock.lectureSeule}
           holderTrigramme={lock.holderTrigramme}
           incomingRequest={lock.incomingRequest}
           outgoingRequestStatus={lock.outgoingRequestStatus}

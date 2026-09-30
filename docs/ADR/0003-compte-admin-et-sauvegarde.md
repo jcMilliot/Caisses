@@ -29,6 +29,11 @@ partage réseau utilisé par plusieurs postes.
   (présence signalée toutes les 30 s, table `poste_actif`) ; copie de sécurité de la base
   remplacée ; comptes et réglages de sauvegarde actuels conservés ; redémarrage de l'app.
 
+- **Rôles** (ajouté le 2026-09-30) : Utilisateur / Lecteur / Administrateur, portés par
+  `utilisateur.role` et choisis par les admins. **Chaque administrateur a son propre mot de
+  passe** (plus seulement AJC) ; AJC reste administrateur en permanence ; au moins un admin.
+  Le rôle Lecteur est refusé côté commandes Rust (`require_lock`), pas seulement dans l'UI.
+
 ## Alternatives écartées
 
 - **Mot de passe par poste (fichier local)** : à redéfinir sur chaque poste, et rien de
@@ -48,8 +53,9 @@ partage réseau utilisé par plusieurs postes.
 - Sécurité « interne » : le mot de passe protège l'accès via l'app, pas le fichier SQLite
   lui-même (quiconque a accès au dossier peut lire ou modifier la base avec un outil externe).
   Les autres trigrammes restent déclaratifs.
-- Mot de passe oublié : pas de procédure dans l'app — supprimer la ligne dans `compte` avec un
-  outil SQLite pour le recréer.
+- Mot de passe oublié (depuis le 2026-09-30) : code de secours affiché une seule fois à la
+  création du mot de passe, ou réinitialisation par un autre administrateur. Sans code et sans
+  autre admin : supprimer la ligne dans `compte` avec un outil SQLite pour le recréer.
 - Le dossier de sauvegarde doit être accessible depuis tous les postes ; sinon le poste concerné
   échoue, l'erreur est notée en base et un autre poste réessaie.
 - Restauration : après fermeture d'un autre poste, attendre jusqu'à 2 minutes avant de pouvoir

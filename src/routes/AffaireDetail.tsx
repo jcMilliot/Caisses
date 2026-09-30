@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import ArticlesNonCollesBloc from "../components/ArticlesNonCollesBloc";
+import { articlesNonCollesApi, type ArticleNonColle } from "../data/articlesNonColles";
+import { useSessionAdmin } from "../hooks/useSessionAdmin";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAffaire } from "../hooks/useAffaire";
 import { calculerRecapAffaire, calculerCapaciteAffaire, formaterVolumeM3, champsManquants } from "../domain/calculs";
 import { estCaisse4C, contrePlaqueParDefaut, estDemandeValidee, memeNomAffaire } from "../domain/demandeOptions";
@@ -20,9 +23,10 @@ interface Props {
   affaireId: number;
   onBack: () => void;
   trigramme: string;
+  estAdmin: boolean;
 }
 
-export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
+export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }: Props) {
   const lock = useSectionLock(`affaire:${affaireId}`, trigramme);
   const readOnly = lock.status !== "held";
   const {
@@ -40,6 +44,26 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
   } = useAffaire(affaireId, trigramme);
 
   const conteneurArticlesRef = useRef<HTMLDivElement>(null);
+  // Lignes écartées au collage (AR ne commençant ni par « AR » ni par « ZR »), gardées en base.
+  const [nonColles, setNonColles] = useState<ArticleNonColle[]>([]);
+  const { assurerSession, dialogue: dialogueSessionAdmin } = useSessionAdmin(trigramme);
+  const rechargerNonColles = useCallback(() => {
+    articlesNonCollesApi.list(affaireId).then(setNonColles).catch(() => {});
+  }, [affaireId]);
+  useEffect(() => {
+    rechargerNonColles();
+  }, [rechargerNonColles]);
+
+  // Action admin sur une ligne non collée : mot de passe demandé si la session n'est pas ouverte.
+  async function actionNonColle(action: () => Promise<void>) {
+    if (!(await assurerSession())) return;
+    try {
+      await action();
+    } catch (e) {
+      await confirmerAction(String(e), "Action impossible");
+    }
+    rechargerNonColles();
+  }
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showPaste, setShowPaste] = useState(false);
   const [collageInitial, setCollageInitial] = useState("");
@@ -50,7 +74,8 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
   );
   // Bascule on/off du surlignage des cellules dont une dimension ou le poids manque (bouton
   // "Manque d'informations" à côté des caisses) — distinct de l'alerte "article > caisse".
-  const [surlignerManques, setSurlignerManques] = useState(false);
+  // Repérage des informations manquantes actif par défaut (désactivable d'un clic).
+  const [surlignerManques, setSurlignerManques] = useState(true);
   const articlesAvecManque = useMemo(
     () => new Map(articles.map((a) => [a.id, champsManquants(a)] as const).filter(([, c]) => c.length > 0)),
     [articles],
@@ -386,6 +411,23 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
         />
       </div>
 
+      <ArticlesNonCollesBloc
+        lignes={nonColles}
+        estAdmin={estAdmin}
+        readOnly={readOnly}
+        onModifier={(id, article) => actionNonColle(() => articlesNonCollesApi.update(id, article, trigramme))}
+        onIntegrer={(id) =>
+          actionNonColle(async () => {
+            await articlesNonCollesApi.integrer(id, trigramme);
+            await reload();
+          })
+        }
+        onSupprimer={async (id) => {
+          if (!(await confirmerSuppression("Supprimer définitivement cette ligne non collée ?"))) return;
+          await actionNonColle(() => articlesNonCollesApi.delete(id, trigramme));
+        }}
+      />
+
       <ScrollToTopButton cible={conteneurArticlesRef} />
     </section>
   );
@@ -399,16 +441,18 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
         <div style={{ width: 1, height: 20, background: "var(--border-strong)" }} />
         <h1 style={{ fontSize: 21, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>{affaire.nom}</h1>
         <span
+          title="Seuil de remplissage au-delà duquel une caisse passe en alerte — réglé dans l'Admin"
           style={{
-            fontSize: 11.5,
+            fontSize: 15,
             fontWeight: 600,
-            color: "var(--accent)",
-            background: "var(--accent-soft)",
-            padding: "3px 9px",
+            color: "var(--warn-text)",
+            background: "var(--warn-bg)",
+            border: "1px solid var(--warn-border)",
+            padding: "3px 12px",
             borderRadius: 999,
           }}
         >
-          seuil {affaire.seuil_defaut}%
+          Seuil d'alerte {affaire.seuil_defaut}%
         </span>
       </div>
 
@@ -421,6 +465,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
 
       {(readOnly || lock.incomingRequest) && (
         <LockBanner
+          lectureSeule={lock.lectureSeule}
           holderTrigramme={lock.holderTrigramme}
           incomingRequest={lock.incomingRequest}
           outgoingRequestStatus={lock.outgoingRequestStatus}
@@ -448,12 +493,18 @@ export default function AffaireDetail({ affaireId, onBack, trigramme }: Props) {
           onImport={async (arts) => {
             await ajouterArticles(arts);
           }}
+          onRefuses={async (lignes) => {
+            await articlesNonCollesApi.create(affaireId, lignes, trigramme);
+            rechargerNonColles();
+          }}
           onClose={() => {
             setShowPaste(false);
             setCollageInitial("");
           }}
         />
       )}
+
+      {dialogueSessionAdmin}
 
       {showAssign && (
         <AssignToDialog
