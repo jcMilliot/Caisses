@@ -15,6 +15,9 @@ export interface AfficheCaisse {
   quantite: number;
   dateDemandeeS2c: string;
   contrePlaque: boolean;
+  // Trigramme de qui a coché « OK pour être commandée » sur la ligne mère (vide pour les lignes
+  // cochées avant que l'app le mémorise) — affiché comme demandeur de l'affiche.
+  okCdePar: string;
 }
 
 export type CategorieEnvoi = "standard" | "4b" | "4c";
@@ -87,6 +90,7 @@ export function construireAffiches(demandes: Demande[], demandeCaisses: DemandeC
       quantite: d.quantite,
       dateDemandeeS2c: d.date_demandee_s2c,
       contrePlaque: d.contre_plaque,
+      okCdePar: d.ok_cde_par,
     });
 
     for (const sc of demandeCaisses) {
@@ -105,6 +109,7 @@ export function construireAffiches(demandes: Demande[], demandeCaisses: DemandeC
         quantite: sc.quantite,
         dateDemandeeS2c: sc.date_demandee_s2c,
         contrePlaque: sc.contre_plaque,
+        okCdePar: d.ok_cde_par,
       });
     }
   }

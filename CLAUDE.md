@@ -100,6 +100,8 @@ src-tauri/src/
     caisse_stock.rs   → CRUD caisses en stock + transfer + set_caisse_stock_validee ;
                         update répercute dims / type d'ouverture sur les lignes non livrées
                         liées (+ count_caisse_stock_lignes_liees pour la confirmation)
+    alerte.rs         → set_alerte_barre_taches : pastille rouge (overlay icon Windows) sur
+                        l'icône de la barre des tâches, dessinée en Rust
     admin.rs          → comptes protégés par mot de passe (Argon2) + session admin en mémoire
                         (AdminSession, require_admin) : get_compte_status / admin_unlock /
                         admin_session_active / admin_lock / change_mot_de_passe /
@@ -132,8 +134,8 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-09-28 : migrations `0001` à `0025` (dernière :
-`0025_ouverture_4c_par_dessus.sql` ; pas de `0019_reorder` — supprimé avant
+État au 2026-09-30 : migrations `0001` à `0026` (dernière :
+`0026_add_demande_ok_cde_par.sql` ; pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes).
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
 triées côté frontend par `demandeOptions.ts::comparerOption` (quantité de tête puis n° de
@@ -181,6 +183,7 @@ demande (id,  -- table indépendante, pas de FK — section "Demandes" du menu p
          validee BOOL,          -- 0005, demande validée (mécanisme "Livré/Rapatriée")
          contre_plaque BOOL,    -- 0015
          caisse_stock_id INTEGER NULL,  -- 0011
+         ok_cde_par TEXT,       -- 0026, trigramme de qui a coché ok_pour_passer_cde ('' sinon)
          observations, ordre)
 
 demande_caisse (id, demande_id NOT NULL REFERENCES demande ON DELETE CASCADE,  -- 0008
@@ -792,6 +795,45 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
 - Validation : `cargo test --lib` (4 tests, migrations appliquées sur base neuve),
   `npx tsc --noEmit`. **Non testé en conditions réelles**.
 
+### 2026-09-30 — Alerte « à Commander », trigramme « OK pour être commandée », collage multi-lignes
+
+- **Alerte « à Commander »** (décisions actées avec l'utilisateur) :
+  `domain/caissesACommander.ts::estACommanderUrgent` — pas cochée « OK pour être commandée »,
+  non livrée, **ni caisse en stock** (`caisse_stock_id` / `stock`), **ni ACHSTOCK**, et picking
+  **dans 7 jours calendaires ou moins, retards inclus** (`JOURS_ALERTE_COMMANDE`). Disparaît
+  quand la case est cochée, revient si on la décoche.
+  - Accueil : ces affaires sont ajoutées en tête du bloc « Caisses à commander cette semaine »
+    (même si elles n'en font pas partie selon la règle de la semaine), fond `--danger-bg` +
+    « à Commander » (`AffaireACommander.urgent`).
+  - Barre des tâches : pastille rouge avec « ! » sur l'icône de l'app
+    (`commands/alerte.rs::set_alerte_barre_taches`, `WebviewWindow::set_overlay_icon`, Windows
+    uniquement, image RGBA dessinée en Rust — pas de fichier ni de feature `image-png`).
+    `hooks/useAlerteCommande.ts` (dans `App`) recalcule au démarrage, à chaque changement
+    d'écran et toutes les 2 min.
+- **Trigramme de qui coche « OK pour être commandée »** : colonne `demande.ok_cde_par`
+  (migration `0026`), posée / effacée dans `DemandesList::handleEditLocal` (couvre la coche, la
+  décoche et la décoche automatique quand un champ requis est vidé). Affiché comme demandeur
+  des affiches de Demandes d'achats (`AfficheCaisse.okCdePar`, sous-caisses = trigramme de la
+  mère) ; le menu déroulant « Demandeur » de `AfficheCaisseCard` est supprimé. Lignes cochées
+  avant cette version : « — ».
+- **Simulations : poids à 3 décimales** (poids unitaire du tableau, poids total du bandeau récap
+  et des cartes de caisse).
+- **Bug collage Excel — cellule sur plusieurs lignes coupée en deux articles** : cf.
+  [Bugs.md](Bugs.md). `domain/tsv.ts` découpe maintenant lignes et colonnes en une passe
+  (`decouperTableauTsv`, remplace `decouperLignesTsv` + `decouperColonnesTsv`). Au passage,
+  `PasteImportZone` ne trime plus la ligne entière (une ligne sans AR perdait sa tabulation de
+  tête et se décalait), et la désignation multi-lignes est ramenée sur une ligne.
+- Validation : `cargo check`, `cargo test --lib` (4), `npx tsc --noEmit`, découpeur TSV et
+  `estACommanderUrgent` vérifiés sur des cas écrits pour l'occasion (fichiers jetables).
+  **Non testé en conditions réelles** (pastille de la barre des tâches en particulier).
+- **Retours du même jour** : libellé « À commander » (et non « à Commander ») et infobulle
+  « Picking dans 7 jours ou moins et pas encore traité. » (`MESSAGE_ALERTE_COMMANDE`, partagé
+  accueil / tableau) ; pastille rouge « ! » (`components/PastilleAlerte.tsx`, même visuel que la
+  barre des tâches) dans la 1re colonne du tableau Gestion des caisses — colonne du chevron des
+  sous-caisses, élargie 20 → 44 px, les deux cohabitent ; en-tête « Actions » sur la colonne des
+  boutons ; trigramme de l'affiche plus gros sur fond vert pastel (`--ok-bg`) ; aperçu de
+  « Coller depuis Excel » (Simulations) affiché en entier (plus de « … et N de plus »).
+
 ## Prochaines étapes
 
 ### Fait
@@ -1346,6 +1388,17 @@ cd src-tauri && cargo check    # vérifier que le backend Rust compile (rapide, 
   cocher, tri) et la navigation par menu — pas d'outil d'automation UI dans l'environnement de
   dev assisté. Le collage Excel 19 colonnes n'est plus à tester : il ne servait qu'à la reprise
   initiale des affaires, l'utilisateur ne collera plus de lignes dans Demandes (2026-09-28).
+
+*Retours utilisateur 2026-09-30*
+
+- **Poids à 0.000 → 0.001 ?** Demande de l'utilisateur (« si il est à 0.000, noter 0.001 »),
+  **mise en attente à sa demande** — ne rien modifier pour l'instant. Contexte : au collage
+  Excel, un petit poids arrive souvent à `0` exactement (Excel copie la valeur affichée, arrondie),
+  et un poids à 0 est aujourd'hui signalé par « Manque d'informations ». Options présentées :
+  enregistrer 0.001 à la place de 0 (collage, saisie, et articles existants — le poids ne serait
+  plus signalé comme manquant), ou seulement afficher 0.001 pour un poids > 0 qui s'arrondirait à
+  0.000 (arrondi par excès, comme les volumes), un vrai 0 restant signalé. À trancher avec
+  l'utilisateur avant tout code.
 
 *Retours utilisateur 2026-09-25*
 

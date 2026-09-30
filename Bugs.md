@@ -10,6 +10,25 @@ racine, le fix, et un lien vers l'entrée de journal correspondante pour le dét
 
 ---
 
+## Collage Excel : une ligne coupée en deux articles (AR = fin de la désignation)
+
+**Symptôme** : après « Coller depuis Excel » dans Simulations, un article apparaît en double :
+la 2e ligne a pour AR la fin de la désignation de la 1re (ex. `20X47X24"`), puis ses dimensions
+dans les colonnes Référence / Désignation.
+
+**Cause** : la désignation était une cellule Excel sur **plusieurs lignes** (Alt+Entrée), qu'Excel
+copie entre guillemets. Le texte était découpé en deux passes (lignes, puis colonnes) ; dans la
+passe « lignes », seul un retour à la ligne marquait un début de champ, pas une tabulation — un
+champ quoté hors de la 1re colonne n'était donc pas reconnu et son retour à la ligne interne
+coupait la ligne.
+
+**Fix** (2026-09-30, `domain/tsv.ts::decouperTableauTsv`) : découpage lignes + colonnes en une
+seule passe, un guillemet ouvre un champ quoté en début de champ (après tabulation ou retour à
+la ligne). La règle des guillemets nus du 2026-09-03 (`G1/8" m`) est conservée. Retour à la
+ligne interne de la désignation remplacé par un espace à l'import.
+
+---
+
 ## Alerte « date dans le passé » en boucle pendant la frappe, date du calendrier perdue
 
 **Symptôme** : dans « Créer une nouvelle caisse », saisir la date demandée à S2C au clavier

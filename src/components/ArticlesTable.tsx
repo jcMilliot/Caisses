@@ -399,7 +399,7 @@ export default function ArticlesTable({
                 {cell(a, "dim1_mm", a.dim1_mm, "right")}
                 {cell(a, "dim2_mm", a.dim2_mm, "right")}
                 {cell(a, "dim3_mm", a.dim3_mm, "right")}
-                {cell(a, "poids_unitaire_kg", a.poids_unitaire_kg, "right")}
+                {cell(a, "poids_unitaire_kg", a.poids_unitaire_kg.toFixed(3), "right")}
                 {cell(a, "quantite", a.quantite, "right")}
                 <td style={{ ...tdStyle, textAlign: "right" }} className="mono">
                   {formaterVolumeM3(volumeUnitaireM3(a))}

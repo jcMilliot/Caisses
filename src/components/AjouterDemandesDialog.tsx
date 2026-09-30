@@ -50,6 +50,7 @@ function ligneVide(): NewDemande {
     // STANDARD par défaut → contre-plaqué requis.
     contre_plaque: true,
     caisse_stock_id: null,
+    ok_cde_par: "",
   };
 }
 

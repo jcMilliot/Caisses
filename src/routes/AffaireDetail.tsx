@@ -540,7 +540,7 @@ function RecapAffaireBandeau({
         <RecapValeur label="Hauteur max" valeur={`${(recap.dim3MaxMm / 1000).toFixed(2)} m`} />
         <div style={{ width: 1, height: 24, background: "var(--border-strong)" }} />
         <RecapValeur label="Volume total" valeur={`${formaterVolumeM3(recap.volumeTotalM3)} m³`} />
-        <RecapValeur label="Poids total" valeur={`${recap.poidsTotalKg.toFixed(1)} kg`} />
+        <RecapValeur label="Poids total" valeur={`${recap.poidsTotalKg.toFixed(3)} kg`} />
         {aUneCaisse4C && (
           <>
             <div style={{ width: 1, height: 24, background: "var(--border-strong)" }} />

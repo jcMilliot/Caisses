@@ -1,3 +1,5 @@
+import PastilleAlerte from "./PastilleAlerte";
+import { MESSAGE_ALERTE_COMMANDE, estACommanderUrgent } from "../domain/caissesACommander";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Demande, DemandeCaisse, CaisseStock, OptionListe } from "../domain/types";
@@ -743,7 +745,7 @@ export default function DemandesTable({
         >
           <thead>
             <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
-              <th style={{ ...th, width: 20 }}></th>
+              <th style={{ ...th, width: 44 }}></th>
               <th style={{ ...th, width: 32 }}>
                 <input
                   type="checkbox"
@@ -754,7 +756,7 @@ export default function DemandesTable({
               {colonnesAffichees.map((c) => (
                 <Fragment key={c.champ}>{thFiltrable(c.champ, c.label, c.align, th)}</Fragment>
               ))}
-              <th style={{ ...th, width: 210 }}></th>
+              <th style={{ ...th, width: 210 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -797,7 +799,8 @@ export default function DemandesTable({
                               : undefined,
                       }}
                     >
-                      <td style={{ ...td, textAlign: "center" }}>
+                      <td style={{ ...td, textAlign: "center", whiteSpace: "nowrap" }}>
+                        {estACommanderUrgent(d) && <PastilleAlerte titre={MESSAGE_ALERTE_COMMANDE} />}
                         {sousLignes.length > 0 && (
                           <button
                             onClick={() => onToggleEtendue(d.id)}

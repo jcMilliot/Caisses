@@ -280,7 +280,18 @@ export default function Documentation() {
               être commandée » sur l'affaire génère l'affiche destinée au service Achat (les
               éventuelles multi-caisses sont incluses dans la même demande). La case ne se coche
               que si l'affaire, les trois dimensions, la quantité, la date demandée à S2C et le
-              type d'ouverture sont renseignés ; sinon, un message indique ce qui manque.
+              type d'ouverture sont renseignés ; sinon, un message indique ce qui manque. Le
+              trigramme de la personne qui coche la case est enregistré et apparaît comme
+              demandeur sur l'affiche.
+            </li>
+            <li>
+              <strong>Alerte « à Commander »</strong> : une affaire à commander (hors caisse de stock
+              et ACHSTOCK) dont le picking est dans 7 jours ou moins — ou déjà passé — sans être
+              cochée « OK pour être commandée » s'affiche en rouge avec la mention « À commander »
+              en tête du bloc « Caisses à commander cette semaine » de l'accueil. Une pastille
+              rouge « ! » apparaît aussi dans la première colonne du tableau Gestion des caisses et
+              sur l'icône de l'application dans la barre des tâches. L'alerte disparaît dès que la
+              case est cochée.
             </li>
             <li>
               Dans la section « Demandes d'achats » : copier une affiche individuellement, ou en

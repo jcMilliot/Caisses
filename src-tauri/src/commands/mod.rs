@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod alerte;
 pub mod affaires;
 pub mod articles;
 pub mod backup;

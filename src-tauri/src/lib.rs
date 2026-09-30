@@ -21,6 +21,7 @@ use commands::demandes::{
     bulk_create_demandes, create_demande, delete_demande, list_demandes, set_demande_validee,
     update_demande,
 };
+use commands::alerte::set_alerte_barre_taches;
 use commands::admin::{
     admin_lock, admin_session_active, admin_unlock, change_mot_de_passe, enregistrer_connexion, get_compte_status,
     list_utilisateurs, AdminSession,
@@ -137,6 +138,7 @@ pub fn run() {
             list_sauvegardes,
             choose_fichier_restauration,
             restore_sauvegarde,
+            set_alerte_barre_taches,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

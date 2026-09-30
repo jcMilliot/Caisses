@@ -226,6 +226,11 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
         patch = { ...patch, ok_pour_passer_cde: false };
       }
     }
+    // Qui a coché « OK pour être commandée » (affiché sur l'affiche de Demandes d'achats) ;
+    // effacé quand la case est décochée, à la main ou automatiquement ci-dessus.
+    if (patch.ok_pour_passer_cde !== undefined && patch.ok_pour_passer_cde !== demandeActuelle?.ok_pour_passer_cde) {
+      patch = { ...patch, ok_cde_par: patch.ok_pour_passer_cde ? trigramme : "" };
+    }
     setBrouillon((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
 
     // Cascade vers les sous-caisses : la date de picking et le type d'envoi de la mère font

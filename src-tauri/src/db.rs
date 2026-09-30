@@ -110,6 +110,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0025_ouverture_4c_par_dessus",
         include_str!("../../migrations/0025_ouverture_4c_par_dessus.sql"),
     ),
+    (
+        "0026_add_demande_ok_cde_par",
+        include_str!("../../migrations/0026_add_demande_ok_cde_par.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {

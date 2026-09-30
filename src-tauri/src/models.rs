@@ -79,6 +79,8 @@ pub struct Demande {
     pub validee: bool,
     pub ordre: i64,
     pub caisse_stock_id: Option<i64>,
+    /// Trigramme de qui a coché « OK pour être commandée » (vide sinon).
+    pub ok_cde_par: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,6 +106,9 @@ pub struct NewDemande {
     pub observations: String,
     pub contre_plaque: bool,
     pub caisse_stock_id: Option<i64>,
+    /// Trigramme de qui a coché « OK pour être commandée » (vide sinon).
+    #[serde(default)]
+    pub ok_cde_par: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
