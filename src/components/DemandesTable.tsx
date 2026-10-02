@@ -580,7 +580,7 @@ export default function DemandesTable({
             disabled={figee || (!stockAutorisePourEnvoi(demande.type_envoi_caisse) && demande.caisse_stock_id == null)}
             title={stockAutorisePourEnvoi(demande.type_envoi_caisse) ? undefined : "Pas de caisse en stock pour un envoi 4B / 4C"}
             onChange={(e) => onSelectStock(demande.id, e.target.value === "" ? null : Number(e.target.value))}
-            style={{ width: "100%", border: "none", background: "transparent", font: "inherit", color: "inherit" }}
+            style={{ width: "100%", padding: "2px 0", border: "none", background: "transparent", font: "inherit", color: "inherit" }}
           >
             <option value="">—</option>
             {options.map((c) => (
@@ -1084,7 +1084,7 @@ function SousLigneCaisse({
             disabled={readOnly || (!stockAutorisePourEnvoi(caisse.type_envoi_caisse) && caisse.caisse_stock_id == null)}
             title={stockAutorisePourEnvoi(caisse.type_envoi_caisse) ? undefined : "Pas de caisse en stock pour un envoi 4B / 4C"}
             onChange={(e) => onSelectStock(e.target.value === "" ? null : Number(e.target.value))}
-            style={{ width: "100%", border: "none", background: "transparent", font: "inherit", color: "inherit" }}
+            style={{ width: "100%", padding: "2px 0", border: "none", background: "transparent", font: "inherit", color: "inherit" }}
           >
             <option value="">—</option>
             {options.map((c) => (
