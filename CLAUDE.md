@@ -1228,6 +1228,66 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   recopiées au moment du lien.
 - Validation : `cargo check`, `npx tsc --noEmit`. **Non testé en conditions réelles**.
 
+### 2026-10-02 (soir) — Refonte visuelle, branche `refonte-visuelle`
+
+- **Demande de l'utilisateur** : rendre l'app plus moderne et plus agréable sans changer la D.A
+  (« certaines parties font vieil outil Windows »). Décisions : **style + mise en page légère**
+  (aucune fonctionnalité déplacée, navigation inchangée), barre de navigation gardée en haut mais
+  modernisée, police **Inter** embarquée, priorités Admin → Gestion des caisses → fenêtres et
+  formulaires → Simulations. Faite sur la branche `refonte-visuelle` (depuis `6c73474`), **pas
+  fusionnée dans `main`**, rien de poussé. Brief et captures « avant » : `docs/captures/
+  refonte-2026-10-02/` (non versionné).
+- **Base** (`index.css`) :
+  - **police** : Inter variable (`@fontsource-variable/inter`, importée dans `main.tsx`, fichiers
+    embarqués par Vite, aucun chargement internet) ;
+  - **chiffres** : `.mono` passe en Inter à chiffres tabulaires (`--font-num`) au lieu de
+    Consolas ; `--font-mono` reste pour le texte collé (PasteImportZone) ;
+  - **champs et menus** : style commun via `:where(input…, select, textarea)` (spécificité nulle,
+    les styles en ligne restent prioritaires), avec bordure, arrondi, survol et halo de focus.
+    La classe `input` utilisée par l'Admin n'existait pas dans le CSS, d'où les champs bruts des
+    captures. Plusieurs constantes `inputStyle` / `champStyle` ont été allégées de leur
+    bordure / fond pour que le focus coloré s'applique ;
+  - **cases à cocher** : `accent-color` et 15 px, plus un style `.interrupteur` (bascule) ;
+  - **nouvelles classes** :
+    - en-tête d'écran : `.page-header`, `.page-title`, `.page-subtitle`, `.page-actions` ;
+    - navigation : `.app-nav`, `.nav-tab`, `.nav-lien` ;
+    - onglets et sélecteurs : `.tabs` / `.tab` (soulignés), `.segmented` ;
+    - fenêtres : `.modal-overlay`, `.modal-header`, `.modal-footer` ;
+    - tableaux simples : `.table-donnees` ;
+    - divers : `.badge-*`, `.btn-ghost`, `.carte-accueil`.
+  - **repère de hauteur** : `--nav-h` (52 px) remplace les `top: 46` / `top: 120` / `top: 45`
+    codés en dur des bandeaux collants (`AffaireDetail`, `DemandesAchatsList`).
+- **Navigation** (`App.tsx`) : logo + « Caisses » à gauche (`assets/app-icon.png`, copie de
+  `src-tauri/icons/64x64.png`), onglets soulignés (Accueil, 4 sections), Documentation / Admin en
+  liens discrets avec icône à droite (`components/IconeNav.tsx`, SVG en ligne). Accueil : mêmes
+  coins pour Admin / Documentation, cartes avec tuile d'icône et survol, logo à côté du titre.
+- **En-têtes d'écran homogènes** : les sur-titres en capitales (« CAISSES » sur des pages sans
+  rapport, « ADMINISTRATION », « GUIDE »…) sont supprimés, titre 26 px partout. Le texte
+  d'explication de Caisses en stock passe dans l'en-tête (sous-titre).
+- **Admin** : page centrée (comme les autres), titre « Administration » + « Connecté en tant
+  que XXX », onglets soulignés, tableaux `.table-donnees` (trigramme en pastille), ajout
+  d'utilisateur dans un encadré, réglages (seuil, poids max) avec unité à côté du champ,
+  sauvegarde / restauration mieux séparées ; Admin › Caisses : « Gérée » en interrupteur, état en
+  badge ; Statistiques : période en contrôle segmenté, chiffres des tuiles en couleur d'accent ;
+  écran de déverrouillage avec icône. Les gros sous-onglets Stock / Statistiques (demande du
+  2026-10-02) sont **gardés tels quels**.
+- **Gestion des caisses** : en-tête homogène, « Modifications non enregistrées » en badge orange,
+  tableau sans marge autour, en-têtes sur fond teinté, séparateurs verticaux très légers dans le
+  corps, barre de sélection teintée, **boutons de ligne en grille 2 × 2** (même largeur), bandeau
+  de verrouillage avec liseré coloré à gauche. Les tailles de « + Créer une nouvelle caisse » et
+  « Enregistrer » (demandées plus grandes / vert plein) ne changent pas.
+- **Fenêtres** : les 13 fonds de dialogue passent par `.modal-overlay` (voile + léger flou,
+  animation d'entrée) ; entête / pied communs (`.modal-header` / `.modal-footer`, pied teinté).
+  Confirmation : ⚠ dans le titre si action risquée. Gérer les caisses en stock : bloc
+  « Nouvelle caisse » encadré, lignes surlignées au survol.
+- **Simulations** : liste des affaires avec tuile d'icône et chevron, sous-titre ajouté ; dans
+  une affaire, « ← Affaires » discret, titres de sections « Articles » / « Caisses » en casse
+  normale avec compteur en pastille, bandeau récapitulatif blanc avec ombre (libellés sans
+  majuscules forcées). Tableau d'articles et cartes de caisse inchangés à part la police.
+- Validation : `npx tsc --noEmit`, `npx vite build` (police bien embarquée dans `dist/assets`),
+  `cargo check` (aucun fichier Rust touché). **Pas vu à l'écran** (pas d'outil pour lancer et
+  regarder l'app) : à vérifier par l'utilisateur avec `npm run tauri dev` sur la branche.
+
 ## Prochaines étapes
 
 ### Fait
@@ -1767,6 +1827,25 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 > (`src/routes/AdminFeuilleDeRoute.tsx`, 2026-09-30) — Reste à faire / À vérifier / À réfléchir,
 > **sans termes techniques**. Texte statique : **le mettre à jour en même temps que cette section
 > et « À réfléchir plus tard »** (ajout d'un point, point terminé → le retirer).
+
+*Refonte visuelle (branche `refonte-visuelle`, 2026-10-02)*
+
+- **Relire la refonte à l'écran** (`git checkout refonte-visuelle` puis `npm run tauri dev`), puis
+  décider : fusionner dans `main` (avant la prochaine release), retoucher, ou abandonner
+  (`git checkout main`, la branche peut être supprimée). Points laissés à la décision de
+  l'utilisateur :
+  - textes nouveaux : titre « Administration » (au lieu de « Admin »), « Connecté en tant que
+    XXX », sous-titre de la liste des affaires ;
+  - « + Créer une nouvelle caisse » reste plus grand que les autres boutons de l'en-tête
+    (demande du 2026-09-11) : harmoniser la hauteur ou non ;
+  - menus déroulants : flèche native de Windows gardée (un chevron maison obligerait à retoucher
+    les styles en ligne de chaque menu) ;
+  - densité du tableau de Gestion des caisses (cellules « Infos suppl. » très hautes) : tronquer
+    le texte avec infobulle changerait la lecture → non fait ;
+  - tableau d'articles et cartes de caisse de Simulations : seulement la police, pas retouchés ;
+  - accueil : Admin / Documentation restent aux coins (pas de barre de navigation sur l'accueil) ;
+    logo de la barre de navigation non cliquable (l'onglet « Accueil » le fait) ;
+  - icônes emoji des cartes de l'accueil gardées (D.A actuelle) plutôt que des icônes au trait.
 
 *Fiabilité et infrastructure*
 
