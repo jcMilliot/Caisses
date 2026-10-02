@@ -10,7 +10,7 @@ import Documentation from "./routes/Documentation";
 import CreerAffaireDialog from "./components/CreerAffaireDialog";
 import FirstLaunchSetup from "./components/FirstLaunchSetup";
 import TrigrammeSetup from "./components/TrigrammeSetup";
-import UpdateAvailableDialog from "./components/UpdateAvailableDialog";
+import BandeauMiseAJour from "./components/BandeauMiseAJour";
 import ConfirmDialogHost from "./components/ConfirmDialogHost";
 import DemandeFermetureDialog from "./components/DemandeFermetureDialog";
 import { confirmerAction } from "./data/confirm";
@@ -39,7 +39,8 @@ const SECTIONS: { id: Section; label: string }[] = [
 export default function App() {
   const { status: dbStatus, chooseFolder } = useDbSetup();
   const { status: userStatus, trigramme, setTrigramme, confirmerTrigramme } = useUserSetup();
-  const { update, installing, confirmInstall, dismiss } = useUpdateCheck(dbStatus === "ready");
+  const { update, afficherBandeau, progression, erreur: erreurMaj, confirmInstall, dismiss } =
+    useUpdateCheck(dbStatus === "ready");
   const utilisateurPret = dbStatus === "ready" && userStatus === "ready" ? trigramme : null;
   useBackupAuto(utilisateurPret);
   const demandeFermeture = usePresence(utilisateurPret);
@@ -210,7 +211,20 @@ export default function App() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+    // Barre de mise à jour tout en haut de la fenêtre (2026-10-02), le reste de l'app défile en
+    // dessous : la navbar et les bandeaux collants (calés sur `top: 0` / `top: 46`…) restent
+    // relatifs à cette zone et ne passent jamais sous la barre.
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+      {update && afficherBandeau && (
+        <BandeauMiseAJour
+          version={update.info.version}
+          progression={progression}
+          erreur={erreurMaj}
+          onInstaller={confirmInstall}
+          onPlusTard={dismiss}
+        />
+      )}
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column" }}>
       {section !== "accueil" && (
         <nav
           style={{
@@ -297,15 +311,7 @@ export default function App() {
         />
       )}
 
-      {update && (
-        <UpdateAvailableDialog
-          version={update.info.version}
-          body={update.info.body}
-          installing={installing}
-          onConfirm={confirmInstall}
-          onDismiss={dismiss}
-        />
-      )}
+      </div>
 
       <ConfirmDialogHost />
       {demandeFermeture && <DemandeFermetureDialog demandeur={demandeFermeture} />}

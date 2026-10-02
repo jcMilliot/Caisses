@@ -22,7 +22,7 @@ use commands::caisse_stock::{
     update_caisse_stock,
 };
 use commands::caisses::{
-    create_caisse, delete_caisse, link_caisse_demande, link_caisse_demande_caisse, list_caisses, set_caisse_caisse_stock,
+    create_caisse, delete_caisse, lier_caisse_ligne, link_caisse_demande, link_caisse_demande_caisse, list_caisses, set_caisse_caisse_stock,
     update_caisse,
 };
 use commands::demande_caisse::{create_demande_caisse, delete_demande_caisse, list_all_demande_caisses, update_demande_caisse};
@@ -101,6 +101,7 @@ pub fn run() {
             link_caisse_demande_caisse,
             link_caisse_demande,
             set_caisse_caisse_stock,
+            lier_caisse_ligne,
             delete_caisse,
             list_articles,
             create_article,

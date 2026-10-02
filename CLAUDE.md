@@ -1157,7 +1157,10 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
     déplaçable et redimensionnable ; chargée avec le reste (`DemandesList::reload`). Taux **par
     ligne** (retour du même jour) : sous-caisse = caisse de Simulations liée par
     `caisse.demande_caisse_id` ; ligne mère = caisse liée par `caisse.demande_id`, à défaut celles
-    de l'affaire du même nom liées à aucune ligne (`domain/remplissage.ts::tauxPourDemande` /
+    de l'affaire du même nom liées à aucune ligne **et aux mêmes dimensions que la ligne** (à 1 mm
+    près — sinon deux lignes du même nom d'affaire affichaient le même taux ; retour du même
+    jour ; pour rattacher une caisse dont les dimensions diffèrent : bouton « Lier… » ci-dessous)
+    (`domain/remplissage.ts::tauxPourDemande` /
     `tauxPourSousCaisse` ; `list_remplissage_affaires` renvoie ces deux liens). Affiché centré
     dans une **pastille** (`TauxRemplissage` prop `pastille`) : **violet pastel** (`--violet-*`)
     sous le seuil de l'affaire, **orange** + ⚠ dès le seuil atteint, **rouge** + ⚠ au-delà de
@@ -1182,6 +1185,48 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 - Validation : `cargo test --lib` (10 tests, + remplissage des caisses, + demande de fermeture
   visible des autres postes seulement / expiration / effacement), `npx tsc --noEmit`. **Non testé
   en conditions réelles** (en particulier la fermeture à distance : il faut deux postes).
+
+### 2026-10-02 (après la 0.11.1) — Mise à jour suivie dans l'app
+
+- **Demande de l'utilisateur** : voir dans l'app qu'une mise à jour est disponible, et suivre
+  téléchargement + installation dans l'app plutôt que dans la fenêtre de l'installeur Windows.
+- `hooks/useUpdateCheck.ts` : vérification au démarrage **puis toutes les 30 min** (une version
+  publiée pendant que l'app est ouverte est signalée). Tout passe par **une barre tout en haut de
+  la fenêtre** (`components/BandeauMiseAJour.tsx`, demande de l'utilisateur ; la fenêtre
+  `UpdateAvailableDialog` a été supprimée) : disponibilité + Installer / Plus tard (« Plus tard »
+  la masque jusqu'à la vérification suivante). Pour qu'elle ne recouvre pas la navbar et les
+  bandeaux collants (`top: 0`, `RecapAffaireBandeau` à `top: 46`…), `App` est désormais une
+  colonne de hauteur `100vh` : la barre, puis une zone **qui défile** (`overflow: auto`)
+  contenant tout le reste — les éléments collants sont relatifs à cette zone. Pendant
+  l'installation : barre de progression du téléchargement (`downloadAndInstall` et ses
+  événements Started / Progress / Finished, `data/updater.ts::ProgressionMiseAJour`), puis
+  « Installation… l'application va se fermer puis redémarrer ». En cas d'échec : message +
+  « Réessayer ».
+- `tauri.conf.json` → `plugins.updater.windows.installMode: "quiet"` : installeur NSIS lancé en
+  `/S /R` (silencieux + relance de l'app, cf. `tauri-plugin-updater` `nsis_args`) au lieu de
+  `passive` (`/P /R`, qui montrait la fenêtre de progression de l'installeur). L'app est
+  installée par le `setup.exe` NSIS : l'updater prend l'entrée `windows-x86_64-nsis` de
+  `latest.json`. Avec un MSI, le mode silencieux demanderait les droits administrateur.
+- **Effet décalé d'une version** : c'est la version *installée* qui pilote sa mise à jour. Le
+  passage à la release qui contient ce changement se fait encore à l'ancienne (fenêtre de
+  l'installeur) ; le nouveau comportement s'applique aux mises à jour suivantes.
+- Validation : `npx tsc --noEmit`, `cargo check`. **Non testé en conditions réelles** (il faut
+  deux releases successives publiées pour le voir).
+
+### 2026-10-02 — Simulations : lier une caisse à une ligne de Gestion des caisses
+
+- **Idée de l'utilisateur**, faite **par caisse** (le lien est porté par chaque caisse de
+  Simulations, `caisse.demande_id` / `caisse.demande_caisse_id`) : sur la `CaisseCard`, ligne
+  « Gestion des caisses : <ligne liée> » ou « non liée » + bouton **« Lier… »** →
+  `components/LierCaisseDialog.tsx` : lignes mères du même nom d'affaire et leurs caisses
+  détaillées (dimensions, picking, quantité, « livrée », repère « mêmes dimensions »), ou
+  « Aucune (délier) ». Nouvelle commande `caisses.rs::lier_caisse_ligne` (pose `demande_id` OU
+  `demande_caisse_id`, efface l'autre ; verrou de l'affaire). Une fois liée, le taux de
+  remplissage s'affiche sur la ligne choisie quelles que soient les dimensions, et la synchro des
+  dimensions (`AffaireDetail::ligneLiee`) vise cette ligne. « Non liée » = aucun lien explicite
+  (le rattachement par nom + dimensions peut quand même s'appliquer). Les dimensions ne sont pas
+  recopiées au moment du lien.
+- Validation : `cargo check`, `npx tsc --noEmit`. **Non testé en conditions réelles**.
 
 ## Prochaines étapes
 

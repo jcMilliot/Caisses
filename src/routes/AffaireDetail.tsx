@@ -19,6 +19,7 @@ import { useSectionLock } from "../hooks/useSectionLock";
 import ArticlesTable from "../components/ArticlesTable";
 import PasteImportZone from "../components/PasteImportZone";
 import CaisseCard from "../components/CaisseCard";
+import LierCaisseDialog, { type CibleLien } from "../components/LierCaisseDialog";
 import AssignToDialog from "../components/AssignToDialog";
 import LockBanner from "../components/LockBanner";
 import ScrollToTopButton from "../components/ScrollToTopButton";
@@ -96,6 +97,8 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
   const [demandeParente, setDemandeParente] = useState<Demande | null>(null);
   const [toutesDemandes, setToutesDemandes] = useState<Demande[]>([]);
   const [caissesStock, setCaissesStock] = useState<CaisseStock[]>([]);
+  // Caisse dont on choisit la ligne de Gestion des caisses (« Lier… »).
+  const [caisseALier, setCaisseALier] = useState<Caisse | null>(null);
 
   useEffect(() => {
     caisseStockApi.list().then(setCaissesStock).catch(() => {});
@@ -269,6 +272,25 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
         "Gestion des caisses non mise à jour",
       );
     }
+  }
+
+  // Libellé de la ligne de Gestion des caisses liée explicitement à la caisse (null = aucune).
+  function libelleLien(c: Caisse): string | null {
+    const dims = (l: number, w: number, h: number) => `${(l / 1000).toFixed(2)} × ${(w / 1000).toFixed(2)} × ${(h / 1000).toFixed(2)} m`;
+    if (c.demande_caisse_id !== null) {
+      const sc = demandeCaissesLiees.find((x) => x.id === c.demande_caisse_id);
+      return sc ? `${sc.nom || "caisse détaillée"} (${dims(sc.longueur_mm, sc.largeur_mm, sc.hauteur_mm)})` : "caisse détaillée supprimée";
+    }
+    if (c.demande_id !== null) {
+      const d = toutesDemandes.find((x) => x.id === c.demande_id);
+      return d ? `${d.affaire} (${dims(d.longueur_mm, d.largeur_mm, d.hauteur_mm)})` : "ligne supprimée";
+    }
+    return null;
+  }
+
+  async function lierCaisse(c: Caisse, cible: CibleLien) {
+    await caissesApi.lierLigne(c.id, cible.demandeId, cible.demandeCaisseId, trigramme);
+    await reload();
   }
 
   if (loading && !affaire) {
@@ -450,6 +472,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
               dragActif={!!drag}
               survolee={survolCaisseId === c.id}
               readOnly={readOnly}
+              lien={{ libelle: libelleLien(c), onLier: () => setCaisseALier(c) }}
               caisseStockNom={c.caisse_stock_id !== null ? caissesStock.find((cs) => cs.id === c.caisse_stock_id)?.nom ?? null : null}
               suggestion={(() => {
                 const cs = suggestionPour(c);
@@ -602,6 +625,18 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
       )}
 
       {dialogueSessionAdmin}
+
+      {caisseALier && affaire && (
+        <LierCaisseDialog
+          caisse={caisseALier}
+          demandes={toutesDemandes.filter((d) => memeNomAffaire(d.affaire, affaire.nom))}
+          sousCaisses={demandeCaissesLiees.filter((sc) =>
+            toutesDemandes.some((d) => d.id === sc.demande_id && memeNomAffaire(d.affaire, affaire.nom)),
+          )}
+          onLier={(cible) => lierCaisse(caisseALier, cible)}
+          onClose={() => setCaisseALier(null)}
+        />
+      )}
 
       {showAssign && (
         <AssignToDialog

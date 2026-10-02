@@ -18,6 +18,11 @@ pub struct RemplissageCaisse {
     /// Liens vers Gestion des caisses : ligne mère / sous-caisse dont la caisse est issue.
     pub demande_id: Option<i64>,
     pub demande_caisse_id: Option<i64>,
+    /// Dimensions de la caisse (mm) : rapprochement par dimensions quand plusieurs lignes de
+    /// Gestion des caisses portent le même nom d'affaire.
+    pub longueur_mm: f64,
+    pub largeur_mm: f64,
+    pub hauteur_mm: f64,
 }
 
 #[tauri::command]
@@ -35,7 +40,7 @@ fn remplissages(conn: &rusqlite::Connection) -> Result<Vec<RemplissageCaisse>, S
                  FROM article WHERE caisse_id IS NOT NULL GROUP BY caisse_id
              )
              SELECT c.affaire_id, a.nom, c.id, c.nom, occ.vol, c.longueur_mm * c.largeur_mm * c.hauteur_mm / 1e9,
-                    c.demande_id, c.demande_caisse_id
+                    c.demande_id, c.demande_caisse_id, c.longueur_mm, c.largeur_mm, c.hauteur_mm
              FROM caisse c JOIN occ ON occ.caisse_id = c.id JOIN affaire a ON a.id = c.affaire_id
              WHERE c.longueur_mm > 0 AND c.largeur_mm > 0 AND c.hauteur_mm > 0
              ORDER BY c.affaire_id, c.ordre, c.id",
@@ -52,6 +57,9 @@ fn remplissages(conn: &rusqlite::Connection) -> Result<Vec<RemplissageCaisse>, S
                 volume_interne_m3: r.get(5)?,
                 demande_id: r.get(6)?,
                 demande_caisse_id: r.get(7)?,
+                longueur_mm: r.get(8)?,
+                largeur_mm: r.get(9)?,
+                hauteur_mm: r.get(10)?,
             })
         })
         .map_err(|e| e.to_string())?;

@@ -158,6 +158,31 @@ pub fn link_caisse_demande(db: State<Db>, id: i64, demande_id: i64, trigramme: S
     Ok(())
 }
 
+/// Lie une caisse de Simulations à une ligne de Gestion des caisses choisie à la main (bouton
+/// « Lier… » de la carte, 2026-10-02) : ligne mère (`demande_id`) OU sous-caisse
+/// (`demande_caisse_id`), jamais les deux ; les deux à `None` = caisse déliée.
+#[tauri::command]
+pub fn lier_caisse_ligne(
+    db: State<Db>,
+    id: i64,
+    demande_id: Option<i64>,
+    demande_caisse_id: Option<i64>,
+    trigramme: String,
+) -> Result<(), String> {
+    if demande_id.is_some() && demande_caisse_id.is_some() {
+        return Err("Une caisse se lie à une ligne mère ou à une caisse détaillée, pas aux deux.".to_string());
+    }
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock_for_caisse(conn, id, &trigramme)?;
+    conn.execute(
+        "UPDATE caisse SET demande_id = ?1, demande_caisse_id = ?2 WHERE id = ?3",
+        rusqlite::params![demande_id, demande_caisse_id, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Sélectionne (ou retire, `None`) la caisse en stock utilisée par une caisse de Simulations —
 /// suggestion de caisse acceptée, ou dimensions modifiées ensuite (décision 2026-10-01).
 #[tauri::command]
