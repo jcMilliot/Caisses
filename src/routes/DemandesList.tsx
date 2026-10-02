@@ -788,18 +788,13 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   }
 
   return (
-    <div style={{ padding: "32px 24px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
+    <div style={{ padding: "28px 24px" }}>
+      <div className="page-header">
         <div>
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent)", marginBottom: 4 }}>
-            Caisses
-          </div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>
-            Tableau de gestion des caisses
-          </h1>
+          <h1 className="page-title">Tableau de gestion des caisses</h1>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          {modifie && <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Modifications non enregistrées</span>}
+        <div className="page-actions" style={{ justifyContent: "flex-end" }}>
+          {modifie && <span className="badge badge-warn">● Modifications non enregistrées</span>}
           <button className="btn btn-info" onClick={() => setAjoutOuvert(true)} disabled={readOnly}>
             + Créer une nouvelle caisse
           </button>
@@ -833,7 +828,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
       {loading ? (
         <p style={{ color: "var(--text-muted)" }}>Chargement…</p>
       ) : (
-        <div className="panel" style={{ padding: 4 }}>
+        <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
           <DemandesTable
             demandes={brouillon}
             demandeCaisses={demandeCaisses}

@@ -136,11 +136,9 @@ export default function TableOptionsMenu<T extends string>({
             style={{
               display: "flex",
               alignItems: "center",
-              padding: "8px 14px 4px",
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
+              padding: "10px 14px 4px",
+              fontSize: 12,
+              fontWeight: 600,
               color: "var(--text-muted)",
             }}
           >
