@@ -217,8 +217,9 @@ caisse_stock (id, nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observatio
          demande_affaire_cible_id INTEGER NULL, demande_cible_id INTEGER NULL,  -- 0013
          type_ouverture TEXT DEFAULT 'Par dessus',  -- 0024, repris (et verrouillé) sur la
                                                     --   ligne de demande qui sélectionne la caisse
-         gere BOOL, seuil_alerte INTEGER,  -- 0031, suivi du stock des AR_CAISS_ (Admin › Caisses) :
-                                           --   alerte « à commander » si quantite <= seuil_alerte
+         gere BOOL, seuil_alerte INTEGER,  -- 0031 : gere = on la recommande → alerte « à commander »
+                                           --   si quantite <= seuil_alerte. Toutes les AR_CAISS_
+                                           --   sont décomptées, gérées ou non (2026-10-02)
          ordre, date_creation)
 
 section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" | "affaire:{id}"
@@ -266,6 +267,7 @@ parametre (cle PK, valeur)  -- 0022, paramètres partagés clé/valeur
          -- backup_dossier, backup_frequence ('desactivee'|'quotidienne'|'hebdomadaire'),
          -- backup_conservation (nb de fichiers), backup_derniere (UTC), backup_dernier_poste,
          -- backup_derniere_erreur ; seuil_alerte_general (défaut 70) ;
+         -- poids_max_kg_m2 (défaut 320, alerte « Charge trop lourde » de Simulations) ;
          -- documentation_textes (JSON { clé: texte } des textes modifiés de la Documentation).
 
 poste_actif (poste_id PK, trigramme, dernier_battement)  -- 0023
@@ -1076,6 +1078,111 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   la carte (`AfficheCaisseCard`, prop `onMarqueeEnvoyee`), de l'action groupée et des lignes
   ACHSTOCK (`DemandesAchatsList` : état `envoyees` et handlers supprimés).
 
+### 2026-10-02 (après la 0.11.0) — AR_CAISS_ non gérées : écoulées, quantité visible
+
+- **Décision de l'utilisateur** (revient sur « non gérée = ni décomptée ni surveillée ») : une
+  caisse non gérée est une caisse qu'on **écoule** sans la recommander. Désormais **toutes les
+  `AR_CAISS_` sont décomptées** à la livraison (et augmentées à la réception ACHSTOCK) ; « Gérée »
+  ne sert plus qu'à l'**alerte « à commander »**. Une non gérée à 0 reste dans la liste, sans
+  alerte.
+- `caisse_stock.rs::decompter` : condition `gere` retirée (test mis à jour). Quantité affichée
+  pour toutes les `AR_CAISS_` dans Caisses en stock et dans les menus Stock de Gestion des
+  caisses (`domain/caisseStock.ts::libelleCaisseStock` : « AR_CAISS_00003 — 4 en stock » —
+  ligne mère, sous-ligne, dialogue de création). Suggestion de Simulations : `AR_CAISS_` avec au
+  moins 1 en stock, **gérée ou non**.
+- Admin › Caisses › Stock : état « Non gérée » (au lieu de « Non suivie »), texte d'intro
+  réduit à « Espace de gestion des « AR_CAISS » en stock » (demandes du même jour).
+- Validation : `cargo test --lib` (caisse_stock), `npx tsc --noEmit`. **Pas encore publié**
+  (prochaine release).
+
+### 2026-10-02 — Simulations : alerte de poids au m² (320 kg/m²)
+
+- **Décision de l'utilisateur** : alerte quand le **poids au m² d'une caisse ≥ 320 kg/m²** ; la
+  marge pour le poids de la caisse elle-même est **comprise dans ce seuil** (le poids du bois
+  n'est toujours pas calculé). Hypothèses de l'assistant, à confirmer à l'usage : surface = **fond
+  L × l** ; poids = **articles assignés à la caisse** (le même que « Poids total » de la carte).
+  Limite **réglable dans Admin › Paramètres** (demande du même jour), sous le seuil d'alerte
+  général : paramètre `poids_max_kg_m2` (défaut 320, `POIDS_MAX_KG_M2_DEFAUT`), commandes
+  `get_poids_max_kg_m2` (tous) / `set_poids_max_kg_m2` (admin) dans `affaires.rs`, chargée par
+  `useAffaire` et passée à `calculerCaisse` ; conservée lors d'une restauration de sauvegarde.
+- `calculerCaisse` : `surfaceFondM2`, `poidsParM2`, `poidsTropLourd` (ignoré sans dimensions) ;
+  `poidsTropLourd` fait passer la caisse en niveau `alerte` (bordure / badge rouges, ⚠ et
+  infobulle du `FillRateBadge`). `CaisseCard` : bandeau rouge « Charge trop lourde : N kg/m²
+  (max N kg/m²) » avec poids et surface, et ligne « Poids au m² (max N) » toujours affichée
+  quand la caisse a des dimensions. Valeur affichée **arrondie à l'unité inférieure** (319,9 ne
+  doit pas s'afficher « 320 » sans alerte).
+- Validation : `npx tsc --noEmit`, `calculerCaisse` vérifié sur 4 cas (fichier jetable : limite
+  exacte 320, 319,9, fond 0,96 m², caisse sans dimensions). **Non testé en conditions réelles**.
+
+### 2026-10-02 — Lot de retours : remplissage des affaires, filtre « Informations », restauration multi-poste
+
+- **Gérer les références** : l'exemple du champ de saisie suit la colonne choisie
+  (`GererReferencesDialog::EXEMPLE_PAR_LISTE` : « 4 MOTEURS », « 1 FESTO 426 (…) »,
+  « 4 TERMINAUX »).
+- **Liste des affaires (Simulations)** : « remplissage N% » à côté de la date de création et du
+  seuil, dès qu'au moins une caisse a des dimensions et des articles. Taux **global** = volume des
+  articles rangés / volume interne de ces caisses (caisses vides ou sans dimensions ignorées,
+  mousse 4C non déduite comme dans `calculs.ts`), couleur selon le seuil de l'affaire (vert /
+  orange ≥ seuil / rouge > 100 %). Nouvelle commande `affaires.rs::list_remplissage_affaires`
+  (une requête pour toutes les affaires, testée).
+- **Filtre AR (Simulations)** : onglet Condition → « Informations » → « Manquantes » /
+  « Complètes » (même règle que « Manque d'informations » : `champsManquants`). Générique côté
+  `ColumnFilterMenu` (prop `conditionSpeciale`, exclusive du filtre par valeurs, effacée par
+  « Réinitialiser ») ; état `filtreInfos` dans `ArticlesTable`, mémorisé par affaire en
+  `localStorage` (`caisses:filtreInfos:{id}`). En-tête **« Déplacer »** sur la colonne de la
+  poignée de glisser-déposer.
+- **Admin** : texte de l'onglet Utilisateurs remplacé par « Gestion des utilisateurs » ; texte de
+  la limite de poids remplacé par la phrase fournie par l'utilisateur.
+- **Restauration avec d'autres postes ouverts** (décision du même jour, remplace le refus pur et
+  simple) : l'admin confirme → si d'autres postes sont actifs, **demande de fermeture** écrite en
+  base (`parametre` : `fermeture_demandee` = « poste_id|trigramme », `fermeture_demandee_le`,
+  expire au bout de 10 min) ; chaque autre poste la reçoit en retour de `signaler_presence`
+  (toutes les 30 s, `usePresence` renvoie maintenant le demandeur) et affiche un message bloquant
+  (`components/DemandeFermetureDialog.tsx`) : « L'application doit être fermée afin de restaurer
+  une précédente sauvegarde », bouton « Fermer l'application » → `quitter_poste` (retire le poste
+  de `poste_actif`, pour ne pas attendre les 2 min d'expiration) puis `exit(0)`. Côté admin :
+  bandeau « En attente de la fermeture de l'app sur : … » (relecture toutes les 3 s via
+  `list_autres_postes_actifs`, bouton Annuler → `annuler_fermeture_postes`), et la restauration
+  démarre d'elle-même quand plus aucun poste n'est ouvert. La demande est effacée par la
+  restauration. Le refus côté backend (`restaurer` : autres postes actifs) reste en garde-fou.
+  Les modifications non enregistrées d'un poste fermé ainsi sont perdues (dit dans le message).
+- **Suite du même jour** :
+  - remplissage **par caisse** : `list_remplissage_affaires` renvoie une ligne par caisse
+    (`RemplissageCaisse` : affaire, caisse, volumes ; caisses avec dimensions et articles),
+    `domain/remplissage.ts` (`tauxParAffaire`, `tauxPourNomAffaire`, `couleurTaux`) et composant
+    `components/TauxRemplissage.tsx` : « 72% » pour une caisse, « Caisse 1 : 72% / Caisse 2 :
+    40% » pour plusieurs (noms des caisses de la simulation), chaque taux coloré selon le seuil ;
+  - **colonne « Taux de remplissage »** dans Gestion des caisses — colonne **calculée**
+    (`Colonne = Champ | "taux_remplissage"` dans `DemandesTable`), non filtrable mais masquable,
+    déplaçable et redimensionnable ; chargée avec le reste (`DemandesList::reload`). Taux **par
+    ligne** (retour du même jour) : sous-caisse = caisse de Simulations liée par
+    `caisse.demande_caisse_id` ; ligne mère = caisse liée par `caisse.demande_id`, à défaut celles
+    de l'affaire du même nom liées à aucune ligne (`domain/remplissage.ts::tauxPourDemande` /
+    `tauxPourSousCaisse` ; `list_remplissage_affaires` renvoie ces deux liens). Affiché centré
+    dans une **pastille** (`TauxRemplissage` prop `pastille`) : **violet pastel** (`--violet-*`)
+    sous le seuil de l'affaire, **orange** + ⚠ dès le seuil atteint, **rouge** + ⚠ au-delà de
+    100 % ;
+  - **menu du clic droit supprimé** dans Gestion des caisses (ses trois actions existaient déjà
+    en boutons de ligne) ;
+  - **ordre des colonnes réglable** dans Options par **glisser-déposer** (événements pointeur —
+    le glisser-déposer HTML5 n'est pas fiable dans la webview Tauri sous Windows ; un clic sans
+    déplacement coche / décoche toujours) + « Ordre par défaut », `TableOptionsMenu` prop
+    `onChangeOrdre`, mémorisé par poste
+    (`localStorage` `caisses:ordreColonnes:demandes` ; une colonne ajoutée depuis se place à sa
+    position par défaut). Une colonne nouvelle (`NOUVELLES_COLONNES`) est visible d'office la
+    première fois même si le poste avait déjà enregistré ses colonnes visibles
+    (`caisses:colonnesConnues:demandes`) ;
+  - « **Dévalider** » → « **Non livré** » dans Gestion des caisses (bouton de ligne, menu du clic
+    droit, action groupée « Non livré (sélection) », infobulle) et dans la Documentation par
+    défaut ;
+  - en-têtes filtrables (Gestion des caisses et Simulations) : **libellé en haut** (plusieurs
+    lignes possibles), **icône en bas à droite** (`position: absolute`, `paddingBottom: 26` sur la
+    cellule), avec un espace réservé en fin de libellé pour que l'icône ne le recouvre jamais quand
+    on rétrécit la colonne.
+- Validation : `cargo test --lib` (10 tests, + remplissage des caisses, + demande de fermeture
+  visible des autres postes seulement / expiration / effacement), `npx tsc --noEmit`. **Non testé
+  en conditions réelles** (en particulier la fermeture à distance : il faut deux postes).
+
 ## Prochaines étapes
 
 ### Fait
@@ -1733,11 +1840,6 @@ bien celui souhaité, aucun changement de code nécessaire.
   du tableau (« Créer une nouvelle caisse »). Voir si on ajoute la possibilité de créer
   directement une ou plusieurs caisses enfants dans le dialogue « + Créer une nouvelle caisse »
   (une case « ajouter des caisses détaillées » qui déplie des sous-lignes).
-- **Sortir les actions du clic droit du tableau Demandes en boutons** (idée 2026-09-03) — le
-  menu contextuel de `DemandesTable` (« Valider / Dévalider la caisse », « Simuler l'affaire »,
-  « Créer une nouvelle caisse ») est peu découvrable. Envisager de rendre ces actions visibles
-  sous forme de boutons (barre d'actions sur la ligne sélectionnée, ou colonne d'actions), tout
-  en gardant éventuellement le clic droit en raccourci.
 - **Rapprochement avec les cartons standards existants** (idée notée le 2026-09-11) — certaines
   références de carton ont des dimensions toujours identiques ; on y range des références qui
   seraient sinon comptées comme des articles à caser dans une caisse bois. Il existe un outil
@@ -1751,14 +1853,6 @@ bien celui souhaité, aucun changement de code nécessaire.
   côté import (référence de carton ? liste des AR qu'il contient ?), et si le rapprochement se
   fait par simple correspondance de référence ou nécessite une étape de vérification manuelle
   avant application.
-- **Alerte de poids — 320 kg au m² par caisse** (idée notée le 2026-09-28 à 350 kg sur
-  l'affaire, **révisée le 2026-10-01**) — dans Simulations, alerter quand le **poids au mètre
-  carré d'une caisse est ≥ 320 kg** (et non plus le poids total de l'affaire > 350 kg). Reste
-  à réfléchir, ne pas coder pour l'instant. Candidat naturel : la `CaisseCard` (le poids total
-  par caisse est déjà calculé dans `domain/calculs.ts::calculerCaisse`). À trancher avant de
-  coder : surface de référence (a priori le fond L × l de la caisse) ; poids des articles seuls
-  ou caisse incluse (le poids du bois n'est pas calculé aujourd'hui) ; seuil fixe ou
-  paramétrable (comme le seuil général).
 
 ### Documentation utilisateur
 

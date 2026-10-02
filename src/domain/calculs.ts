@@ -4,6 +4,12 @@ import { estCaisse4C } from "./demandeOptions";
 const MM3_TO_M3 = 1_000_000_000;
 const EPAISSEUR_MOUSSE_M = 0.025;
 
+// Charge maximale au sol d'une caisse : poids des articles / surface du fond (L × l). Décidé avec
+// l'utilisateur le 2026-10-02 : 320 kg/m² par défaut, réglable dans Admin › Paramètres
+// (`poids_max_kg_m2`), alerte dès que la valeur est atteinte (≥). Le poids de la caisse elle-même
+// (bois) n'est pas calculé : il est couvert par la marge prise sur ce seuil.
+export const POIDS_MAX_KG_M2_DEFAUT = 320;
+
 export function volumeUnitaireM3(article: Pick<Article, "dim1_mm" | "dim2_mm" | "dim3_mm">): number {
   return (article.dim1_mm * article.dim2_mm * article.dim3_mm) / MM3_TO_M3;
 }
@@ -66,6 +72,7 @@ export function calculerCaisse(
   caisse: Caisse,
   articlesDeLaCaisse: Article[],
   seuilDefautAffaire: number,
+  poidsMaxKgM2: number = POIDS_MAX_KG_M2_DEFAUT,
 ): CaisseCalculee {
   const seuilEffectif = caisse.seuil_pct ?? seuilDefautAffaire;
   const volInterne = volumeInterneM3(caisse);
@@ -97,8 +104,12 @@ export function calculerCaisse(
     }
   }
 
+  const surfaceFondM2 = (caisse.longueur_mm * caisse.largeur_mm) / 1_000_000;
+  const poidsParM2 = surfaceFondM2 > 0 ? poidsTotal / surfaceFondM2 : 0;
+  const poidsTropLourd = surfaceFondM2 > 0 && poidsParM2 >= poidsMaxKgM2;
+
   let niveauAlerte: CaisseCalculee["niveauAlerte"] = "ok";
-  if (estSurcharge || articlesTropGrands.length > 0) {
+  if (estSurcharge || articlesTropGrands.length > 0 || poidsTropLourd) {
     niveauAlerte = "alerte";
   } else if (tauxRemplissage * 100 >= seuilEffectif) {
     niveauAlerte = "attention";
@@ -118,6 +129,10 @@ export function calculerCaisse(
     dim2MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, a.dim2_mm), 0),
     dim3MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, a.dim3_mm), 0),
     articlesTropGrands,
+    surfaceFondM2,
+    poidsParM2,
+    poidsTropLourd,
+    poidsMaxKgM2,
   };
 }
 

@@ -28,8 +28,20 @@ impl Default for PosteId {
     }
 }
 
+// Demande de fermeture des autres postes avant une restauration (décision 2026-10-02) : le poste
+// qui restaure écrit `fermeture_demandee` = « poste_id|trigramme » et `fermeture_demandee_le`
+// dans `parametre` ; les autres postes la reçoivent en retour de `signaler_presence`, affichent
+// un message, puis se retirent de `poste_actif` (`quitter_poste`) et se ferment. La demande
+// expire au bout de 10 minutes (poste demandeur fermé entre-temps).
+const CLE_FERMETURE: &str = "fermeture_demandee";
+const CLE_FERMETURE_LE: &str = "fermeture_demandee_le";
+const DELAI_FERMETURE: &str = "-10 minutes";
+
+/// Signale que l'app est ouverte sur ce poste. Renvoie le trigramme de l'administrateur qui
+/// demande la fermeture des postes pour restaurer une sauvegarde, s'il y en a une en cours
+/// (venant d'un autre poste).
 #[tauri::command]
-pub fn signaler_presence(db: State<Db>, poste: State<PosteId>, trigramme: String) -> Result<(), String> {
+pub fn signaler_presence(db: State<Db>, poste: State<PosteId>, trigramme: String) -> Result<Option<String>, String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     conn.execute(
@@ -38,6 +50,81 @@ pub fn signaler_presence(db: State<Db>, poste: State<PosteId>, trigramme: String
         [&poste.0, &trigramme],
     )
     .map_err(|e| e.to_string())?;
+    demande_fermeture_pour(conn, &poste.0)
+}
+
+fn demande_fermeture_pour(conn: &Connection, poste_id: &str) -> Result<Option<String>, String> {
+    let demande: Option<String> = conn
+        .query_row(
+            &format!(
+                "SELECT d.valeur FROM parametre d JOIN parametre l ON l.cle = '{CLE_FERMETURE_LE}'
+                 WHERE d.cle = '{CLE_FERMETURE}' AND l.valeur >= datetime('now', '{DELAI_FERMETURE}')"
+            ),
+            [],
+            |r| r.get(0),
+        )
+        .ok();
+    Ok(demande.and_then(|v| {
+        let (demandeur, tri) = v.split_once('|')?;
+        (demandeur != poste_id).then(|| tri.to_string())
+    }))
+}
+
+/// Trigrammes des autres postes qui ont l'app ouverte — suivi de l'attente côté administrateur.
+#[tauri::command]
+pub fn list_autres_postes_actifs(db: State<Db>, session: State<AdminSession>, poste: State<PosteId>) -> Result<Vec<String>, String> {
+    require_admin(&session)?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    autres_postes_actifs(conn, &poste.0)
+}
+
+/// Demande aux autres postes de fermer l'app (restauration à venir).
+#[tauri::command]
+pub fn demander_fermeture_postes(db: State<Db>, session: State<AdminSession>, poste: State<PosteId>, trigramme: String) -> Result<(), String> {
+    require_admin(&session)?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    poser_demande_fermeture(conn, &poste.0, &trigramme)
+}
+
+fn poser_demande_fermeture(conn: &Connection, poste_id: &str, trigramme: &str) -> Result<(), String> {
+    crate::commands::backup::ecrire(conn, CLE_FERMETURE, &format!("{poste_id}|{trigramme}"))?;
+    conn.execute(
+        &format!("INSERT INTO parametre (cle, valeur) VALUES ('{CLE_FERMETURE_LE}', datetime('now'))
+                  ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur"),
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Retire la demande de fermeture (restauration annulée ou terminée).
+#[tauri::command]
+pub fn annuler_fermeture_postes(db: State<Db>, session: State<AdminSession>) -> Result<(), String> {
+    require_admin(&session)?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    effacer_demande_fermeture(conn)
+}
+
+fn effacer_demande_fermeture(conn: &Connection) -> Result<(), String> {
+    conn.execute(
+        &format!("DELETE FROM parametre WHERE cle IN ('{CLE_FERMETURE}', '{CLE_FERMETURE_LE}')"),
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Ce poste ferme l'app à la demande d'un administrateur : il se retire tout de suite de
+/// `poste_actif` (sinon la restauration attendrait 2 minutes l'expiration de son battement).
+#[tauri::command]
+pub fn quitter_poste(db: State<Db>, poste: State<PosteId>) -> Result<(), String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    conn.execute("DELETE FROM poste_actif WHERE poste_id = ?1", [&poste.0])
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -160,7 +247,7 @@ fn lire_roles(conn: &Connection) -> Result<Vec<(String, String)>, String> {
 
 fn lire_parametres_sauvegarde(conn: &Connection) -> Result<Vec<(String, String)>, String> {
     let mut stmt = conn
-        .prepare("SELECT cle, valeur FROM parametre WHERE cle LIKE 'backup\\_%' ESCAPE '\\' OR cle = 'seuil_alerte_general'")
+        .prepare("SELECT cle, valeur FROM parametre WHERE cle LIKE 'backup\\_%' ESCAPE '\\' OR cle IN ('seuil_alerte_general', 'poids_max_kg_m2')")
         .map_err(|e| e.to_string())?;
     let lignes = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -242,6 +329,7 @@ fn restaurer(conn: &mut Connection, poste_id: &str, chemin: &str, trigramme: &st
     // Verrous et présences de la sauvegarde : périmés, on repart à vide.
     tx.execute("DELETE FROM section_lock", []).map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM poste_actif", []).map_err(|e| e.to_string())?;
+    effacer_demande_fermeture(&tx)?;
     let nom = source.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     journaliser(
         &tx,
@@ -272,6 +360,23 @@ pub async fn restore_sauvegarde(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn demande_de_fermeture_visible_des_autres_postes_seulement() {
+        let d = dossier("fermeture");
+        let conn = crate::db::open_at(&d);
+        assert_eq!(demande_fermeture_pour(&conn, "autre").unwrap(), None);
+        poser_demande_fermeture(&conn, "admin", "AJC").unwrap();
+        assert_eq!(demande_fermeture_pour(&conn, "autre").unwrap(), Some("AJC".to_string()));
+        assert_eq!(demande_fermeture_pour(&conn, "admin").unwrap(), None);
+        conn.execute("UPDATE parametre SET valeur = datetime('now', '-11 minutes') WHERE cle = 'fermeture_demandee_le'", [])
+            .unwrap();
+        assert_eq!(demande_fermeture_pour(&conn, "autre").unwrap(), None);
+        poser_demande_fermeture(&conn, "admin", "AJC").unwrap();
+        effacer_demande_fermeture(&conn).unwrap();
+        assert_eq!(demande_fermeture_pour(&conn, "autre").unwrap(), None);
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     fn dossier(nom: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("caisses-restau-{nom}-{}", std::process::id()));

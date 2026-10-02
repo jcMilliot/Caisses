@@ -13,6 +13,21 @@ const A_FAIRE: Point[] = [
 
 const A_VERIFIER: Point[] = [
   {
+    titre: "Restauration avec d'autres postes ouverts",
+    detail:
+      "Lancer une restauration alors que l'app est ouverte sur un autre poste : ce poste doit afficher « L'application doit être fermée… », se fermer après validation, et la restauration doit démarrer seule.",
+  },
+  {
+    titre: "Taux de remplissage",
+    detail:
+      "Vérifier qu'il s'affiche dans la liste des affaires de Simulations et dans la colonne « Taux de remplissage » de Gestion des caisses, pour les affaires qui ont des caisses avec des articles (une valeur par caisse s'il y en a plusieurs).",
+  },
+  {
+    titre: "Alerte de poids (Simulations)",
+    detail:
+      "Sur une caisse dont les articles pèsent 320 kg ou plus par m² de fond, vérifier que la carte passe en rouge avec « Charge trop lourde ». La limite se règle dans l'onglet Paramètres ; le poids de la caisse elle-même est compris dans la marge.",
+  },
+  {
     titre: "Statistiques des caisses",
     detail:
       "Dans Admin › Caisses › Statistiques, vérifier que les chiffres correspondent à ce qui a été livré (sur mesure, caisses de stock, formats les plus utilisés) et que le choix de période fonctionne.",
@@ -20,7 +35,7 @@ const A_VERIFIER: Point[] = [
   {
     titre: "Stock des caisses « AR_CAISS_ »",
     detail:
-      "Dans l'onglet Caisses de l'Admin, cocher « Gérée » et saisir la quantité réelle et le seuil d'alerte de chaque caisse (d'après le fichier « caisses » du bureau). Puis passer en « Livré » une caisse qui en utilise une : la quantité doit baisser, et l'alerte « à commander » apparaître (Caisses en stock, accueil, barre des tâches) quand le seuil est atteint. Dévalider : l'app doit proposer de remettre la quantité en stock. Passer en « Livré » une commande ACHSTOCK d'une caisse gérée : la quantité doit augmenter.",
+      "Dans l'onglet Caisses de l'Admin, cocher « Gérée » et saisir la quantité réelle et le seuil d'alerte de chaque caisse (d'après le fichier « caisses » du bureau). Puis passer en « Livré » une caisse qui en utilise une : la quantité doit baisser, et l'alerte « à commander » apparaître (Caisses en stock, accueil, barre des tâches) quand le seuil est atteint. Repasser en « Non livré » : l'app doit proposer de remettre la quantité en stock. Passer en « Livré » une commande ACHSTOCK d'une caisse gérée : la quantité doit augmenter.",
   },
   {
     titre: "Suggestion de caisse en stock (Simulations)",
@@ -72,11 +87,6 @@ const A_VERIFIER: Point[] = [
 ];
 
 const A_DECIDER: Point[] = [
-  {
-    titre: "Alerte de poids (320 kg au m²)",
-    detail:
-      "Idée : alerter quand le poids au mètre carré d'une caisse atteint ou dépasse 320 kg. À décider : surface prise en compte (le fond de la caisse ?), poids des articles seuls ou avec la caisse, seuil fixe ou réglable.",
-  },
   {
     titre: "Aide au dimensionnement des caisses",
     detail:

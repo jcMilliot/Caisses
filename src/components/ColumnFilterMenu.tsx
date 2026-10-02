@@ -9,10 +9,20 @@ interface Props {
   onClose: () => void;
   ancre: HTMLElement; // élément déclencheur, sert à positionner la fenêtre (portail hors du tableau)
   estDate?: boolean; // conservé pour les appelants ; libellés de tri désormais communs
+  // Condition propre à une colonne, en plus des conditions texte (ex. colonne AR de Simulations :
+  // « Informations » → « Manquantes » / « Complètes »). Exclusive du filtre par valeurs.
+  conditionSpeciale?: ConditionSpeciale;
+}
+
+export interface ConditionSpeciale {
+  libelle: string;
+  options: string[];
+  actif: string | null;
+  onApply: (valeur: string | null) => void;
 }
 
 type Onglet = "valeurs" | "condition";
-type TypeCondition = "contient" | "egal" | "commence" | "termine";
+type TypeCondition = "contient" | "egal" | "commence" | "termine" | "speciale";
 
 const CONDITIONS: { id: TypeCondition; label: string }[] = [
   { id: "contient", label: "Contient" },
@@ -33,6 +43,8 @@ function correspond(valeur: string, type: TypeCondition, saisie: string): boolea
       return v.startsWith(q);
     case "termine":
       return v.endsWith(q);
+    case "speciale":
+      return true;
   }
 }
 
@@ -45,13 +57,14 @@ const HAUTEUR_ESTIMEE = 470;
 // nombre de valeurs cochées) et onglet « Condition » (contient / égal à / commence par / termine
 // par). Une condition est convertie en liste des valeurs qui la vérifient : le tableau ne connaît
 // toujours qu'une sélection de valeurs. « Réinitialiser » retire filtre et tri de la colonne.
-export default function ColumnFilterMenu({ valeurs, selection, onApply, triActif, onClose, ancre }: Props) {
-  const [onglet, setOnglet] = useState<Onglet>("valeurs");
+export default function ColumnFilterMenu({ valeurs, selection, onApply, triActif, onClose, ancre, conditionSpeciale }: Props) {
+  const [onglet, setOnglet] = useState<Onglet>(conditionSpeciale?.actif ? "condition" : "valeurs");
   const [recherche, setRecherche] = useState("");
   // État local, non appliqué au tableau tant que l'utilisateur n'a pas cliqué sur Appliquer.
   const [selectionLocale, setSelectionLocale] = useState<Set<string>>(() => new Set(selection ?? valeurs));
   const [triLocal, setTriLocal] = useState<"asc" | "desc" | null>(triActif);
-  const [typeCondition, setTypeCondition] = useState<TypeCondition>("contient");
+  const [typeCondition, setTypeCondition] = useState<TypeCondition>(conditionSpeciale?.actif ? "speciale" : "contient");
+  const [choixSpecial, setChoixSpecial] = useState<string>(conditionSpeciale?.actif ?? conditionSpeciale?.options[0] ?? "");
   const [saisieCondition, setSaisieCondition] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   const caseToutRef = useRef<HTMLInputElement>(null);
@@ -129,13 +142,23 @@ export default function ColumnFilterMenu({ valeurs, selection, onApply, triActif
     [valeurs, typeCondition, saisieCondition],
   );
 
+  const specialeActive = onglet === "condition" && typeCondition === "speciale" && conditionSpeciale !== undefined;
+
   function appliquer() {
+    if (specialeActive) {
+      conditionSpeciale!.onApply(choixSpecial);
+      onApply(null, triLocal);
+      onClose();
+      return;
+    }
+    conditionSpeciale?.onApply(null);
     const choix = onglet === "condition" ? new Set(valeursCondition) : selectionLocale;
     onApply(choix.size === valeurs.length ? null : choix, triLocal);
     onClose();
   }
 
   function reinitialiser() {
+    conditionSpeciale?.onApply(null);
     onApply(null, null);
     onClose();
   }
@@ -277,8 +300,19 @@ export default function ColumnFilterMenu({ valeurs, selection, onApply, triActif
                 {c.label}
               </option>
             ))}
+            {conditionSpeciale && <option value="speciale">{conditionSpeciale.libelle}</option>}
           </select>
-          <input autoFocus value={saisieCondition} onChange={(e) => setSaisieCondition(e.target.value)} placeholder="Valeur" style={champStyle} />
+          {specialeActive ? (
+            <select value={choixSpecial} onChange={(e) => setChoixSpecial(e.target.value)} style={champStyle}>
+              {conditionSpeciale!.options.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input autoFocus value={saisieCondition} onChange={(e) => setSaisieCondition(e.target.value)} placeholder="Valeur" style={champStyle} />
+          )}
         </div>
       )}
 
@@ -296,7 +330,9 @@ export default function ColumnFilterMenu({ valeurs, selection, onApply, triActif
         <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
           {onglet === "valeurs"
             ? `${selectionLocale.size} valeur(s) sélectionnée(s)`
-            : saisieCondition.trim()
+            : specialeActive
+              ? "Le filtre s'applique sur validation"
+              : saisieCondition.trim()
               ? `${valeursCondition.length} valeur(s) correspondante(s)`
               : "Le filtre s'applique sur validation"}
         </span>

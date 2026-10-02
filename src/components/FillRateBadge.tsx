@@ -30,12 +30,14 @@ export default function FillRateBadge({ caisse }: { caisse: CaisseCalculee }) {
       title={
         article
           ? `${caisse.articlesTropGrands.length} article(s) plus grand(s) que la caisse (voir le détail sous la barre)`
+          : caisse.poidsTropLourd
+            ? `Charge trop lourde : ${Math.floor(caisse.poidsParM2)} kg/m² (voir le détail sous la barre)`
           : caisse.estSurcharge
             ? `Volume des articles supérieur au volume interne de la caisse (${pct.toFixed(0)}%)`
             : `Taux de remplissage : ${pct.toFixed(1)}%`
       }
     >
-      {(caisse.estSurcharge || article) && "⚠ "}
+      {(caisse.estSurcharge || article || caisse.poidsTropLourd) && "⚠ "}
       {pct.toFixed(0)}%
     </div>
   );

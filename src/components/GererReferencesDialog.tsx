@@ -18,6 +18,13 @@ const LISTES: ListeOption[] = ["moteurs", "module_lineaire", "terminaux"];
 // Moteurs / Module linéaire / Terminaux, table `option_liste`). Ajout, renommage (répercuté
 // sur les lignes existantes côté backend), suppression simple ou multiple. Les valeurs de base
 // codées en dur ne sont pas listées ici.
+// Exemple affiché dans le champ de saisie, selon la colonne choisie (format des valeurs existantes).
+const EXEMPLE_PAR_LISTE: Record<ListeOption, string> = {
+  moteurs: "ex. 4 MOTEURS",
+  module_lineaire: "ex. 1 FESTO 426 (2,18 x 0,08 x 0,08)",
+  terminaux: "ex. 4 TERMINAUX",
+};
+
 export default function GererReferencesDialog({
   optionsPersonnalisees,
   onAjouter,
@@ -185,7 +192,7 @@ export default function GererReferencesDialog({
                     ajouter();
                   }
                 }}
-                placeholder="ex. 4 MOTEURS"
+                placeholder={EXEMPLE_PAR_LISTE[liste]}
                 style={champStyle}
               />
             </label>

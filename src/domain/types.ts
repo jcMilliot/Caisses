@@ -260,6 +260,12 @@ export interface CaisseCalculee extends Caisse {
   // Articles assignés dont au moins une dimension dépasse la dimension correspondante de la
   // caisse (comparaison stricte des axes : dim1↔longueur, dim2↔largeur, dim3↔hauteur).
   articlesTropGrands: ArticleTropGrand[];
+  // Poids des articles assignés rapporté à la surface du fond (L × l), en kg/m² — 0 si la caisse
+  // n'a pas encore de dimensions. Alerte dès POIDS_MAX_KG_M2 (cf. domain/calculs.ts).
+  surfaceFondM2: number;
+  poidsParM2: number;
+  poidsTropLourd: boolean;
+  poidsMaxKgM2: number; // limite appliquée (Admin › Paramètres)
 }
 
 export interface ArticleTropGrand {

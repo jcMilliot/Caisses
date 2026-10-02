@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { affairesApi } from "../data/affaires";
 import { articlesApi } from "../data/articles";
 import { caissesApi } from "../data/caisses";
-import { articlesParCaisse, calculerCaisse } from "../domain/calculs";
+import { articlesParCaisse, calculerCaisse, POIDS_MAX_KG_M2_DEFAUT } from "../domain/calculs";
 import type { Affaire, Article, Caisse, CaisseCalculee, NewArticle } from "../domain/types";
 
 export function useAffaire(affaireId: number, trigramme: string) {
@@ -32,9 +32,14 @@ export function useAffaire(affaireId: number, trigramme: string) {
   }, [reload]);
 
   const seuilDefaut = affaire?.seuil_defaut ?? 90;
+  // Limite de poids au m² (Admin › Paramètres) — défaut tant qu'elle n'est pas chargée.
+  const [poidsMaxKgM2, setPoidsMaxKgM2] = useState(POIDS_MAX_KG_M2_DEFAUT);
+  useEffect(() => {
+    affairesApi.getPoidsMaxKgM2().then(setPoidsMaxKgM2).catch(() => {});
+  }, []);
   const byCaisse = articlesParCaisse(articles);
   const caissesCalculees: CaisseCalculee[] = caisses.map((c) =>
-    calculerCaisse(c, byCaisse.get(c.id) ?? [], seuilDefaut),
+    calculerCaisse(c, byCaisse.get(c.id) ?? [], seuilDefaut, poidsMaxKgM2),
   );
   const articlesNonAssignes = articles.filter((a) => a.caisse_id === null);
 

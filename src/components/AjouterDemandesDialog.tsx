@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { libelleCaisseStock } from "../domain/caisseStock";
 import { confirmerAction } from "../data/confirm";
 import type { NewDemande, CaisseStock, OptionListe } from "../domain/types";
 import {
@@ -290,7 +291,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
                     .filter((c) => !c.validee || c.id === ligne.caisse_stock_id)
                     .map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.nom}
+                        {libelleCaisseStock(c)}
                       </option>
                     ))}
                 </select>

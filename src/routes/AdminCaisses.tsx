@@ -82,10 +82,7 @@ function StockArCaiss({ trigramme }: { trigramme: string }) {
   return (
     <div style={{ maxWidth: 900 }}>
       <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 14px" }}>
-        Caisses AR_CAISS_ uniquement. Une caisse <strong>gérée</strong> voit sa quantité en stock diminuer quand une
-        caisse qui l'utilise passe en « Livré » dans Gestion des caisses, et augmenter quand une commande ACHSTOCK de
-        cette caisse est reçue (passée en « Livré »). Elle passe <strong>à commander</strong> quand la quantité en stock
-        atteint le seuil (quantité inférieure ou égale au seuil). Les caisses non gérées ne sont pas suivies.
+        Espace de gestion des « AR_CAISS » en stock
       </p>
       {erreur && <p style={{ color: "var(--danger-text)", fontSize: 13 }}>{erreur}</p>}
       {caisses.length === 0 ? (
@@ -175,7 +172,7 @@ function LigneStock({
       </td>
       <td style={tdStyle}>
         {!caisse.gere ? (
-          <span style={{ color: "var(--text-faint)" }}>Non suivie</span>
+          <span style={{ color: "var(--text-faint)" }}>Non gérée</span>
         ) : aCommander ? (
           <strong style={{ color: "var(--danger-text)" }}>À commander</strong>
         ) : (

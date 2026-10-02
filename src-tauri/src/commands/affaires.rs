@@ -3,6 +3,61 @@ use crate::db::Db;
 use crate::models::Affaire;
 use tauri::State;
 
+/// Taux de remplissage des caisses de chaque affaire, pour la liste de Simulations et la colonne
+/// « Taux de remplissage » de Gestion des caisses (2026-10-02) : volume des articles rangés dans
+/// la caisse / son volume interne. Seules les caisses qui ont des dimensions ET au moins un
+/// article sont renvoyées. Même formule que `domain/calculs.ts` (mousse 4C non déduite).
+#[derive(serde::Serialize)]
+pub struct RemplissageCaisse {
+    pub affaire_id: i64,
+    pub affaire_nom: String,
+    pub caisse_id: i64,
+    pub caisse_nom: String,
+    pub volume_occupe_m3: f64,
+    pub volume_interne_m3: f64,
+    /// Liens vers Gestion des caisses : ligne mère / sous-caisse dont la caisse est issue.
+    pub demande_id: Option<i64>,
+    pub demande_caisse_id: Option<i64>,
+}
+
+#[tauri::command]
+pub fn list_remplissage_affaires(db: State<Db>) -> Result<Vec<RemplissageCaisse>, String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    remplissages(conn)
+}
+
+fn remplissages(conn: &rusqlite::Connection) -> Result<Vec<RemplissageCaisse>, String> {
+    let mut stmt = conn
+        .prepare(
+            "WITH occ AS (
+                 SELECT caisse_id, SUM(dim1_mm * dim2_mm * dim3_mm * quantite) / 1e9 AS vol
+                 FROM article WHERE caisse_id IS NOT NULL GROUP BY caisse_id
+             )
+             SELECT c.affaire_id, a.nom, c.id, c.nom, occ.vol, c.longueur_mm * c.largeur_mm * c.hauteur_mm / 1e9,
+                    c.demande_id, c.demande_caisse_id
+             FROM caisse c JOIN occ ON occ.caisse_id = c.id JOIN affaire a ON a.id = c.affaire_id
+             WHERE c.longueur_mm > 0 AND c.largeur_mm > 0 AND c.hauteur_mm > 0
+             ORDER BY c.affaire_id, c.ordre, c.id",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(RemplissageCaisse {
+                affaire_id: r.get(0)?,
+                affaire_nom: r.get(1)?,
+                caisse_id: r.get(2)?,
+                caisse_nom: r.get(3)?,
+                volume_occupe_m3: r.get(4)?,
+                volume_interne_m3: r.get(5)?,
+                demande_id: r.get(6)?,
+                demande_caisse_id: r.get(7)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn list_affaires(db: State<Db>) -> Result<Vec<Affaire>, String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
@@ -104,6 +159,36 @@ pub fn get_seuil_general(db: State<Db>) -> Result<f64, String> {
     seuil_general(conn)
 }
 
+// Limite de poids au m² d'une caisse (alerte « Charge trop lourde » de Simulations), réglée dans
+// Admin › Paramètres (décision 2026-10-02, défaut 320 kg/m², marge du poids de la caisse
+// comprise). Lue par tous les postes, écrite par un administrateur.
+const CLE_POIDS_MAX_M2: &str = "poids_max_kg_m2";
+const POIDS_MAX_M2_DEFAUT: f64 = 320.0;
+
+#[tauri::command]
+pub fn get_poids_max_kg_m2(db: State<Db>) -> Result<f64, String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    Ok(crate::commands::backup::lire(conn, CLE_POIDS_MAX_M2)?
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(POIDS_MAX_M2_DEFAUT))
+}
+
+#[tauri::command]
+pub fn set_poids_max_kg_m2(
+    db: State<Db>,
+    session: State<crate::commands::admin::AdminSession>,
+    poids: f64,
+) -> Result<(), String> {
+    crate::commands::admin::require_admin(&session)?;
+    if !(poids > 0.0 && poids.is_finite()) {
+        return Err("La limite de poids doit être supérieure à 0 kg/m²".to_string());
+    }
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    crate::commands::backup::ecrire(conn, CLE_POIDS_MAX_M2, &poids.to_string())
+}
+
 /// Règle le seuil général et l'applique (en écrasant leur valeur) à toutes les affaires dont
 /// la caisse n'est pas encore livrée. Renvoie le nombre d'affaires mises à jour.
 #[tauri::command]
@@ -133,6 +218,31 @@ fn appliquer_seuil_general(conn: &rusqlite::Connection, seuil: f64) -> Result<us
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remplissage_des_affaires() {
+        let dir = std::env::temp_dir().join(format!("caisses-test-remplissage-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let conn = crate::db::open_at(&dir);
+        conn.execute_batch(
+            "INSERT INTO affaire (id, nom) VALUES (1, 'AFFAIRE1'), (2, 'AFFAIRE2');
+             INSERT INTO caisse (id, affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm) VALUES
+                 (10, 1, 'A', 1000, 1000, 1000), (11, 1, 'B', 1000, 1000, 1000), (12, 1, 'vide', 1000, 1000, 1000),
+                 (20, 2, 'sans dims', 0, 0, 0);
+             INSERT INTO article (affaire_id, caisse_id, reference, designation, dim1_mm, dim2_mm, dim3_mm, quantite) VALUES
+                 (1, 10, 'R', '', 500, 1000, 1000, 1), (1, 11, 'R', '', 100, 1000, 1000, 2), (1, NULL, 'R', '', 1000, 1000, 1000, 5),
+                 (2, 20, 'R', '', 100, 100, 100, 1);",
+        )
+        .unwrap();
+        let r = remplissages(&conn).unwrap();
+        // Caisse vide et caisse sans dimensions (affaire 2) absentes.
+        assert_eq!(r.iter().map(|c| (c.affaire_id, c.caisse_id)).collect::<Vec<_>>(), vec![(1, 10), (1, 11)]);
+        assert_eq!(r[0].affaire_nom, "AFFAIRE1");
+        assert!((r[0].volume_occupe_m3 - 0.5).abs() < 1e-9);
+        assert!((r[1].volume_occupe_m3 - 0.2).abs() < 1e-9);
+        assert!((r[1].volume_interne_m3 - 1.0).abs() < 1e-9);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn seuil_general_applique_aux_affaires_non_livrees() {
