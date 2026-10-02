@@ -361,9 +361,8 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+// Bordure, arrondi, fond et focus : style commun des champs (index.css).
 const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "6px 9px",
-  border: "1px solid var(--border-strong)",
-  borderRadius: 6,
 };

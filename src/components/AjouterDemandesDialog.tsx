@@ -182,15 +182,8 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
 
   return (
     <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.35)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100,
-      }}
+      className="modal-overlay"
+      style={{ zIndex: 100 }}
       onClick={handleFermer}
     >
       <div
@@ -206,7 +199,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
           boxShadow: "var(--shadow-lg)",
         }}
       >
-        <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border)" }}>
+        <div className="modal-header">
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Créer une nouvelle caisse</h2>
         </div>
 
@@ -401,10 +394,8 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
         </div>
 
         <div
+          className="modal-footer"
           style={{
-            padding: "14px 20px",
-            borderTop: "1px solid var(--border)",
-            display: "flex",
             justifyContent: erreurValidation ? "space-between" : "flex-end",
             alignItems: "center",
             gap: 12,
@@ -474,18 +465,16 @@ function mmDepuisTexte(texte: string): number {
 
 const labelStyle: React.CSSProperties = {
   display: "block",
-  fontSize: 11.5,
+  fontSize: 12,
+  fontWeight: 600,
   color: "var(--text-muted)",
-  marginBottom: 4,
+  marginBottom: 5,
 };
 
+// Bordure, arrondi, fond et focus : style commun des champs (index.css).
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  padding: "7px 8px",
-  border: "1px solid var(--border-strong)",
-  borderRadius: "var(--radius)",
-  background: "var(--bg-panel)",
-  color: "var(--text)",
+  padding: "7px 10px",
   font: "inherit",
 };
 

@@ -58,12 +58,9 @@ export default function SelectOuAutre({ valeur, options, onChange, placeholder }
   );
 }
 
+// Bordure, arrondi, fond et focus : style commun des champs (index.css).
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  padding: "7px 8px",
-  border: "1px solid var(--border-strong)",
-  borderRadius: "var(--radius)",
-  background: "var(--bg-panel)",
-  color: "var(--text)",
+  padding: "7px 10px",
   font: "inherit",
 };

@@ -372,12 +372,9 @@ const pilluleStyle: React.CSSProperties = {
   fontSize: 12.5,
 };
 
+// Bordure, arrondi, fond et focus : style commun des champs (index.css).
 const champStyle: React.CSSProperties = {
   width: "100%",
   padding: "8px 12px",
-  border: "1px solid var(--border-strong)",
-  borderRadius: 8,
   fontSize: 13,
-  background: "var(--bg-panel)",
-  color: "var(--text)",
 };

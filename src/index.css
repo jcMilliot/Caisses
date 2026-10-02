@@ -670,7 +670,8 @@ table {
 }
 
 .modal-header {
-  padding: 18px 22px 12px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--border);
 }
 
 .modal-header h2 {
@@ -858,4 +859,12 @@ input[type="checkbox"].interrupteur:checked {
 
 input[type="checkbox"].interrupteur:checked::after {
   transform: translateX(14px);
+}
+
+/* Carte posée sur un fond de fenêtre (tous les dialogues) : arrondi, ombre et entrée animée
+   par défaut — un style en ligne du composant reste prioritaire. */
+.modal-overlay > div {
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  animation: modal-entree 0.16s ease-out;
 }

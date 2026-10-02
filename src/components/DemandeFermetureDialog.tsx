@@ -21,15 +21,8 @@ export default function DemandeFermetureDialog({ demandeur }: { demandeur: strin
 
   return (
     <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(20, 18, 15, 0.45)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 3000,
-      }}
+      className="modal-overlay"
+      style={{ zIndex: 3000 }}
     >
       <div className="panel" style={{ width: 440, maxWidth: "calc(100vw - 32px)", padding: 24, boxShadow: "var(--shadow-lg)" }}>
         <h2 style={{ fontSize: 17, fontWeight: 700, margin: "0 0 10px" }}>Fermeture de l'application</h2>

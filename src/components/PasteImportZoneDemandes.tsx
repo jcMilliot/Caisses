@@ -161,15 +161,8 @@ export default function PasteImportZoneDemandes({ onImport, onClose }: Props) {
 
   return (
     <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.35)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100,
-      }}
+      className="modal-overlay"
+      style={{ zIndex: 100 }}
       onClick={onClose}
     >
       <div
@@ -185,7 +178,7 @@ export default function PasteImportZoneDemandes({ onImport, onClose }: Props) {
           boxShadow: "var(--shadow-lg)",
         }}
       >
-        <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border)" }}>
+        <div className="modal-header">
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Coller des demandes depuis Excel</h2>
           <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "var(--text-muted)" }}>
             Colonnes attendues, dans l'ordre : {COLONNES.join(" · ")}
@@ -286,7 +279,7 @@ export default function PasteImportZoneDemandes({ onImport, onClose }: Props) {
           )}
         </div>
 
-        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <div className="modal-footer">
           <button className="btn" onClick={onClose}>
             Annuler
           </button>

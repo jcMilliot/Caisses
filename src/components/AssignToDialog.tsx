@@ -43,14 +43,14 @@ export default function AssignToDialog({ caisses, nbSelectionnes, onAssign, onCr
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
+      className="modal-overlay" style={{ zIndex: 100 }}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{ background: "var(--bg-panel)", borderRadius: "var(--radius-lg)", width: 420, maxWidth: "92vw", boxShadow: "var(--shadow-lg)" }}
       >
-        <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border)" }}>
+        <div className="modal-header">
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
             {nbSelectionnes} article{nbSelectionnes > 1 ? "s" : ""} sélectionné{nbSelectionnes > 1 ? "s" : ""} — assigner à →
           </h2>
@@ -126,7 +126,7 @@ export default function AssignToDialog({ caisses, nbSelectionnes, onAssign, onCr
           )}
         </div>
 
-        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <div className="modal-footer">
           <button className="btn" onClick={onClose}>
             Annuler
           </button>
@@ -140,5 +140,5 @@ export default function AssignToDialog({ caisses, nbSelectionnes, onAssign, onCr
 }
 
 const labelStyle: React.CSSProperties = { display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 4 };
-const inputStyle: React.CSSProperties = { width: "100%", padding: "7px 10px", border: "1px solid var(--border-strong)", borderRadius: "var(--radius)" };
+const inputStyle: React.CSSProperties = { width: "100%", padding: "7px 10px" };
 const activeTabStyle: React.CSSProperties = { background: "var(--accent-soft)", borderColor: "var(--accent)", color: "var(--accent)" };
