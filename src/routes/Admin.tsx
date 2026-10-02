@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Journal from "./Journal";
 import AdminFeuilleDeRoute from "./AdminFeuilleDeRoute";
+import AdminCaisses from "./AdminCaisses";
 import { adminApi, ADMIN_PERMANENT, LIBELLE_ROLE, type Role, type Utilisateur } from "../data/admin";
 import { affairesApi } from "../data/affaires";
 import { backupApi, type BackupConfig, type FichierSauvegarde, type FrequenceBackup } from "../data/backup";
@@ -13,11 +14,12 @@ interface Props {
   trigramme: string;
 }
 
-type Onglet = "utilisateurs" | "parametres" | "sauvegarde" | "journal" | "feuille";
+type Onglet = "utilisateurs" | "parametres" | "caisses" | "sauvegarde" | "journal" | "feuille";
 
 const ONGLETS: { id: Onglet; label: string }[] = [
   { id: "utilisateurs", label: "Utilisateurs" },
   { id: "parametres", label: "Paramètres" },
+  { id: "caisses", label: "Caisses" },
   { id: "sauvegarde", label: "Sauvegarde" },
   { id: "journal", label: "Journal" },
   { id: "feuille", label: "Feuille de route" },
@@ -83,6 +85,7 @@ export default function Admin({ trigramme }: Props) {
 
       {onglet === "utilisateurs" && <UtilisateursOnglet trigramme={trigramme} />}
       {onglet === "parametres" && <ParametresOnglet />}
+      {onglet === "caisses" && <AdminCaisses trigramme={trigramme} />}
       {onglet === "sauvegarde" && <SauvegardeOnglet trigramme={trigramme} />}
       {onglet === "journal" && <Journal />}
       {onglet === "feuille" && <AdminFeuilleDeRoute />}

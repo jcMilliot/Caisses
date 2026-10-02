@@ -34,3 +34,6 @@ src-tauri/gen
 *.njsproj
 *.sln
 *.sw?
+
+# Captures d'écran (chemins de postes, nom d'entreprise) — dépôt public, ne pas commiter
+docs/captures/

@@ -297,3 +297,23 @@ table {
 .doc-bloc ul + h3 {
   margin-top: 18px;
 }
+
+/* Icône de tri / filtre des en-têtes de tableau (DemandesTable, ArticlesTable) : discrète au repos, nette au
+   survol de l'en-tête, toujours visible quand la colonne est triée ou filtrée. */
+.btn-filtre-colonne {
+  opacity: 0.45;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+.th-filtrable:hover .btn-filtre-colonne,
+.btn-filtre-colonne-actif {
+  opacity: 1;
+}
+.btn-filtre-colonne:not(.btn-filtre-colonne-actif):hover {
+  background: var(--bg-panel-alt) !important;
+}
+.ligne-filtre-valeur:hover {
+  background: var(--bg-panel-alt);
+}
+.ligne-classement:hover {
+  background: var(--bg-panel-alt);
+}

@@ -16,11 +16,13 @@ use commands::articles_non_colles::{
     update_article_non_colle,
 };
 use commands::caisse_stock::{
-    count_caisse_stock_lignes_liees, create_caisse_stock, delete_caisse_stock, list_caisses_stock, set_caisse_stock_validee, transfer_caisse_stock,
+    count_caisse_stock_lignes_liees, create_caisse_stock, decompter_stock_livraison, delete_caisse_stock, list_caisses_stock,
+    remettre_stock_ligne, set_caisse_stock_suivi, set_caisse_stock_validee, stock_decompte_ligne, transfer_caisse_stock,
     update_caisse_stock,
 };
 use commands::caisses::{
-    create_caisse, delete_caisse, link_caisse_demande, link_caisse_demande_caisse, list_caisses, update_caisse,
+    create_caisse, delete_caisse, link_caisse_demande, link_caisse_demande_caisse, list_caisses, set_caisse_caisse_stock,
+    update_caisse,
 };
 use commands::demande_caisse::{create_demande_caisse, delete_demande_caisse, list_all_demande_caisses, update_demande_caisse};
 use commands::demandes::{
@@ -93,6 +95,7 @@ pub fn run() {
             update_caisse,
             link_caisse_demande_caisse,
             link_caisse_demande,
+            set_caisse_caisse_stock,
             delete_caisse,
             list_articles,
             create_article,
@@ -121,6 +124,10 @@ pub fn run() {
             delete_caisse_stock,
             transfer_caisse_stock,
             set_caisse_stock_validee,
+            set_caisse_stock_suivi,
+            decompter_stock_livraison,
+            stock_decompte_ligne,
+            remettre_stock_ligne,
             count_caisse_stock_lignes_liees,
             acquire_lock,
             release_lock,

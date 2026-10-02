@@ -11,6 +11,10 @@ const LIBELLE_ACTION: Record<string, string> = {
   reference_modification: "Référence renommée",
   reference_suppression: "Référence supprimée",
   restauration: "Restauration",
+  stock_reglage: "Stock réglé",
+  stock_retrait: "Sortie de stock",
+  stock_remise: "Remise en stock",
+  stock_reception: "Réception en stock",
 };
 
 const LIBELLE_ENTITE: Record<string, string> = {
@@ -18,6 +22,7 @@ const LIBELLE_ENTITE: Record<string, string> = {
   demande_caisse: "Sous-caisse",
   option_liste: "Référence",
   base: "Base de données",
+  caisse_stock: "Caisse en stock",
 };
 
 const COULEUR_ACTION: Record<string, string> = {
@@ -28,6 +33,10 @@ const COULEUR_ACTION: Record<string, string> = {
   reference_modification: "var(--warn-text)",
   reference_suppression: "var(--danger-text)",
   restauration: "var(--danger-text)",
+  stock_reglage: "var(--warn-text)",
+  stock_retrait: "var(--warn-text)",
+  stock_remise: "var(--ok-text)",
+  stock_reception: "var(--ok-text)",
 };
 
 // Onglet « Journal » de la page Admin (session admin requise côté backend).

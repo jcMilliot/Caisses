@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { demandesApi } from "../data/demandes";
+import { caisseStockApi } from "../data/caisseStock";
+import { caissesStockACommander } from "../domain/caisseStock";
+import PastilleAlerte from "../components/PastilleAlerte";
 import { dateIsoVersAffichage } from "../domain/dates";
 import { MESSAGE_ALERTE_COMMANDE, caissesACommanderCetteSemaine, caissesARapatrierCetteSemaine, type AffaireACommander } from "../domain/caissesACommander";
-import type { Demande } from "../domain/types";
+import type { CaisseStock, Demande } from "../domain/types";
 
 type Section = "demandes" | "simulations" | "stock" | "achats" | "admin" | "documentation";
 
@@ -47,9 +50,14 @@ interface Props {
 
 export default function Accueil({ onSelect, estAdmin }: Props) {
   const [demandes, setDemandes] = useState<Demande[] | null>(null);
+  const [stockACommander, setStockACommander] = useState<CaisseStock[]>([]);
 
   useEffect(() => {
     demandesApi.list().then(setDemandes);
+    caisseStockApi
+      .list()
+      .then((c) => setStockACommander(caissesStockACommander(c)))
+      .catch((e) => console.warn("Caisses de stock à commander :", e));
   }, []);
 
   const aCommander = demandes ? caissesACommanderCetteSemaine(demandes) : [];
@@ -105,6 +113,9 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
       <div style={{ flex: "0 0 auto", borderLeft: "1px solid var(--border)" }} />
 
       <div style={{ flex: 1, minWidth: 0, paddingTop: 4, display: "flex", flexDirection: "column", gap: 32 }}>
+        {stockACommander.length > 0 && (
+          <StockACommander caisses={stockACommander} onOuvrir={() => onSelect("stock")} />
+        )}
         <ListeAffaires titre="Caisses à commander cette semaine" affaires={aCommander} chargement={demandes === null} />
         <ListeAffaires titre="Caisses à rapatrier cette semaine" affaires={aRapatrier} chargement={demandes === null} />
       </div>
@@ -158,6 +169,44 @@ function ListeAffaires({
             ))}
           </ul>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Caisses AR_CAISS_ gérées arrivées au seuil d'alerte (Admin › Caisses) — n'apparaît que s'il y en a.
+function StockACommander({ caisses, onOuvrir }: { caisses: CaisseStock[]; onOuvrir: () => void }) {
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 16px", letterSpacing: "-0.01em" }}>Caisses de stock à commander</h2>
+      <div className="panel" style={{ padding: 0 }}>
+        <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+          {caisses.map((c) => (
+            <li
+              key={c.id}
+              onClick={onOuvrir}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 12,
+                padding: "10px 16px",
+                borderBottom: "1px solid var(--border)",
+                background: "var(--danger-bg)",
+                cursor: "pointer",
+              }}
+              title="Ouvrir Caisses en stock"
+            >
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600, color: "var(--text)" }}>
+                <PastilleAlerte titre="Stock au seuil d'alerte" />
+                {c.nom} à commander
+              </span>
+              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                {c.quantite} en stock (seuil {c.seuil_alerte})
+              </span>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );

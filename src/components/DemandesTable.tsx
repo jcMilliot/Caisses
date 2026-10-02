@@ -1,4 +1,5 @@
 import PastilleAlerte from "./PastilleAlerte";
+import IconeFiltre from "./IconeFiltre";
 import { MESSAGE_ALERTE_COMMANDE, estACommanderUrgent } from "../domain/caissesACommander";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -228,7 +229,7 @@ const COLONNES: { champ: Champ; label: string; align?: "left" | "center" }[] = [
   { champ: "type_ouverture", label: "Type ouverture" },
   { champ: "stock", label: "Stock" },
   { champ: "longueur_mm", label: "Long. (m)" },
-  { champ: "largeur_mm", label: "larg. (m)" },
+  { champ: "largeur_mm", label: "Larg. (m)" },
   { champ: "hauteur_mm", label: "Haut. (m)" },
   { champ: "quantite", label: "Qté", align: "center" },
   { champ: "date_picking", label: "Date picking", align: "center" },
@@ -623,6 +624,7 @@ export default function DemandesTable({
     const largeur = largeurColonne(champ);
     return (
       <th
+        className="th-filtrable"
         style={{
           ...th,
           textAlign: align,
@@ -634,38 +636,33 @@ export default function DemandesTable({
           background: filtreActif ? "var(--filtre-actif-bg)" : th.background,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: align === "center" ? "center" : "flex-start", gap: 4 }}>
-          <span style={{ wordBreak: "keep-all", overflowWrap: "normal" }}>{label}</span>
+        {/* Libellé à gauche (ou centré), icône toujours calée à droite de la colonne. */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+          <span style={{ flex: 1, minWidth: 0, textAlign: align, wordBreak: "keep-all", overflowWrap: "normal" }}>{label}</span>
           <button
             ref={(el) => {
               if (el) boutonsFiltreRef.current[champ] = el;
             }}
             onClick={() => setMenuOuvert((prev) => (prev === champ ? null : champ))}
-            title="Trier et filtrer"
+            title={filtreActif ? "Filtre actif — trier et filtrer" : "Trier et filtrer"}
+            className={`btn-filtre-colonne${actif || filtreActif ? " btn-filtre-colonne-actif" : ""}`}
             style={{
-              background: "none",
+              flexShrink: 0,
+              background: filtreActif ? "var(--accent)" : "none",
               border: "none",
+              borderRadius: 4,
               cursor: "pointer",
-              padding: "2px 4px",
-              fontSize: 11,
-              color: actif || filtreActif ? "var(--accent)" : "var(--text-faint)",
-              position: "relative",
+              padding: "3px 4px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 2,
+              fontSize: 10,
+              lineHeight: 1,
+              color: filtreActif ? "#fff" : actif ? "var(--accent)" : "var(--text-muted)",
             }}
           >
-            {actif ? (tri!.sens === "asc" ? "▲" : "▼") : "▾"}
-            {filtreActif && (
-              <span
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  right: 0,
-                  width: 5,
-                  height: 5,
-                  borderRadius: "50%",
-                  background: "var(--accent)",
-                }}
-              />
-            )}
+            <IconeFiltre plein={filtreActif} />
+            {actif && (tri!.sens === "asc" ? "▲" : "▼")}
           </button>
         </div>
         {menuOuvert === champ && boutonsFiltreRef.current[champ] && (
@@ -1358,13 +1355,12 @@ const menuBoutonStyle: React.CSSProperties = {
 };
 
 const thStyle: React.CSSProperties = {
-  padding: "8px 8px",
-  borderBottom: "2px solid var(--row-border-color)",
+  padding: "10px 8px",
+  borderBottom: "1px solid var(--border-strong)",
   borderRight: "1px solid var(--row-border-color)",
-  fontSize: 11.5,
-  fontWeight: 700,
-  letterSpacing: "0.02em",
-  textTransform: "uppercase",
+  fontSize: 12,
+  fontWeight: 600,
+  color: "var(--text-muted)",
   position: "sticky",
   top: 0,
   background: "var(--bg-panel)",
@@ -1375,8 +1371,8 @@ const thStyle: React.CSSProperties = {
   overflowWrap: "normal",
   wordBreak: "keep-all",
   hyphens: "none",
-  lineHeight: 1.2,
-  verticalAlign: "bottom",
+  lineHeight: 1.25,
+  verticalAlign: "middle",
 };
 const tdStyle: React.CSSProperties = {
   padding: "10px 10px",
@@ -1390,8 +1386,8 @@ const tdStyle: React.CSSProperties = {
 
 const thStyleCompact: React.CSSProperties = {
   ...thStyle,
-  padding: "4px 5px",
-  fontSize: 10,
+  padding: "6px 6px",
+  fontSize: 11,
 };
 const tdStyleCompact: React.CSSProperties = {
   ...tdStyle,

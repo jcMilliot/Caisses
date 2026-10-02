@@ -4,8 +4,16 @@ import { useSessionAdmin } from "../hooks/useSessionAdmin";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAffaire } from "../hooks/useAffaire";
 import { calculerRecapAffaire, calculerCapaciteAffaire, formaterVolumeM3, champsManquants } from "../domain/calculs";
-import { estCaisse4C, contrePlaqueParDefaut, estDemandeValidee, memeNomAffaire } from "../domain/demandeOptions";
-import type { Article, Caisse, Demande, DemandeCaisse, NewDemandeCaisse } from "../domain/types";
+import {
+  estCaisse4C,
+  contrePlaqueParDefaut,
+  estDemandeValidee,
+  estDemandeCaisseValidee,
+  memeNomAffaire,
+  detacherStockSiDimsModifiees,
+} from "../domain/demandeOptions";
+import { suggererCaisseStock } from "../domain/suggestionCaisse";
+import type { Article, Caisse, CaisseCalculee, CaisseStock, Demande, DemandeCaisse, NewDemandeCaisse } from "../domain/types";
 import { usePointerDrag } from "../hooks/usePointerDrag";
 import { useSectionLock } from "../hooks/useSectionLock";
 import ArticlesTable from "../components/ArticlesTable";
@@ -18,6 +26,7 @@ import { confirmerSuppression, confirmerAction } from "../data/confirm";
 import { demandeCaisseApi } from "../data/demandeCaisse";
 import { demandesApi } from "../data/demandes";
 import { caissesApi } from "../data/caisses";
+import { caisseStockApi } from "../data/caisseStock";
 
 interface Props {
   affaireId: number;
@@ -86,6 +95,11 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
   const [demandeCaissesLiees, setDemandeCaissesLiees] = useState<DemandeCaisse[]>([]);
   const [demandeParente, setDemandeParente] = useState<Demande | null>(null);
   const [toutesDemandes, setToutesDemandes] = useState<Demande[]>([]);
+  const [caissesStock, setCaissesStock] = useState<CaisseStock[]>([]);
+
+  useEffect(() => {
+    caisseStockApi.list().then(setCaissesStock).catch(() => {});
+  }, []);
 
   useEffect(() => {
     demandeCaisseApi.listAll().then(setDemandeCaissesLiees);
@@ -181,6 +195,81 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
   })();
 
   const articleEnCoursDeDrag = drag ? articles.find((a) => a.id === drag.articleId) : null;
+
+  // Ligne de Gestion des caisses liée à une caisse de Simulations : sous-caisse
+  // (demande_caisse_id) en priorité, sinon ligne mère (demande_id, puis demande non validée du
+  // même nom pour une caisse non liée à une sous-caisse).
+  function ligneLiee(c: Caisse): { sous: DemandeCaisse } | { mere: Demande } | null {
+    if (c.demande_caisse_id !== null) {
+      const sous = demandeCaissesLiees.find((sl) => sl.id === c.demande_caisse_id);
+      return sous ? { sous } : null;
+    }
+    const mere = (c.demande_id !== null && toutesDemandes.find((d) => d.id === c.demande_id)) || demandeParente;
+    return mere ? { mere } : null;
+  }
+
+  // Articles pris en compte pour la suggestion : ceux de la caisse, ou tous ceux de l'affaire
+  // s'il n'y a qu'une caisse (les articles ne sont souvent pas encore assignés).
+  function articlesPourSuggestion(c: Caisse): Article[] {
+    return caissesCalculees.length === 1 ? articles : articles.filter((a) => a.caisse_id === c.id);
+  }
+
+  function suggestionPour(c: CaisseCalculee): CaisseStock | null {
+    if (c.caisse_stock_id !== null) return null;
+    return suggererCaisseStock({
+      caisse: c,
+      articles: articlesPourSuggestion(c),
+      seuilPct: c.seuilEffectif,
+      caissesStock,
+      demandes: toutesDemandes,
+      demandeCaisses: demandeCaissesLiees,
+      liens: { demandeId: c.demande_id, demandeCaisseId: c.demande_caisse_id },
+    });
+  }
+
+  // Suggestion acceptée : la caisse prend les dimensions de la caisse en stock, qui est
+  // sélectionnée ; la ligne liée de Gestion des caisses (si non livrée) la sélectionne aussi
+  // dans son menu Stock, avec ses dimensions et son type d'ouverture.
+  async function utiliserCaisseStock(c: CaisseCalculee, cs: CaisseStock) {
+    const lien = ligneLiee(c);
+    const ligneModifiable =
+      lien && ("sous" in lien ? !estDemandeCaisseValidee(lien.sous) : !estDemandeValidee(lien.mere)) ? lien : null;
+    const nomLigne = ligneModifiable ? ("sous" in ligneModifiable ? ligneModifiable.sous.nom : ligneModifiable.mere.affaire) : "";
+    const dims = `${(cs.longueur_mm / 1000).toFixed(2)} × ${(cs.largeur_mm / 1000).toFixed(2)} × ${(cs.hauteur_mm / 1000).toFixed(2)} m`;
+    const message =
+      `La caisse « ${c.nom} » prendra les dimensions de la caisse en stock « ${cs.nom} » (${dims})` +
+      (ligneModifiable ? `, et la caisse « ${nomLigne} » de Gestion des caisses la sélectionnera.` : ".") +
+      " Continuer ?";
+    if (!(await confirmerAction(message, "Caisse en stock suggérée"))) return;
+
+    const patch = {
+      caisse_stock_id: cs.id,
+      longueur_mm: cs.longueur_mm,
+      largeur_mm: cs.largeur_mm,
+      hauteur_mm: cs.hauteur_mm,
+      type_ouverture: cs.type_ouverture,
+    };
+    await caissesApi.setCaisseStock(c.id, cs.id, trigramme);
+    await modifierCaisse(c.id, c.nom, cs.longueur_mm, cs.largeur_mm, cs.hauteur_mm, c.seuil_pct, c.couleur, c.type_envoi_caisse);
+    if (!ligneModifiable) return;
+    try {
+      if ("sous" in ligneModifiable) {
+        const { id, ordre: _ordre, ...base } = ligneModifiable.sous;
+        await demandeCaisseApi.update(id, { ...base, ...patch }, trigramme);
+        setDemandeCaissesLiees((prev) => prev.map((sl) => (sl.id === id ? { ...sl, ...patch } : sl)));
+      } else {
+        const { id, ordre: _ordre, validee: _v, ...base } = ligneModifiable.mere;
+        await demandesApi.update(id, { ...base, ...patch }, trigramme);
+        setToutesDemandes((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+        setDemandeParente((prev) => (prev && prev.id === id ? { ...prev, ...patch } : prev));
+      }
+    } catch (e) {
+      await confirmerAction(
+        `La caisse de Simulations a été mise à jour, mais pas la caisse de Gestion des caisses : ${String(e)}`,
+        "Gestion des caisses non mise à jour",
+      );
+    }
+  }
 
   if (loading && !affaire) {
     return <div style={{ padding: 32 }}>Chargement…</div>;
@@ -305,38 +394,42 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
               onUpdate={async (nom, l, w, h, seuil, couleur) => {
                 setCaisseRecenteId(null);
                 const dimsChangees = l !== c.longueur_mm || w !== c.largeur_mm || h !== c.hauteur_mm;
+                if (dimsChangees && c.caisse_stock_id !== null) {
+                  // Dimensions qui ne correspondent plus à la caisse en stock : on la désélectionne.
+                  const nomStock = caissesStock.find((cs) => cs.id === c.caisse_stock_id)?.nom ?? "sélectionnée";
+                  const confirme = await confirmerAction(
+                    `Les dimensions ne correspondront plus à la caisse en stock « ${nomStock} » : elle sera désélectionnée. Continuer ?`,
+                    "Caisse en stock",
+                  );
+                  if (!confirme) return;
+                  await caissesApi.setCaisseStock(c.id, null, trigramme);
+                }
                 if (dimsChangees) {
-                  // Cible côté Demandes : lien explicite (demande_caisse_id / demande_id) en
-                  // priorité, puis correspondance par nom d'affaire pour la caisse mère.
-                  const demandeMereCible =
-                    (c.demande_id !== null && toutesDemandes.find((d) => d.id === c.demande_id)) ||
-                    (c.demande_caisse_id === null && demandeParente
-                      ? demandeParente
-                      : null);
-                  if (c.demande_caisse_id !== null) {
+                  const lien = ligneLiee(c);
+                  const dims = { longueur_mm: l, largeur_mm: w, hauteur_mm: h };
+                  if (lien && "sous" in lien) {
                     const confirme = await confirmerAction(
                       `Répercuter ces nouvelles dimensions sur la demande d'origine « ${c.nom} » ?`,
                       "Synchroniser avec Demandes",
                     );
                     if (confirme) {
-                      const sousLigne = demandeCaissesLiees.find((sl) => sl.id === c.demande_caisse_id);
-                      if (sousLigne) {
-                        const { id: _id, ordre: _ordre, ...base } = sousLigne;
-                        await demandeCaisseApi.update(sousLigne.id, { ...base, longueur_mm: l, largeur_mm: w, hauteur_mm: h }, trigramme);
-                      }
+                      const { id: _id, ordre: _ordre, ...base } = lien.sous;
+                      // Même règle que dans Gestion des caisses : dimensions modifiées → caisse en
+                      // stock désélectionnée sur la ligne.
+                      const patch = detacherStockSiDimsModifiees(lien.sous, dims);
+                      await demandeCaisseApi.update(lien.sous.id, { ...base, ...patch }, trigramme);
+                      setDemandeCaissesLiees((prev) => prev.map((sl) => (sl.id === lien.sous.id ? { ...sl, ...patch } : sl)));
                     }
-                  } else if (demandeMereCible) {
+                  } else if (lien) {
                     const confirme = await confirmerAction(
-                      `Répercuter ces nouvelles dimensions sur la demande « ${demandeMereCible.affaire} » ?`,
+                      `Répercuter ces nouvelles dimensions sur la demande « ${lien.mere.affaire} » ?`,
                       "Synchroniser avec Demandes",
                     );
                     if (confirme) {
-                      const { id: _id, ordre: _ordre, validee: _v, ...base } = demandeMereCible;
-                      await demandesApi.update(
-                        demandeMereCible.id,
-                        { ...base, longueur_mm: l, largeur_mm: w, hauteur_mm: h },
-                        trigramme,
-                      );
+                      const { id: _id, ordre: _ordre, validee: _v, ...base } = lien.mere;
+                      const patch = detacherStockSiDimsModifiees(lien.mere, dims);
+                      await demandesApi.update(lien.mere.id, { ...base, ...patch }, trigramme);
+                      setToutesDemandes((prev) => prev.map((d) => (d.id === lien.mere.id ? { ...d, ...patch } : d)));
                     }
                   }
                 }
@@ -357,7 +450,11 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
               dragActif={!!drag}
               survolee={survolCaisseId === c.id}
               readOnly={readOnly}
-              dimensionsReadOnly={c.caisse_stock_id !== null}
+              caisseStockNom={c.caisse_stock_id !== null ? caissesStock.find((cs) => cs.id === c.caisse_stock_id)?.nom ?? null : null}
+              suggestion={(() => {
+                const cs = suggestionPour(c);
+                return cs ? { ...cs, onUtiliser: () => utiliserCaisseStock(c, cs) } : null;
+              })()}
             />
           ))}
         </div>

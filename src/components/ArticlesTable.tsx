@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import IconeFiltre from "./IconeFiltre";
 import { volumeUnitaireM3, formaterVolumeM3, type ChampArticleManquant } from "../domain/calculs";
 import type { Article, Caisse, NewArticle } from "../domain/types";
 import ColumnFilterMenu from "./ColumnFilterMenu";
@@ -275,42 +276,40 @@ export default function ArticlesTable({
     const valeursDistinctes = [...new Set(articles.map((a) => valeurTexte(a, colonne)))].sort((a, b) => a.localeCompare(b));
     const selection = filtres[colonne] ? new Set(filtres[colonne]) : null;
     return (
-      <th style={{ ...thStyle, textAlign: align, background: filtreActif ? "var(--filtre-actif-bg)" : thStyle.background }}>
-        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: align === "right" ? "flex-end" : "flex-start", gap: 4 }}>
-          <span style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleTri(colonne)}>
+      <th
+        className="th-filtrable"
+        style={{ ...thStyle, textAlign: align, background: filtreActif ? "var(--filtre-actif-bg)" : thStyle.background }}
+      >
+        {/* Libellé (clic = tri) à gauche ou à droite, icône de filtre toujours calée à droite. */}
+        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+          <span
+            style={{ flex: 1, minWidth: 0, textAlign: align, cursor: "pointer", userSelect: "none" }}
+            onClick={() => toggleTri(colonne)}
+            title="Trier"
+          >
             {label}
-            <span style={{ marginLeft: 4, opacity: actif ? 1 : 0.25 }}>{actif ? (tri!.sens === "asc" ? "▲" : "▼") : "▲"}</span>
+            {actif && <span style={{ marginLeft: 4, fontSize: 10, color: "var(--accent)" }}>{tri!.sens === "asc" ? "▲" : "▼"}</span>}
           </span>
           <button
             ref={(el) => {
               if (el) boutonsFiltreRef.current[colonne] = el;
             }}
             onClick={() => setMenuOuvert((prev) => (prev === colonne ? null : colonne))}
-            title="Filtrer"
+            title={filtreActif ? "Filtre actif — trier et filtrer" : "Trier et filtrer"}
+            className={`btn-filtre-colonne${filtreActif ? " btn-filtre-colonne-actif" : ""}`}
             style={{
-              background: "none",
+              flexShrink: 0,
+              background: filtreActif ? "var(--accent)" : "none",
               border: "none",
+              borderRadius: 4,
               cursor: "pointer",
-              padding: "2px 4px",
-              fontSize: 11,
-              color: filtreActif ? "var(--accent)" : "var(--text-faint)",
-              position: "relative",
+              padding: "3px 4px",
+              display: "inline-flex",
+              alignItems: "center",
+              color: filtreActif ? "#fff" : "var(--text-muted)",
             }}
           >
-            ▾
-            {filtreActif && (
-              <span
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  right: 0,
-                  width: 5,
-                  height: 5,
-                  borderRadius: "50%",
-                  background: "var(--accent)",
-                }}
-              />
-            )}
+            <IconeFiltre plein={filtreActif} />
           </button>
         </div>
         {menuOuvert === colonne && boutonsFiltreRef.current[colonne] && (
@@ -500,18 +499,19 @@ function EditableCellInput({
 }
 
 const thStyle: React.CSSProperties = {
-  padding: "9px 8px",
+  padding: "10px 8px",
   borderRight: "1px solid var(--row-border-color)",
-  fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: "0.03em",
-  textTransform: "uppercase",
+  fontSize: 12,
+  fontWeight: 600,
+  color: "var(--text-muted)",
+  lineHeight: 1.25,
+  verticalAlign: "middle",
   position: "sticky",
   top: 0,
   background: "var(--bg-panel)",
   // Trait de séparation posé en box-shadow (rendu par-dessus, pas de couture sous-pixel comme
   // avec un border-bottom au bord d'un élément sticky, où l'on voyait défiler un liseré).
-  boxShadow: "0 2px 0 var(--row-border-color)",
+  boxShadow: "0 1px 0 var(--border-strong)",
   zIndex: 3,
 };
 const tdStyle: React.CSSProperties = {
