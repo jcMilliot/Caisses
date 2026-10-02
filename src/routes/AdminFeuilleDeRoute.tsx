@@ -8,13 +8,34 @@ interface Point {
   detail: string;
 }
 
-const A_FAIRE: Point[] = [];
+const A_FAIRE: Point[] = [
+];
 
 const A_VERIFIER: Point[] = [
+  {
+    titre: "Statistiques des caisses",
+    detail:
+      "Dans Admin › Caisses › Statistiques, vérifier que les chiffres correspondent à ce qui a été livré (sur mesure, caisses de stock, formats les plus utilisés) et que le choix de période fonctionne.",
+  },
+  {
+    titre: "Stock des caisses « AR_CAISS_ »",
+    detail:
+      "Dans l'onglet Caisses de l'Admin, cocher « Gérée » et saisir la quantité réelle et le seuil d'alerte de chaque caisse (d'après le fichier « caisses » du bureau). Puis passer en « Livré » une caisse qui en utilise une : la quantité doit baisser, et l'alerte « à commander » apparaître (Caisses en stock, accueil, barre des tâches) quand le seuil est atteint. Dévalider : l'app doit proposer de remettre la quantité en stock. Passer en « Livré » une commande ACHSTOCK d'une caisse gérée : la quantité doit augmenter.",
+  },
+  {
+    titre: "Suggestion de caisse en stock (Simulations)",
+    detail:
+      "Sur une affaire avec des articles et une caisse Standard, vérifier qu'une caisse en stock est proposée sur la carte de la caisse, et que « Utiliser » reprend ses dimensions et la sélectionne aussi dans Gestion des caisses. Modifier ensuite une dimension : la caisse en stock doit être désélectionnée.",
+  },
   {
     titre: "Sauvegarde automatique",
     detail:
       "Choisir le dossier et la fréquence dans l'onglet Sauvegarde, puis vérifier qu'une copie apparaît bien dans le dossier.",
+  },
+  {
+    titre: "Dossier de sauvegarde partagé avec le second administrateur",
+    detail:
+      "Le dossier de sauvegarde est un dossier OneDrive personnel : le poste FBA ne le trouve pas (« Dossier de sauvegarde inaccessible »). Le partager avec le second administrateur pour qu'il ait accès aux sauvegardes et puisse les gérer en l'absence du premier. Attention : le même chemin sert pour tous les postes, il doit donc exister à l'identique sur chacun.",
   },
   {
     titre: "Format des dates",
@@ -52,9 +73,9 @@ const A_VERIFIER: Point[] = [
 
 const A_DECIDER: Point[] = [
   {
-    titre: "Alerte de poids d'affaire (350 kg)",
+    titre: "Alerte de poids (320 kg au m²)",
     detail:
-      "Idée : alerter quand une affaire dépasse 350 kg. À décider : poids des articles seuls ou avec la caisse, tous les articles ou seulement ceux rangés, seuil fixe ou réglable.",
+      "Idée : alerter quand le poids au mètre carré d'une caisse atteint ou dépasse 320 kg. À décider : surface prise en compte (le fond de la caisse ?), poids des articles seuls ou avec la caisse, seuil fixe ou réglable.",
   },
   {
     titre: "Aide au dimensionnement des caisses",

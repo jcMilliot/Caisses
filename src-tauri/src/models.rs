@@ -183,6 +183,19 @@ pub struct CaisseStock {
     pub demande_affaire_cible_id: Option<i64>,
     pub demande_cible_id: Option<i64>,
     pub type_ouverture: String,
+    /// 0031 — caisse AR_CAISS_ suivie (décompte à la livraison + alerte de réappro).
+    pub gere: bool,
+    /// 0031 — alerte « à commander » quand `quantite <= seuil_alerte` (caisse gérée).
+    pub seuil_alerte: i64,
+}
+
+/// Mouvement de stock d'une caisse AR_CAISS_ gérée, renvoyé à l'UI après un décompte à la
+/// livraison ou pour proposer une remise en stock à la dévalidation.
+#[derive(Debug, Serialize)]
+pub struct MouvementStock {
+    pub caisse_stock_id: i64,
+    pub nom: String,
+    pub quantite: i64,
 }
 
 #[derive(Debug, Deserialize)]

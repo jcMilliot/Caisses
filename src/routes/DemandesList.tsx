@@ -20,8 +20,20 @@ import {
   detacherStockSiDimsModifiees,
   stockAutorisePourEnvoi,
   champsManquantsPourCommande,
+  estDemandeValidee,
+  estDemandeCaisseValidee,
 } from "../domain/demandeOptions";
-import type { Affaire, Demande, NewDemande, DemandeCaisse, NewDemandeCaisse, CaisseStock, OptionListe, ListeOption } from "../domain/types";
+import type {
+  Affaire,
+  Demande,
+  NewDemande,
+  DemandeCaisse,
+  NewDemandeCaisse,
+  CaisseStock,
+  OptionListe,
+  ListeOption,
+  TableLigne,
+} from "../domain/types";
 
 let prochainIdTemporaire = -1;
 
@@ -564,7 +576,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
       const idsReelsParIdTemporaire = new Map<number, number>();
       // Sous-caisses brouillon créées en base, avec leur id réel (id temporaire → objet créé).
       const sousCaissesCreeesParIdTemporaire = new Map<number, DemandeCaisse>();
-      const caissesStockValideesIds = new Set<number>();
+      const caissesStockValidation = new Map<number, boolean>();
 
       if (aCreer.length > 0) {
         // bulkCreate renvoie les demandes créées dans l'ordre d'entrée : on relie chaque id
@@ -584,22 +596,27 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
           }
         }
       }
+      // Stock AR_CAISS_ (décisions 2026-10-01) : lignes qui passent de livrée à non livrée →
+      // proposer de remettre en stock ce qui avait été décompté, AVANT d'enregistrer (la remise
+      // vise la caisse en stock encore liée en base).
+      const { devalidees, livrees } = transitionsLivraison();
+      await proposerRemisesEnStock(devalidees);
+
       for (const d of aModifier) {
         const { id, ordre: _ordre, validee, ...n } = d;
         const original = demandes.find((o) => o.id === id);
         await demandesApi.update(id, n, trigramme);
         if (!original || original.validee !== validee) {
           await demandesApi.setValidee(id, validee, trigramme);
-          if (validee && (!original || !original.validee)) {
-            if (d.caisse_stock_id !== null) {
-              await caisseStockApi.setValidee(d.caisse_stock_id, true, trigramme);
-              caissesStockValideesIds.add(d.caisse_stock_id);
-            }
-            for (const sc of demandeCaisses.filter((c) => c.demande_id === id)) {
-              if (sc.caisse_stock_id !== null) {
-                await caisseStockApi.setValidee(sc.caisse_stock_id, true, trigramme);
-                caissesStockValideesIds.add(sc.caisse_stock_id);
-              }
+          // Validation → caisses de stock utilisées marquées livrées ; dévalidation → remises
+          // disponibles (sinon elles restaient masquées de Caisses en stock et des menus Stock).
+          const changement = validee && (!original || !original.validee) ? true : !validee && original?.validee ? false : null;
+          if (changement !== null) {
+            const ids = [d.caisse_stock_id, ...demandeCaisses.filter((c) => c.demande_id === id).map((c) => c.caisse_stock_id)];
+            for (const csId of ids) {
+              if (csId === null) continue;
+              await caisseStockApi.setValidee(csId, changement, trigramme);
+              caissesStockValidation.set(csId, changement);
             }
           }
         }
@@ -627,6 +644,15 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
       }
       setSousCaissesSupprimees([]);
 
+      // Lignes qui viennent d'être livrées : leur quantité est retirée du stock de leur AR_CAISS_
+      // gérée (ou ajoutée pour une ligne ACHSTOCK = réception), une fois les lignes enregistrées
+      // (le backend relit caisse et quantité en base).
+      let stockModifie = devalidees.length > 0;
+      for (const l of livrees) {
+        if (await caisseStockApi.decompterLivraison(l.table, l.id, trigramme)) stockModifie = true;
+      }
+      if (stockModifie) setCaissesStock(await caisseStockApi.list());
+
       // Répercussion des modifs de dimensions sur la simulation, si l'affaire existe.
       await repercuterDimsVersSimulation(aModifier, aCreer);
 
@@ -652,12 +678,69 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
       setDemandeCaisses(demandeCaissesFinal);
       setDemandeCaissesServeur(demandeCaissesFinal);
 
-      if (caissesStockValideesIds.size > 0) {
-        setCaissesStock((prev) => prev.map((cs) => (caissesStockValideesIds.has(cs.id) ? { ...cs, validee: true } : cs)));
+      if (caissesStockValidation.size > 0) {
+        setCaissesStock((prev) =>
+          prev.map((cs) => (caissesStockValidation.has(cs.id) ? { ...cs, validee: caissesStockValidation.get(cs.id)! } : cs)),
+        );
       }
     } finally {
       setEnregistrement(false);
     }
+  }
+
+  // Lignes enregistrées (id > 0) dont l'état livré change entre le serveur et le brouillon. Une
+  // sous-caisse est livrée si elle l'est elle-même ou si sa mère l'est (validation en cascade).
+  function transitionsLivraison(): { devalidees: { table: TableLigne; id: number }[]; livrees: { table: TableLigne; id: number }[] } {
+    const devalidees: { table: TableLigne; id: number }[] = [];
+    const livrees: { table: TableLigne; id: number }[] = [];
+    const noter = (table: TableLigne, id: number, avant: boolean, apres: boolean) => {
+      if (avant && !apres) devalidees.push({ table, id });
+      if (!avant && apres) livrees.push({ table, id });
+    };
+    for (const d of brouillon) {
+      const original = demandes.find((o) => o.id === d.id);
+      if (d.id < 0 || !original) continue;
+      noter("demande", d.id, estDemandeValidee(original), estDemandeValidee(d));
+    }
+    for (const sc of demandeCaisses) {
+      const original = demandeCaissesServeur.find((o) => o.id === sc.id);
+      if (sc.id < 0 || !original) continue;
+      const mereAvant = demandes.find((d) => d.id === sc.demande_id);
+      const mereApres = brouillon.find((d) => d.id === sc.demande_id);
+      const avant = estDemandeCaisseValidee(original) || (mereAvant !== undefined && estDemandeValidee(mereAvant));
+      const apres = estDemandeCaisseValidee(sc) || (mereApres !== undefined && estDemandeValidee(mereApres));
+      noter("demande_caisse", sc.id, avant, apres);
+    }
+    return { devalidees, livrees };
+  }
+
+  // Dévalidation : une seule confirmation listant les mouvements faits à la livraison — caisses
+  // sorties du stock (à remettre) et réceptions ACHSTOCK (à retirer). Refus → rien ne bouge (la
+  // ligne reste marquée : pas de second mouvement si on la revalide). Un mouvement de 0 (stock
+  // déjà à 0) est simplement effacé sans question.
+  async function proposerRemisesEnStock(lignes: { table: TableLigne; id: number }[]) {
+    const aAnnuler: { table: TableLigne; id: number; nom: string; quantite: number }[] = [];
+    for (const l of lignes) {
+      const m = await caisseStockApi.stockDecompteLigne(l.table, l.id);
+      if (!m) continue;
+      if (m.quantite === 0) await caisseStockApi.remettreStockLigne(l.table, l.id, trigramme);
+      else aAnnuler.push({ ...l, nom: m.nom, quantite: m.quantite });
+    }
+    if (aAnnuler.length === 0) return;
+    const liste = (q: (n: number) => boolean) =>
+      aAnnuler
+        .filter((l) => q(l.quantite))
+        .map((l) => `${l.nom} : ${Math.abs(l.quantite)}`)
+        .join(", ");
+    const sorties = liste((n) => n > 0);
+    const recues = liste((n) => n < 0);
+    const phrases = [
+      sorties && `Ces caisses avaient été sorties du stock à la livraison (${sorties}) : elles seront remises en stock.`,
+      recues && `Ces caisses avaient été ajoutées au stock à la réception (${recues}) : elles seront retirées du stock.`,
+    ].filter(Boolean);
+    const ok = await confirmerAction(`${phrases.join(" ")} Mettre le stock à jour ?`, "Stock des caisses");
+    if (!ok) return;
+    for (const l of aAnnuler) await caisseStockApi.remettreStockLigne(l.table, l.id, trigramme);
   }
 
   function handleAnnuler() {

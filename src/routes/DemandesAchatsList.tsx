@@ -26,7 +26,6 @@ export default function DemandesAchatsList({ trigramme }: Props) {
   const [demandes, setDemandes] = useState<Demande[]>([]);
   const [demandeCaisses, setDemandeCaisses] = useState<DemandeCaisse[]>([]);
   const [loading, setLoading] = useState(true);
-  const [envoyees, setEnvoyees] = useState<Set<string>>(new Set());
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [copieGroupee, setCopieGroupee] = useState(false);
   const cardsRef = useRef<Map<string, AfficheCaisseCardHandle>>(new Map());
@@ -48,16 +47,16 @@ export default function DemandesAchatsList({ trigramme }: Props) {
   }, []);
 
   const affiches = useMemo(
-    () => construireAffiches(demandes, demandeCaisses).filter((a) => !envoyees.has(a.cle)),
-    [demandes, demandeCaisses, envoyees],
+    () => construireAffiches(demandes, demandeCaisses),
+    [demandes, demandeCaisses],
   );
 
   // ACHSTOCK n'a pas de carte d'affiche (pas de dimensions à fabriquer) — juste une ligne
   // texte par référence AR_CAISS_XXXXX, avec ses propres clés de sélection dans le même Set
   // que les affiches classiques pour partager "Tout sélectionner"/"Copier la sélection".
   const lignesAchstock = useMemo(
-    () => demandesAchstockAEnvoyer(demandes).filter((d) => !envoyees.has(`achstock:${d.id}`)),
-    [demandes, envoyees],
+    () => demandesAchstockAEnvoyer(demandes),
+    [demandes],
   );
   const clesAchstock = useMemo(() => lignesAchstock.map((d) => `achstock:${d.id}`), [lignesAchstock]);
   const toutesLesCles = useMemo(() => [...affiches.map((a) => a.cle), ...clesAchstock], [affiches, clesAchstock]);
@@ -76,16 +75,6 @@ export default function DemandesAchatsList({ trigramme }: Props) {
     }
   }
 
-  function handleMarqueeEnvoyee(cle: string) {
-    setEnvoyees((prev) => new Set(prev).add(cle));
-    setSelection((prev) => {
-      if (!prev.has(cle)) return prev;
-      const next = new Set(prev);
-      next.delete(cle);
-      return next;
-    });
-  }
-
   function handleToggleSelection(cle: string, valeur: boolean) {
     setSelection((prev) => {
       const next = new Set(prev);
@@ -100,15 +89,6 @@ export default function DemandesAchatsList({ trigramme }: Props) {
   }
 
   function toutDeselectionner() {
-    setSelection(new Set());
-  }
-
-  function handleMarqueeEnvoyeesSelection() {
-    setEnvoyees((prev) => {
-      const next = new Set(prev);
-      for (const cle of selection) next.add(cle);
-      return next;
-    });
     setSelection(new Set());
   }
 
@@ -217,7 +197,7 @@ export default function DemandesAchatsList({ trigramme }: Props) {
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent)", marginBottom: 4 }}>
             Demandes d'achats
           </div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Affiches à envoyer</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Affiche(s) à envoyer</h1>
         </div>
 
         {toutesLesCles.length > 0 && (
@@ -238,13 +218,6 @@ export default function DemandesAchatsList({ trigramme }: Props) {
             >
               {copieGroupee ? "Copie en cours…" : `Copier la sélection (${selection.size})`}
             </button>
-            <button
-              className="btn btn-sm"
-              onClick={handleMarqueeEnvoyeesSelection}
-              disabled={selection.size === 0 || readOnly}
-            >
-              Marquées comme envoyées
-            </button>
           </div>
         )}
       </div>
@@ -262,9 +235,8 @@ export default function DemandesAchatsList({ trigramme }: Props) {
       )}
 
       <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 0, marginBottom: 24 }}>
-        Une affiche est générée automatiquement pour chaque caisse (mère ou sous-caisse) d'une demande cochée
-        « OK pour passer cde » dans l'onglet Demandes. Cochez « Marquée comme envoyée » une fois l'email parti —
-        elle réapparaîtra si la case « OK pour passer cde » reste cochée et que la page est rechargée.
+        Une affiche est générée automatiquement pour chaque caisse traitée (OK pour être commandée) sur le tableau de
+        gestion des caisses.
       </p>
 
       {loading ? (
@@ -287,7 +259,6 @@ export default function DemandesAchatsList({ trigramme }: Props) {
               selectionnee={selection.has(a.cle)}
               onToggleSelection={(v) => handleToggleSelection(a.cle, v)}
               onContrePlaqueChange={(v) => handleContrePlaqueChange(a.demandeId, a.demandeCaisseId, v)}
-              onMarqueeEnvoyee={() => handleMarqueeEnvoyee(a.cle)}
             />
           ))}
 
@@ -308,15 +279,6 @@ export default function DemandesAchatsList({ trigramme }: Props) {
                     <span style={{ color: "var(--text-muted)" }}>
                       Qté {d.quantite} · {d.affaire}
                     </span>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      style={{ marginLeft: "auto" }}
-                      disabled={readOnly}
-                      onClick={() => handleMarqueeEnvoyee(cle)}
-                    >
-                      Marquée comme envoyée
-                    </button>
                   </label>
                 );
               })}

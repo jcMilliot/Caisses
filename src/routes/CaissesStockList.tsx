@@ -5,7 +5,9 @@ import { demandeCaisseApi } from "../data/demandeCaisse";
 import { useSectionLock } from "../hooks/useSectionLock";
 import LockBanner from "../components/LockBanner";
 import GererCaissesStockDialog from "../components/GererCaissesStockDialog";
-import { estArCaiss } from "../domain/caisseStock";
+import { estArCaiss, estStockACommander } from "../domain/caisseStock";
+import PastilleAlerte from "../components/PastilleAlerte";
+import { estDemandeCaisseValidee, estDemandeValidee } from "../domain/demandeOptions";
 import type { CaisseStock, Demande, DemandeCaisse } from "../domain/types";
 
 interface Props {
@@ -37,6 +39,20 @@ export default function CaissesStockList({ trigramme }: Props) {
     reload();
   }, []);
 
+  // Caisse de récup (hors AR_CAISS_) utilisée sur une ligne livrée : masquée de la liste, pas
+  // supprimée — les lignes de Gestion des caisses continuent de pointer dessus (2026-10-01).
+  const caissesVisibles = caisses.filter((c) => {
+    if (estArCaiss(c.nom)) return true;
+    if (c.validee) return false;
+    const mereLivree = demandes.some((d) => d.caisse_stock_id === c.id && estDemandeValidee(d));
+    const sousCaisseLivree = demandeCaisses.some((sc) => {
+      if (sc.caisse_stock_id !== c.id) return false;
+      const mere = demandes.find((d) => d.id === sc.demande_id);
+      return estDemandeCaisseValidee(sc) || (mere !== undefined && estDemandeValidee(mere));
+    });
+    return !mereLivree && !sousCaisseLivree;
+  });
+
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 24px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 32 }}>
@@ -65,13 +81,12 @@ export default function CaissesStockList({ trigramme }: Props) {
 
       <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: -20, marginBottom: 24 }}>
         Création, modification et suppression des caisses : bouton « Gérer les caisses ». L'affectation d'une caisse à
-        une affaire se fait depuis Gestion des caisses (menu « Stock » d'une ligne) — cet écran l'affiche à titre
-        informatif.
+        une affaire se fait depuis Gestion des caisses (menu « Stock » d'une ligne).
       </p>
 
       {loading ? (
         <p style={{ color: "var(--text-muted)" }}>Chargement…</p>
-      ) : caisses.length === 0 ? (
+      ) : caissesVisibles.length === 0 ? (
         <div className="panel" style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-muted)" }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>📦</div>
           <p style={{ margin: 0 }}>Aucune caisse en stock pour l'instant.</p>
@@ -86,21 +101,36 @@ export default function CaissesStockList({ trigramme }: Props) {
                 <th style={thStyle}>Largeur (m)</th>
                 <th style={thStyle}>Hauteur (m)</th>
                 <th style={thStyle}>Type d'ouverture</th>
+                <th style={thStyle}>Qté en stock</th>
                 <th style={thStyle}>Observations</th>
                 <th style={thStyle}>Affectation</th>
               </tr>
             </thead>
             <tbody>
-              {caisses.map((c) => {
+              {caissesVisibles.map((c) => {
                 const demandeProprietaire =
                   demandes.find((d) => d.caisse_stock_id === c.id) ??
                   (() => {
                     const sc = demandeCaisses.find((sl) => sl.caisse_stock_id === c.id);
                     return sc ? demandes.find((d) => d.id === sc.demande_id) : undefined;
                   })();
+                const aCommander = estStockACommander(c);
                 return (
-                  <tr key={c.id} style={{ background: c.validee ? "var(--success-bg, #d4f4dd)" : undefined }}>
-                    <td style={tdStyle}>{c.nom}</td>
+                  <tr
+                    key={c.id}
+                    style={{ background: aCommander ? "var(--danger-bg)" : c.validee ? "var(--success-bg, #d4f4dd)" : undefined }}
+                  >
+                    <td style={tdStyle}>
+                      {c.nom}
+                      {aCommander && (
+                        <span
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: 8, color: "var(--danger-text)", fontWeight: 700 }}
+                        >
+                          <PastilleAlerte titre={`Stock (${c.quantite}) au seuil d'alerte (${c.seuil_alerte}), réglé dans Admin › Caisses.`} />
+                          À commander
+                        </span>
+                      )}
+                    </td>
                     <td style={tdStyle} className="mono">
                       {(c.longueur_mm / 1000).toFixed(2)}
                     </td>
@@ -111,6 +141,9 @@ export default function CaissesStockList({ trigramme }: Props) {
                       {(c.hauteur_mm / 1000).toFixed(2)}
                     </td>
                     <td style={tdStyle}>{c.type_ouverture}</td>
+                    <td style={tdStyle} className="mono">
+                      {estArCaiss(c.nom) && c.gere ? c.quantite : <span style={{ color: "var(--text-faint)" }}>—</span>}
+                    </td>
                     <td style={tdStyle}>{c.observations}</td>
                     <td style={tdStyle}>
                       {estArCaiss(c.nom) ? (
@@ -129,7 +162,7 @@ export default function CaissesStockList({ trigramme }: Props) {
 
       {gestionOuverte && !readOnly && (
         <GererCaissesStockDialog
-          caisses={caisses}
+          caisses={caissesVisibles}
           onCreer={async (caisse) => {
             await caisseStockApi.create(caisse, trigramme);
             await reload();

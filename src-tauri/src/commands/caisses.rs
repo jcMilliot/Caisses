@@ -158,6 +158,21 @@ pub fn link_caisse_demande(db: State<Db>, id: i64, demande_id: i64, trigramme: S
     Ok(())
 }
 
+/// Sélectionne (ou retire, `None`) la caisse en stock utilisée par une caisse de Simulations —
+/// suggestion de caisse acceptée, ou dimensions modifiées ensuite (décision 2026-10-01).
+#[tauri::command]
+pub fn set_caisse_caisse_stock(db: State<Db>, id: i64, caisse_stock_id: Option<i64>, trigramme: String) -> Result<(), String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock_for_caisse(conn, id, &trigramme)?;
+    conn.execute(
+        "UPDATE caisse SET caisse_stock_id = ?1 WHERE id = ?2",
+        rusqlite::params![caisse_stock_id, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn delete_caisse(db: State<Db>, id: i64, trigramme: String) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;

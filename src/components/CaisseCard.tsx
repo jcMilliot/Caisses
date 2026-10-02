@@ -20,7 +20,10 @@ interface Props {
   dragActif?: boolean;
   survolee?: boolean;
   readOnly?: boolean;
-  dimensionsReadOnly?: boolean;
+  // Caisse en stock utilisée (null = caisse sur mesure).
+  caisseStockNom?: string | null;
+  // Caisse en stock suggérée d'après les articles (cf. domain/suggestionCaisse.ts).
+  suggestion?: { nom: string; longueur_mm: number; largeur_mm: number; hauteur_mm: number; onUtiliser: () => void } | null;
 }
 
 const BORDER_BY_NIVEAU: Record<CaisseCalculee["niveauAlerte"], string> = {
@@ -64,7 +67,17 @@ function DimensionInput({
   );
 }
 
-export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragActif, survolee, readOnly, dimensionsReadOnly }: Props) {
+export default function CaisseCard({
+  caisse,
+  autoEdit,
+  onUpdate,
+  onDelete,
+  dragActif,
+  survolee,
+  readOnly,
+  caisseStockNom,
+  suggestion,
+}: Props) {
   const [editing, setEditing] = useState(!!autoEdit && !readOnly);
   // Les dimensions sont saisies/affichées en mètres dans l'UI, mais stockées en mm partout
   // ailleurs (calculs, base de données) — conversion faite uniquement aux frontières de ce
@@ -107,13 +120,13 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
         <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
           <div style={{ fontSize: 15, fontWeight: 700 }}>{caisse.nom}</div>
           <div style={{ display: "flex", gap: 6 }}>
-            <DimensionInput value={form.l} placeholder="L (m)" onChange={(v) => setForm({ ...form, l: v })} disabled={dimensionsReadOnly} />
-            <DimensionInput value={form.w} placeholder="l (m)" onChange={(v) => setForm({ ...form, w: v })} disabled={dimensionsReadOnly} />
-            <DimensionInput value={form.h} placeholder="H (m)" onChange={(v) => setForm({ ...form, h: v })} disabled={dimensionsReadOnly} />
+            <DimensionInput value={form.l} placeholder="L (m)" onChange={(v) => setForm({ ...form, l: v })} />
+            <DimensionInput value={form.w} placeholder="l (m)" onChange={(v) => setForm({ ...form, w: v })} />
+            <DimensionInput value={form.h} placeholder="H (m)" onChange={(v) => setForm({ ...form, h: v })} />
           </div>
-          {dimensionsReadOnly && (
+          {caisseStockNom && (
             <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: 0 }}>
-              Dimensions héritées d'une caisse en stock — non modifiables ici.
+              Dimensions de la caisse en stock « {caisseStockNom} » — modifier une dimension la désélectionne.
             </p>
           )}
           <div>
@@ -161,6 +174,9 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
               <div className="mono" style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 1 }}>
                 {(caisse.longueur_mm / 1000).toFixed(2)} × {(caisse.largeur_mm / 1000).toFixed(2)} × {(caisse.hauteur_mm / 1000).toFixed(2)} m
               </div>
+              {caisseStockNom && (
+                <div style={{ fontSize: 12, color: "var(--info-text)", fontWeight: 600, marginTop: 2 }}>Caisse en stock : {caisseStockNom}</div>
+              )}
             </div>
             <FillRateBadge caisse={caisse} />
           </div>
@@ -178,6 +194,37 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
               />
             </div>
           </div>
+
+          {suggestion && !caisseStockNom && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "7px 10px",
+                background: "var(--info-bg)",
+                border: "1px solid var(--info-border)",
+                color: "var(--info-text)",
+                borderRadius: 6,
+                fontSize: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span title="Plus petite caisse en stock qui contient les articles, seuil de remplissage compris">
+                Suggestion : <strong>{suggestion.nom}</strong>{" "}
+                <span className="mono">
+                  ({(suggestion.longueur_mm / 1000).toFixed(2)} × {(suggestion.largeur_mm / 1000).toFixed(2)} ×{" "}
+                  {(suggestion.hauteur_mm / 1000).toFixed(2)} m)
+                </span>
+              </span>
+              {!readOnly && (
+                <button className="btn btn-sm btn-pastel-blue" onClick={suggestion.onUtiliser}>
+                  Utiliser
+                </button>
+              )}
+            </div>
+          )}
 
           {caisse.estSurcharge && (
             <div
@@ -240,7 +287,15 @@ export default function CaisseCard({ caisse, autoEdit, onUpdate, onDelete, dragA
 
           {!readOnly && (
             <div style={{ marginTop: 14, display: "flex", gap: 6 }}>
-              <button className="btn btn-sm" onClick={() => setEditing(true)}>
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  // Repartir des valeurs actuelles (elles ont pu changer depuis : caisse en stock
+                  // suggérée appliquée, synchro depuis Gestion des caisses…).
+                  setForm({ l: caisse.longueur_mm / 1000, w: caisse.largeur_mm / 1000, h: caisse.hauteur_mm / 1000, couleur: caisse.couleur });
+                  setEditing(true);
+                }}
+              >
                 Modifier
               </button>
               <button className="btn btn-sm btn-danger" onClick={onDelete}>

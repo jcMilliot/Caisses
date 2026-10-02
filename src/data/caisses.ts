@@ -53,5 +53,8 @@ export const caissesApi = {
     call<void>("link_caisse_demande_caisse", { id, demandeCaisseId: demande_caisse_id, trigramme }),
   linkDemande: (id: number, demande_id: number, trigramme: string) =>
     call<void>("link_caisse_demande", { id, demandeId: demande_id, trigramme }),
+  // Caisse en stock utilisée par cette caisse de Simulations (null = aucune).
+  setCaisseStock: (id: number, caisse_stock_id: number | null, trigramme: string) =>
+    call<void>("set_caisse_caisse_stock", { id, caisseStockId: caisse_stock_id, trigramme }),
   delete: (id: number, trigramme: string) => call<void>("delete_caisse", { id, trigramme }),
 };

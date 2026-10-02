@@ -10,7 +10,6 @@ interface Props {
   selectionnee: boolean;
   onToggleSelection: (v: boolean) => void;
   onContrePlaqueChange: (v: boolean) => Promise<void>;
-  onMarqueeEnvoyee: () => void;
   readOnly: boolean;
 }
 
@@ -77,7 +76,7 @@ async function capturerAvecRetries(conteneur: HTMLElement | null): Promise<Blob 
 }
 
 const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function AfficheCaisseCard(
-  { affiche, selectionnee, onToggleSelection, onContrePlaqueChange, onMarqueeEnvoyee, readOnly },
+  { affiche, selectionnee, onToggleSelection, onContrePlaqueChange, readOnly },
   ref,
 ) {
   // Demandeur = qui a coché « OK pour être commandée » (plus de choix manuel, 2026-09-30).
@@ -227,9 +226,6 @@ const AfficheCaisseCard = forwardRef<AfficheCaisseCardHandle, Props>(function Af
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <button className="btn btn-primary btn-sm" onClick={handleCopier}>
             {copie ? "Copié !" : "Copier"}
-          </button>
-          <button className="btn btn-sm" onClick={onMarqueeEnvoyee} disabled={readOnly}>
-            Marquée comme envoyée
           </button>
         </div>
       </div>

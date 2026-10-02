@@ -169,7 +169,22 @@ export interface CaisseStock {
   demande_affaire_cible_id: number | null;
   demande_cible_id: number | null;
   type_ouverture: string;
+  // 0031 — caisse AR_CAISS_ suivie (décompte à la livraison + alerte), réglée dans Admin › Caisses.
+  gere: boolean;
+  // Alerte « à commander » quand quantite <= seuil_alerte (caisse gérée).
+  seuil_alerte: number;
 }
+
+// Mouvement de stock d'une caisse AR_CAISS_ gérée fait à la livraison d'une ligne : quantité
+// positive = sortie de stock (caisse utilisée), négative = réception (ligne ACHSTOCK).
+export interface MouvementStock {
+  caisse_stock_id: number;
+  nom: string;
+  quantite: number;
+}
+
+// Ligne de Gestion des caisses : mère (`demande`) ou sous-caisse (`demande_caisse`).
+export type TableLigne = "demande" | "demande_caisse";
 
 export interface NewCaisseStock {
   nom: string;
@@ -199,7 +214,11 @@ export type JournalAction =
   | "modification_dimensions"
   | "reference_ajout"
   | "reference_modification"
-  | "reference_suppression";
+  | "reference_suppression"
+  | "stock_reglage"
+  | "stock_retrait"
+  | "stock_remise"
+  | "stock_reception";
 
 export interface JournalEntree {
   id: number;

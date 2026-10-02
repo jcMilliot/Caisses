@@ -97,12 +97,15 @@ src-tauri/src/
                         (tout utilisateur) + update/delete/integrer (admin)
     documentation.rs  → get/set_documentation_textes (textes modifiés de la page Documentation,
                         JSON en `parametre`, écriture admin)
-    caisses.rs        → CRUD caisse (+ type_envoi_caisse, contre_plaque, link_caisse_demande_caisse)
+    caisses.rs        → CRUD caisse (+ type_envoi_caisse, contre_plaque, link_caisse_demande_caisse,
+                        set_caisse_caisse_stock : caisse en stock suggérée / désélectionnée)
     articles.rs       → CRUD article + bulk_create_articles (collage Excel) + assign_articles
     demandes.rs       → CRUD demande + bulk_create_demandes (collage Excel) + set_demande_validee,
                         table indépendante (pas de FK vers affaire — `affaire` = texte libre)
     demande_caisse.rs → CRUD sous-caisses d'une demande (multi-caisses par demande)
     caisse_stock.rs   → CRUD caisses en stock + transfer + set_caisse_stock_validee ;
+                        suivi du stock AR_CAISS_ : set_caisse_stock_suivi (admin),
+                        decompter_stock_livraison / stock_decompte_ligne / remettre_stock_ligne ;
                         update répercute dims / type d'ouverture sur les lignes non livrées
                         liées (+ count_caisse_stock_lignes_liees pour la confirmation)
     alerte.rs         → set_alerte_barre_taches : pastille rouge (overlay icon Windows) sur
@@ -143,8 +146,8 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-09-30 : migrations `0001` à `0030` (dernière :
-`0030_add_compte_code_secours.sql` ; pas de `0019_reorder` — supprimé avant
+État au 2026-10-02 : migrations `0001` à `0031` (dernière :
+`0031_add_suivi_stock_ar_caiss.sql` ; pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes).
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
 triées côté frontend par `demandeOptions.ts::comparerOption` (quantité de tête puis n° de
@@ -193,6 +196,9 @@ demande (id,  -- table indépendante, pas de FK — section "Demandes" du menu p
          contre_plaque BOOL,    -- 0015
          caisse_stock_id INTEGER NULL,  -- 0011
          ok_cde_par TEXT,       -- 0026, trigramme de qui a coché ok_pour_passer_cde ('' sinon)
+         stock_decompte INTEGER NULL,  -- 0031, mouvement de stock AR_CAISS_ fait à la livraison :
+                                       --   > 0 retiré, < 0 reçu (ACHSTOCK), NULL = aucun ;
+                                       --   idem sur demande_caisse
          observations, ordre)
 
 demande_caisse (id, demande_id NOT NULL REFERENCES demande ON DELETE CASCADE,  -- 0008
@@ -211,6 +217,8 @@ caisse_stock (id, nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observatio
          demande_affaire_cible_id INTEGER NULL, demande_cible_id INTEGER NULL,  -- 0013
          type_ouverture TEXT DEFAULT 'Par dessus',  -- 0024, repris (et verrouillé) sur la
                                                     --   ligne de demande qui sélectionne la caisse
+         gere BOOL, seuil_alerte INTEGER,  -- 0031, suivi du stock des AR_CAISS_ (Admin › Caisses) :
+                                           --   alerte « à commander » si quantite <= seuil_alerte
          ordre, date_creation)
 
 section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" | "affaire:{id}"
@@ -220,8 +228,9 @@ section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" 
 journal (id, horodatage, trigramme, action, entite, entite_id NULL, details)  -- 0019
          -- journal d'audit des actions à effet fort. `action` ∈ 'creation' | 'suppression' |
          -- 'modification_dimensions' | 'reference_ajout' | 'reference_modification' |
-         -- 'reference_suppression' | 'restauration'. `entite` ∈ 'demande' | 'demande_caisse' |
-         -- 'option_liste' | 'base' (restauration d'une sauvegarde).
+         -- 'reference_suppression' | 'restauration' | 'stock_reglage' | 'stock_retrait' |
+         -- 'stock_remise' (0031). `entite` ∈ 'demande' | 'demande_caisse' | 'option_liste' |
+         -- 'base' (restauration d'une sauvegarde) | 'caisse_stock'.
          -- Écriture par journaliser() (best-effort, jamais bloquant) ; lecture (list_journal)
          -- réservée à la session admin (page Admin, mot de passe AJC). Les auteurs restent des
          -- trigrammes déclaratifs, pas une preuve.
@@ -915,6 +924,158 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   / dernier admin / AJC permanent / lecteur / code de secours, intégration d'une ligne non
   collée), `npx tsc --noEmit`. **Non testé en conditions réelles**.
 
+### 2026-10-02 — Textes Demandes d'achats / Caisses en stock, caisses de récup livrées masquées
+
+- **Demandes d'achats** : titre « Affiche(s) à envoyer » ; texte sous le titre remplacé par
+  « Une affiche est générée automatiquement pour chaque caisse traitée (OK pour être commandée)
+  sur le tableau de gestion des caisses. » (l'ancien parlait encore de « OK pour passer cde » et
+  de « Marquée comme envoyée »).
+- **Caisses en stock** : fin de l'intro « — cet écran l'affiche à titre informatif » retirée.
+- **Caisses de récup livrées masquées** (`CaissesStockList::caissesVisibles`, décision du
+  2026-10-01) : une caisse **hors `AR_CAISS_`** est masquée de la liste si `caisse_stock.validee`
+  ou si une ligne qui l'utilise (mère, ou sous-caisse / sa mère) est livrée
+  (`estDemandeValidee` / `estDemandeCaisseValidee`). Rien n'est supprimé en base ; masquées
+  aussi dans le dialogue « Gérer les caisses » (il reçoit `caissesVisibles`, demande de
+  l'utilisateur). Les `AR_CAISS_` restent toujours affichées.
+- **Dévalidation → caisse de stock remise disponible** (`DemandesList::handleEnregistrer`) :
+  jusqu'ici `caisse_stock.validee` passait à vrai à la validation d'une ligne mais n'était
+  jamais remis à faux à la dévalidation — la caisse restait exclue des menus Stock (et aurait
+  désormais été masquée). Elle est maintenant remise à faux pour la mère et ses sous-caisses.
+  `set_caisse_stock_validee` ignore toujours les `AR_CAISS_` (inchangé).
+- Validation : `npx tsc --noEmit`. **Non testé en conditions réelles**.
+
+### 2026-10-02 — Suivi du stock des caisses AR_CAISS_ (décompte, remise, alerte de réappro)
+
+- **Décisions actées avec l'utilisateur** (2026-10-01 / 2026-10-02) : seules les caisses
+  `AR_CAISS_` **gérées** sont suivies ; à la livraison d'une ligne de Gestion des caisses qui en
+  utilise une, on retire la **quantité de la ligne** (plancher à 0, la caisse n'est jamais
+  supprimée) ; à la **dévalidation**, l'app **demande** s'il faut remettre en stock ; à la
+  **suppression** d'une ligne livrée, rien ; les lignes livrées avant cette version ne sont pas
+  décomptées ; une caisse non gérée n'est ni décomptée ni surveillée ; alerte **« … à
+  commander »** quand `quantite <= seuil_alerte`, affichée dans Caisses en stock, sur l'accueil et
+  par la pastille de la barre des tâches ; réglage (gérée, quantité, seuil) dans un nouvel
+  onglet **Admin › Caisses**. Une commande de caisses `AR_CAISS_` peut toujours être ajoutée à la
+  main (aucune ligne n'est créée automatiquement).
+- **Migration `0031`** : `caisse_stock.gere` / `seuil_alerte` ; `demande.stock_decompte` et
+  `demande_caisse.stock_decompte` (NULL = pas décomptée, sinon quantité **réellement** retirée —
+  peut être < quantité de la ligne à cause du plancher à 0). Sert à ne décompter qu'une fois et
+  à remettre en stock exactement ce qui a été retiré.
+- **Backend** (`commands/caisse_stock.rs`) : `set_caisse_stock_suivi` (`require_admin`, refusé
+  hors `AR_CAISS_`), `decompter_stock_livraison`, `stock_decompte_ligne`, `remettre_stock_ligne`
+  (`require_lock("demandes")`, transaction). Journal : actions `stock_reglage` / `stock_retrait` /
+  `stock_remise`, entité `caisse_stock`. **`update_caisse_stock` n'écrit plus `quantite`** : le
+  dialogue « Gérer les caisses » renvoyait la valeur chargée à l'ouverture et aurait écrasé un
+  décompte fait entre-temps (la quantité se règle dans Admin › Caisses).
+- **Frontend** : `DemandesList::handleEnregistrer` calcule les transitions livrée ↔ non livrée
+  (`transitionsLivraison`, mère via `estDemandeValidee`, sous-caisse livrée si elle-même ou sa mère
+  l'est) entre l'état serveur et le brouillon. Dévalidations : **avant** d'enregistrer les
+  lignes (la remise vise la caisse encore liée en base), une seule confirmation listant les
+  quantités (`proposerRemisesEnStock` ; une ligne décomptée de 0 est remise à NULL sans
+  question ; refus → la ligne reste marquée décomptée, pas de second décompte si on la
+  revalide). Livraisons : **après** l'enregistrement des lignes (le backend relit caisse et
+  quantité en base). « Rapatriée » compte comme livrée (même règle que partout). Les lignes
+  **créées** déjà livrées ne sont pas décomptées (cas qui n'arrive pas en pratique).
+  `domain/caisseStock.ts::estStockACommander` / `caissesStockACommander` ; `routes/AdminCaisses.tsx` ;
+  colonne « Qté en stock » + mention « À commander » (`PastilleAlerte`) dans `CaissesStockList` ;
+  bloc « Caisses de stock à commander » en tête de la colonne droite de l'accueil (seulement s'il
+  y en a, clic → Caisses en stock) ; `useAlerteCommande` inclut ces caisses.
+- **Réception** (demande du même jour) : une ligne d'affaire **ACHSTOCK** (mère, ou sous-caisse
+  d'une mère ACHSTOCK) qui passe en livrée est une **réception** : sa quantité est **ajoutée** au
+  stock de l'`AR_CAISS_` gérée (sans plafond), `stock_decompte` négatif. Caisse = celle du menu
+  Stock (`caisse_stock_id`), à défaut celle dont le nom est écrit dans la colonne `stock` (lignes
+  ACHSTOCK anciennes). Dévalidation → l'app propose de retirer ce qui avait été reçu (plancher à
+  0). Journal : `stock_reception`. Logique dans `caisse_stock.rs::lire_ligne_stock`.
+- Validation : `cargo check`, `cargo test --lib` (8 tests, dont décompte / plancher / non gérée /
+  récup / remise / réception ACHSTOCK / réglage admin), `npx tsc --noEmit`. Build de test complet
+  pas encore fait (reporté par l'utilisateur). **Non testé en conditions réelles**.
+
+### 2026-10-02 — Simulations : suggestion de caisse en stock (AR_CAISS_ gérées + récup)
+
+- **Décisions actées avec l'utilisateur** (2026-10-01 / 2026-10-02) : une seule suggestion, la
+  **plus petite** caisse en stock (volume interne) qui contient les **plus grandes dimensions**
+  des articles et leur **volume total, seuil de remplissage compris** ; envoi **STANDARD**
+  seulement ; candidates = `AR_CAISS_` **gérées** **et caisses de récup** ; accepter la
+  suggestion = la caisse de Simulations prend les dimensions + sélectionne la caisse en stock,
+  et la ligne liée de Gestion des caisses la sélectionne dans son menu Stock (dimensions et type
+  d'ouverture repris) ; caisse non liée à une demande → seules les dimensions ; **une dimension
+  modifiée ensuite désélectionne** la caisse en stock.
+- `domain/suggestionCaisse.ts::suggererCaisseStock` (pur) : axes stricts comme l'alerte
+  « article plus grand » (dim1↔longueur, dim2↔largeur, dim3↔hauteur, tolérance 0,5 mm) ;
+  `stockAutorisePourEnvoi` (pas de 4B / 4C, type vide accepté) ; `AR_CAISS_` gérée **avec au
+  moins 1 en stock** (choix de l'assistant : 0 en stock = rien à prendre) ; récup **disponible**
+  (`recupDisponible` : pas `validee`, pas prise par une ligne non livrée autre que celles liées à
+  cette caisse). Articles pris en compte : ceux de la caisse, ou **tous ceux de l'affaire s'il
+  n'y a qu'une caisse** (choix de l'assistant : les articles ne sont souvent pas encore
+  assignés). Pas de suggestion si la caisse a déjà une caisse en stock.
+- `CaisseCard` : bandeau bleu « Suggestion : X (L × l × H m) » + bouton « Utiliser » ; « Caisse
+  en stock : X » sous les dimensions quand elle est liée. **Dimensions de nouveau modifiables**
+  pour une caisse liée au stock (prop `dimensionsReadOnly` supprimée) : modifier une dimension
+  demande confirmation puis désélectionne (`set_caisse_caisse_stock`, nouvelle commande de
+  `caisses.rs`), et la synchro vers la ligne de Gestion des caisses applique
+  `detacherStockSiDimsModifiees`. Le formulaire « Modifier » repart des valeurs actuelles de la
+  caisse (il gardait celles de la création de la carte).
+- `AffaireDetail::ligneLiee` regroupe le ciblage de la ligne liée (sous-caisse
+  `demande_caisse_id`, sinon mère `demande_id`, sinon demande non validée du même nom) ;
+  `utiliserCaisseStock` ne touche pas une ligne livrée ; si la mise à jour de Gestion des caisses
+  échoue (verrou pris ailleurs), la caisse de Simulations reste modifiée et un message le dit.
+- Validation : `cargo check`, `npx tsc --noEmit`, `suggererCaisseStock` vérifié sur 6 cas
+  (fichier jetable). **Non testé en conditions réelles**.
+- **Même jour — filtre de colonne plus visible** (`DemandesTable::thFiltrable`, retour
+  utilisateur sur capture) : le « ▾ » + point de 5 px est remplacé par une icône entonnoir SVG
+  (`IconeFiltre`, 13 px ≈ hauteur du texte d'en-tête) — contour gris au repos, **pleine en blanc
+  sur fond `--accent`** quand un filtre est actif ; la flèche ▲/▼ du tri reste à côté.
+  2e passe (« ça fait un peu vieillot ») : en-têtes sans majuscules forcées, 12 px demi-gras gris
+  (`thStyle`, compact 11 px), centrés verticalement, bordure basse 1 px ; icône **calée à droite**
+  de la colonne, discrète au repos (opacité 0,45) et nette au survol de l'en-tête ou quand la
+  colonne est triée / filtrée (classes `.th-filtrable` / `.btn-filtre-colonne` dans `index.css`).
+  Même style appliqué au tableau d'articles de Simulations (`ArticlesTable::thTriable` : le clic
+  sur le libellé trie toujours, le ▲ fantôme au repos est retiré) ; icône partagée
+  `components/IconeFiltre.tsx`.
+- **Même jour — refonte de la fenêtre de tri / filtre** (`ColumnFilterMenu.tsx`, d'après un
+  modèle fourni par l'utilisateur, mêmes props → aucun changement chez les appelants) : fenêtre
+  **déplaçable** (poignée en haut à droite), « Réinitialiser » (retire filtre **et** tri de la
+  colonne, appliqué tout de suite), pastilles « Trier croissant / décroissant » (re-clic =
+  aucun tri), mini-onglets **Valeurs** (recherche « commence par » conservée, **une seule case
+  « Tout sélectionner »** en bascule, avec état intermédiaire, sur les valeurs affichées ;
+  « N valeur(s) sélectionnée(s) ») et **Condition** (Contient / Égal à / Commence par / Termine
+  par, insensible à la casse). Une condition est **convertie en liste des valeurs** qui la
+  vérifient au moment d'appliquer : le modèle de filtre (`filtres[champ] = string[]`, en
+  `localStorage`) est inchangé — une valeur apparue ensuite n'est donc pas incluse
+  automatiquement. Entrée = Appliquer, Échap ou clic dehors = fermer. « Commence par » ajouté
+  aux trois conditions demandées (la capture du modèle le proposait).
+
+### 2026-10-02 — Admin › Caisses : onglet renommé, statistiques d'utilisation
+
+- Onglet Admin **« Stock » renommé « Caisses »** (`routes/AdminCaisses.tsx`, ex-`AdminStock.tsx`),
+  avec deux sous-onglets : **Stock** (suivi des `AR_CAISS_`, inchangé) et **Statistiques**
+  (`components/StatistiquesCaisses.tsx`, calcul pur dans `domain/statistiques.ts`).
+- **Décisions actées avec l'utilisateur** : comptage en **quantités** (colonne Qté) ; lignes
+  **livrées** seulement (mère via `estDemandeValidee`, sous-caisse livrée elle-même ou par sa
+  mère), **hors ACHSTOCK** ; filtre de période sur la **date de picking** (3 / 12 derniers mois,
+  tout, ou dates libres ; défaut 12 mois ; date de la sous-caisse, sinon celle de sa mère) ;
+  sur mesure regroupé **par type d'envoi ET par format** L × l × H (arrondi au mm, type d'envoi
+  dans la clé).
+- Caisse **de stock** = `caisse_stock_id` (nom de la caisse) ou, pour une ligne ancienne, texte de
+  la colonne `stock` ; sinon **sur mesure**. Affichage : 3 tuiles (total, sur mesure, stock, avec
+  %), répartition sur mesure par type, classement des formats et des caisses de stock (10
+  premiers, « Afficher tout »), barres d'une seule couleur (`--accent`, une seule série → pas de
+  légende) avec chiffre écrit et infobulle. Les lignes sur mesure sans dimensions comptent dans
+  les totaux mais pas dans les formats ; les lignes sans date de picking ne comptent que sur
+  « Tout » (signalé sous les blocs).
+- Retours du même jour : sous-onglets Stock / Statistiques **plus visibles** (grands boutons avec
+  icône, actif plein `--accent`) ; classement « Caisses de stock les plus utilisées » (AR_CAISS_ seulement) —
+  **caisses de récup retirées** du classement (uniques, rien à classer), mais toujours comptées
+  dans la tuile « Caisses de stock » (« récup comprises »).
+- Validation : `npx tsc --noEmit`, `calculerStatistiques` vérifié sur un jeu de 11 lignes (fichier
+  jetable : arrondi de format, ACHSTOCK exclu, sous-caisse livrée par sa mère, période, sans
+  dimensions, sans date). **Non testé en conditions réelles**.
+
+- **Demandes d'achats — bouton « Marquée comme envoyée » retiré** (décision du même jour, point
+  ouvert depuis le 2026-09-30) : il ne faisait que masquer l'affiche jusqu'au rechargement, sans
+  rien enregistrer — le vrai suivi passe par « OK pour être commandée » puis « Livré ». Retiré de
+  la carte (`AfficheCaisseCard`, prop `onMarqueeEnvoyee`), de l'action groupée et des lignes
+  ACHSTOCK (`DemandesAchatsList` : état `envoyees` et handlers supprimés).
+
 ## Prochaines étapes
 
 ### Fait
@@ -1470,10 +1631,29 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   que le partage de la base, accessible depuis tous les postes) et la fréquence, puis vérifier
   qu'un fichier `caisses_*.sqlite3` apparaît. **Critère de complétude (pas encore atteint)** :
   une sauvegarde automatique réelle constatée dans le dossier choisi.
+  **Constat du 2026-10-01** (capture locale, non commitée :
+  `docs/captures/2026-10-01_admin-sauvegarde-erreur-onedrive.png`) : dossier configuré =
+  dossier **OneDrive personnel du poste AJC** (`C:\Users\<profil>\OneDrive - …\Backups DB
+  Caisses`). La sauvegarde du 30/09 11:17 a bien été faite par le poste AJC, mais le poste FBA
+  échoue (« Dossier de sauvegarde inaccessible », os error 3 : ce chemin local n'existe pas sur
+  son poste) et la liste de restauration y est vide. **À vérifier / faire** : partager ce
+  dossier OneDrive avec le second admin (FBA) — et le synchroniser chez lui — pour qu'il ait
+  accès aux sauvegardes et puisse gérer (restaurer) en l'absence du premier. Attention : le
+  chemin est enregistré **une seule fois en base pour tous les postes**, or un dossier OneDrive
+  partagé n'a pas le même chemin local sur chaque poste (profil différent, raccourci « Ajouter à
+  mon OneDrive »). Si les chemins diffèrent, il faudra soit un dossier au chemin commun (partage
+  réseau), soit faire évoluer l'app (chemin de sauvegarde par poste) — décision à prendre.
 - **Tester manuellement en conditions réelles** la section Demandes (édition inline, cases à
   cocher, tri) et la navigation par menu — pas d'outil d'automation UI dans l'environnement de
   dev assisté. Le collage Excel 19 colonnes n'est plus à tester : il ne servait qu'à la reprise
   initiale des affaires, l'utilisateur ne collera plus de lignes dans Demandes (2026-09-28).
+
+*Retours utilisateur 2026-10-01*
+
+- **Renseigner le suivi des caisses `AR_CAISS_`** (action utilisateur, après la release) : dans
+  Admin › Caisses, cocher « Gérée », saisir la quantité réelle en stock et le seuil d'alerte de
+  chaque caisse, d'après le **fichier « caisses » du bureau** de l'utilisateur (jamais vu par
+  l'assistant). Le statut « gérée » est en place (journal du 2026-10-02).
 
 *Retours utilisateur 2026-09-30* — **tous traités le même jour** (seuil, caisse, manque
 d'informations, seuil général, rôles, collage AR/ZR, documentation modifiable) : voir le journal
@@ -1571,14 +1751,14 @@ bien celui souhaité, aucun changement de code nécessaire.
   côté import (référence de carton ? liste des AR qu'il contient ?), et si le rapprochement se
   fait par simple correspondance de référence ou nécessite une étape de vérification manuelle
   avant application.
-- **Alerte « poids total de l'affaire > 350 kg »** (idée notée le 2026-09-28) — dans
-  Simulations, afficher une alerte quand le poids total de l'affaire dépasse 350 kg. Candidat
-  naturel : un bandeau dans `RecapAffaireBandeau` (`AffaireDetail.tsx`), comme l'alerte
-  « volume affaire > capacité des caisses », le poids total étant déjà calculé côté
-  `domain/calculs.ts`. À trancher avant de coder : poids des articles seuls ou poids caisse
-  incluse (le poids du bois n'est pas calculé aujourd'hui) ; tous les articles de l'affaire ou
-  seulement les assignés ; alerte à l'échelle de l'affaire ou aussi par caisse ; seuil fixe ou
-  paramétrable (comme `seuil_defaut`) ; `> 350` ou `>= 350`.
+- **Alerte de poids — 320 kg au m² par caisse** (idée notée le 2026-09-28 à 350 kg sur
+  l'affaire, **révisée le 2026-10-01**) — dans Simulations, alerter quand le **poids au mètre
+  carré d'une caisse est ≥ 320 kg** (et non plus le poids total de l'affaire > 350 kg). Reste
+  à réfléchir, ne pas coder pour l'instant. Candidat naturel : la `CaisseCard` (le poids total
+  par caisse est déjà calculé dans `domain/calculs.ts::calculerCaisse`). À trancher avant de
+  coder : surface de référence (a priori le fond L × l de la caisse) ; poids des articles seuls
+  ou caisse incluse (le poids du bois n'est pas calculé aujourd'hui) ; seuil fixe ou
+  paramétrable (comme le seuil général).
 
 ### Documentation utilisateur
 
