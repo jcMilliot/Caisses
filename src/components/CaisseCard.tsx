@@ -22,6 +22,8 @@ interface Props {
   readOnly?: boolean;
   // Caisse en stock utilisée (null = caisse sur mesure).
   caisseStockNom?: string | null;
+  // Ligne de Gestion des caisses liée (libellé, null = non liée) + bouton « Lier… ».
+  lien?: { libelle: string | null; onLier: () => void };
   // Caisse en stock suggérée d'après les articles (cf. domain/suggestionCaisse.ts).
   suggestion?: { nom: string; longueur_mm: number; largeur_mm: number; hauteur_mm: number; onUtiliser: () => void } | null;
 }
@@ -77,6 +79,7 @@ export default function CaisseCard({
   readOnly,
   caisseStockNom,
   suggestion,
+  lien,
 }: Props) {
   const [editing, setEditing] = useState(!!autoEdit && !readOnly);
   // Les dimensions sont saisies/affichées en mètres dans l'UI, mais stockées en mm partout
@@ -176,6 +179,21 @@ export default function CaisseCard({
               </div>
               {caisseStockNom && (
                 <div style={{ fontSize: 12, color: "var(--info-text)", fontWeight: 600, marginTop: 2 }}>Caisse en stock : {caisseStockNom}</div>
+              )}
+              {lien && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginTop: 3, color: "var(--text-muted)" }}>
+                  <span title="Ligne de Gestion des caisses rattachée à cette caisse (taux de remplissage, synchro des dimensions)">
+                    Gestion des caisses : {lien.libelle ?? <em>non liée</em>}
+                  </span>
+                  {!readOnly && (
+                    <button
+                      onClick={lien.onLier}
+                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--accent)", fontSize: 12, fontWeight: 600 }}
+                    >
+                      Lier…
+                    </button>
+                  )}
+                </div>
               )}
             </div>
             <FillRateBadge caisse={caisse} />
