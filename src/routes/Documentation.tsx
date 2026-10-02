@@ -161,19 +161,7 @@ export default function Documentation({ trigramme, estAdmin }: Props) {
           overflow: "auto",
         }}
       >
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: "var(--accent)",
-            marginBottom: 4,
-          }}
-        >
-          Guide
-        </div>
-        <h2 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 14px", letterSpacing: "-0.01em" }}>Sommaire</h2>
+        <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)", margin: "6px 0 10px" }}>Sommaire</h2>
         <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {SECTIONS_DOC.map((s) =>
             edition ? (
@@ -210,22 +198,10 @@ export default function Documentation({ trigramme, estAdmin }: Props) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ marginBottom: 28, display: "flex", alignItems: "flex-start", gap: 16 }}>
           <div style={{ flex: 1 }}>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--accent)",
-                marginBottom: 4,
-              }}
-            >
-              Documentation
-            </div>
-            <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>
+            <h1 className="page-title">
               {champ("entete.titre", false, { fontSize: 22, fontWeight: 700 })}
             </h1>
-            <div style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "6px 0 0" }}>{champ("entete.intro")}</div>
+            <div style={{ fontSize: 13.5, color: "var(--text-muted)", margin: "6px 0 0" }}>{champ("entete.intro")}</div>
           </div>
           {estAdmin && (
             <div style={{ display: "flex", gap: 8, flexShrink: 0, position: "sticky", top: 70 }}>
