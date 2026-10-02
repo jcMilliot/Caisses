@@ -65,9 +65,11 @@ function bannerStyle(borderColor: string): React.CSSProperties {
     gap: 12,
     padding: "10px 16px",
     marginBottom: 16,
-    border: `1px solid ${borderColor}`,
+    border: "1px solid var(--border)",
+    borderLeft: `4px solid ${borderColor}`,
     borderRadius: "var(--radius)",
     background: "var(--bg-panel)",
+    boxShadow: "var(--shadow-sm)",
     fontSize: 13,
   };
 }

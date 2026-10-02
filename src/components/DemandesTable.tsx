@@ -779,10 +779,20 @@ export default function DemandesTable({
     <div>
       {slotOptions ? createPortal(optionsMenu, slotOptions) : null}
       {(selectedIds.size > 0 && !readOnly) || !slotOptions ? (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 12px",
+            background: selectedIds.size > 0 && !readOnly ? "var(--accent-soft)" : undefined,
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
           <div>
             {selectedIds.size > 0 && !readOnly && (
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <button className="btn btn-sm btn-primary" onClick={() => validerSelection(true)}>
                   Valider la sélection ({selectedIds.size})
                 </button>
@@ -905,7 +915,7 @@ export default function DemandesTable({
                         ),
                       )}
                       <td style={{ ...td, whiteSpace: "nowrap" }}>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <div style={actionsLigneStyle}>
                           <button className="btn btn-sm btn-pastel-green" onClick={() => onValider(d.id, !estValidee)} disabled={readOnly}>
                             {estValidee ? "Non livré" : "Livré"}
                           </button>
@@ -1375,16 +1385,18 @@ function AvertissementBadge({ texte, rouge }: { texte: string; rouge?: boolean }
   );
 }
 
+// Refonte visuelle 2026-10-02 : bandeau d'en-tête teinté, séparateurs verticaux très légers dans
+// le corps (lecture en colonnes conservée, sans effet « grille de tableur »).
 const thStyle: React.CSSProperties = {
   padding: "10px 8px",
   borderBottom: "1px solid var(--border-strong)",
-  borderRight: "1px solid var(--row-border-color)",
+  borderRight: "1px solid var(--border)",
   fontSize: 12,
   fontWeight: 600,
   color: "var(--text-muted)",
   position: "sticky",
   top: 0,
-  background: "var(--bg-panel)",
+  background: "var(--bg-panel-alt)",
   zIndex: 1,
   // Les titres peuvent passer sur plusieurs lignes pour que tous les caractères restent
   // visibles, mais un mot n'est jamais coupé au milieu (retour à la ligne aux espaces seulement).
@@ -1398,11 +1410,18 @@ const thStyle: React.CSSProperties = {
 const tdStyle: React.CSSProperties = {
   padding: "10px 10px",
   borderBottom: "1px solid var(--row-border-color)",
-  borderRight: "1px solid var(--row-border-color)",
+  borderRight: "1px solid rgba(32, 30, 26, 0.05)",
   verticalAlign: "middle",
   // Toutes les valeurs texte alignées à gauche avec une petite marge (les colonnes dates / Qté
   // passent textAlign:"center" via leur `align`).
   textAlign: "left",
+};
+
+// Boutons d'action d'une ligne : grille 2 × 2 de largeur égale (Livré / Simuler, + Caisse / Suppr.).
+const actionsLigneStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 5,
 };
 
 const thStyleCompact: React.CSSProperties = {
