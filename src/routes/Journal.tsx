@@ -67,7 +67,7 @@ export default function Journal() {
 
   return (
     <div>
-      <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 14px" }}>
+      <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 16px", lineHeight: 1.5 }}>
         Création / suppression de caisses et sous-caisses, modification de dimensions, gestion des références.
         Historique conservé 2 mois.
       </p>
@@ -100,9 +100,9 @@ export default function Journal() {
         <p style={{ color: "var(--text-muted)" }}>Aucune entrée.</p>
       ) : (
         <div className="panel" style={{ padding: 0, overflow: "auto", maxHeight: "calc(100vh - 300px)" }}>
-          <table style={{ width: "100%", fontSize: 13, borderCollapse: "separate", borderSpacing: 0 }}>
+          <table className="table-donnees">
             <thead>
-              <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
+              <tr>
                 <th style={thStyle}>Date &amp; heure</th>
                 <th style={thStyle}>Auteur</th>
                 <th style={thStyle}>Action</th>
@@ -112,7 +112,7 @@ export default function Journal() {
             </thead>
             <tbody>
               {filtrees.map((e) => (
-                <tr key={e.id} className="article-row">
+                <tr key={e.id}>
                   <td style={{ ...tdStyle, whiteSpace: "nowrap" }} className="mono">
                     {formaterHorodatage(e.horodatage)}
                   </td>
@@ -132,32 +132,17 @@ export default function Journal() {
   );
 }
 
+// Menus : style commun de index.css. En-têtes / cellules : .table-donnees (index.css).
 const selectStyle: React.CSSProperties = {
-  padding: "6px 8px",
-  border: "1px solid var(--border-strong)",
-  borderRadius: "var(--radius)",
-  background: "var(--bg-panel)",
-  color: "var(--text)",
-  font: "inherit",
-  fontSize: 12.5,
+  fontSize: 13,
 };
 
 const thStyle: React.CSSProperties = {
-  padding: "9px 12px",
-  borderBottom: "2px solid var(--row-border-color)",
-  fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: "0.03em",
-  textTransform: "uppercase",
   position: "sticky",
   top: 0,
-  background: "var(--bg-panel)",
   zIndex: 1,
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: "8px 12px",
-  borderBottom: "1px solid var(--row-border-color)",
   verticalAlign: "top",
-  textAlign: "left",
 };

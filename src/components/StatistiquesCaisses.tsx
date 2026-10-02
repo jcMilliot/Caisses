@@ -51,19 +51,21 @@ export default function StatistiquesCaisses() {
     <div style={{ display: "grid", gap: 20, maxWidth: 980 }}>
       {/* Période (date de picking) */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12.5, color: "var(--text-muted)", marginRight: 4 }}>Date de picking :</span>
-        {(
-          [
-            ["3m", "3 derniers mois"],
-            ["12m", "12 derniers mois"],
-            ["tout", "Tout"],
-            ["libre", "Personnalisée"],
-          ] as const
-        ).map(([id, label]) => (
-          <button key={id} className={choix === id ? "btn btn-primary btn-sm" : "btn btn-sm"} onClick={() => setChoix(id)}>
-            {label}
-          </button>
-        ))}
+        <span style={{ fontSize: 13, color: "var(--text-muted)", marginRight: 4 }}>Date de picking :</span>
+        <div className="segmented">
+          {(
+            [
+              ["3m", "3 derniers mois"],
+              ["12m", "12 derniers mois"],
+              ["tout", "Tout"],
+              ["libre", "Personnalisée"],
+            ] as const
+          ).map(([id, label]) => (
+            <button key={id} className={choix === id ? "actif" : undefined} onClick={() => setChoix(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
         {choix === "libre" && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5 }}>
             du
@@ -153,9 +155,9 @@ export default function StatistiquesCaisses() {
 
 function Tuile({ titre, valeur, detail }: { titre: string; valeur: number; detail: string }) {
   return (
-    <div className="panel" style={{ padding: "14px 18px" }}>
-      <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>{titre}</div>
-      <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.01em", marginTop: 2 }}>{valeur}</div>
+    <div className="panel" style={{ padding: "16px 20px" }}>
+      <div style={{ fontSize: 12.5, color: "var(--text-muted)", fontWeight: 600 }}>{titre}</div>
+      <div className="mono" style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-0.02em", marginTop: 2, color: "var(--accent)" }}>{valeur}</div>
       <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{detail}</div>
     </div>
   );
@@ -163,8 +165,8 @@ function Tuile({ titre, valeur, detail }: { titre: string; valeur: number; detai
 
 function Bloc({ titre, note, children }: { titre: string; note?: string; children: React.ReactNode }) {
   return (
-    <section className="panel" style={{ padding: "16px 18px" }}>
-      <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>{titre}</h3>
+    <section className="panel" style={{ padding: "18px 20px" }}>
+      <h3 style={{ fontSize: 14.5, fontWeight: 700, margin: "0 0 14px" }}>{titre}</h3>
       {children}
       {note && <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "10px 0 0" }}>{note}</p>}
     </section>
@@ -196,14 +198,14 @@ function Classement({ lignes, max }: { lignes: LigneClassement[]; max?: number }
             {l.libelle}
           </span>
           <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{l.etiquette ?? ""}</span>
-          <div style={{ height: 10, background: "var(--bg-panel-alt)", borderRadius: 4 }}>
+          <div style={{ height: 10, background: "rgba(32, 30, 26, 0.06)", borderRadius: 999, overflow: "hidden" }}>
             <div
               style={{
                 width: `${(l.quantite / plusGrand) * 100}%`,
                 minWidth: l.quantite > 0 ? 3 : 0,
                 height: "100%",
                 background: "var(--accent)",
-                borderRadius: "0 4px 4px 0",
+                borderRadius: 999,
               }}
             />
           </div>
