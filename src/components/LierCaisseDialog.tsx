@@ -73,7 +73,7 @@ export default function LierCaisseDialog({
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(20, 18, 15, 0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1500 }}
+      className="modal-overlay" style={{ zIndex: 1500 }}
       onClick={busy ? undefined : onClose}
     >
       <div className="panel" onClick={(e) => e.stopPropagation()} style={{ width: 560, maxWidth: "calc(100vw - 32px)", maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "var(--shadow-lg)" }}>
@@ -121,7 +121,7 @@ export default function LierCaisseDialog({
           </label>
         </div>
         {erreur && <p style={{ margin: "0 20px 8px", fontSize: 12.5, color: "var(--danger-text)" }}>{erreur}</p>}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "12px 20px", borderTop: "1px solid var(--border)" }}>
+        <div className="modal-footer">
           <button className="btn" onClick={onClose} disabled={busy}>
             Annuler
           </button>

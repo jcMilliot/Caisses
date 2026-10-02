@@ -119,7 +119,7 @@ export default function GererCaissesStockDialog({ caisses, onCreer, onModifier, 
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}
+      className="modal-overlay" style={{ zIndex: 300 }}
       onClick={onClose}
     >
       <div
@@ -135,15 +135,15 @@ export default function GererCaissesStockDialog({ caisses, onCreer, onModifier, 
           boxShadow: "var(--shadow-lg)",
         }}
       >
-        <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border)" }}>
+        <div className="modal-header">
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Gérer les caisses en stock</h2>
         </div>
 
         <div style={{ padding: 20, overflow: "auto", display: "flex", flexDirection: "column", gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>Nouvelle caisse</div>
+          <div style={{ padding: "14px 16px", background: "var(--bg-panel-alt)", border: "1px solid var(--border)", borderRadius: "var(--radius)" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Nouvelle caisse</div>
             <FormulaireCaisse initial={CAISSE_VIDE} libelleValider="Ajouter" enCours={enCours} viderApres onValider={creer} />
-            <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: "4px 0 0" }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "8px 0 0" }}>
               Préfixer le nom par « AR_CAISS » pour une caisse réutilisable, affectable à plusieurs affaires en même temps.
             </p>
           </div>
@@ -152,7 +152,9 @@ export default function GererCaissesStockDialog({ caisses, onCreer, onModifier, 
 
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>Caisses en stock ({caisses.length})</span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                Caisses en stock <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>({caisses.length})</span>
+              </span>
               {selection.size > 0 && (
                 <button className="btn btn-sm btn-danger" disabled={enCours} onClick={() => supprimer([...selection])}>
                   Supprimer la sélection ({selection.size})
@@ -166,7 +168,8 @@ export default function GererCaissesStockDialog({ caisses, onCreer, onModifier, 
               caisses.map((c) => (
                 <div
                   key={c.id}
-                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 4px", borderBottom: "1px solid var(--border)", fontSize: 13 }}
+                  className="ligne-filtre-valeur"
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px", borderBottom: "1px solid var(--border)", fontSize: 13, borderRadius: 6 }}
                 >
                   <input type="checkbox" checked={selection.has(c.id)} onChange={() => toggleSelection(c.id)} />
                   {editionId === c.id ? (
@@ -201,7 +204,7 @@ export default function GererCaissesStockDialog({ caisses, onCreer, onModifier, 
           </div>
         </div>
 
-        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end" }}>
+        <div className="modal-footer">
           <button className="btn" onClick={onClose}>
             Fermer
           </button>
@@ -310,11 +313,7 @@ function FormulaireCaisse({
   );
 }
 
+// Bordure, arrondi et focus : style commun des champs (index.css).
 const champStyle: React.CSSProperties = {
-  padding: "6px 8px",
-  border: "1px solid var(--border-strong)",
-  borderRadius: "var(--radius)",
-  background: "var(--bg-panel)",
-  color: "var(--text)",
   font: "inherit",
 };

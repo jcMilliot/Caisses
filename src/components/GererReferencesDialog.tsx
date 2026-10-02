@@ -147,7 +147,7 @@ export default function GererReferencesDialog({
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}
+      className="modal-overlay" style={{ zIndex: 300 }}
       onClick={onClose}
     >
       <div
@@ -163,7 +163,7 @@ export default function GererReferencesDialog({
           boxShadow: "var(--shadow-lg)",
         }}
       >
-        <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border)" }}>
+        <div className="modal-header">
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Gérer les références connues</h2>
         </div>
 
@@ -275,7 +275,7 @@ export default function GererReferencesDialog({
           </div>
         </div>
 
-        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end" }}>
+        <div className="modal-footer">
           <button className="btn" onClick={onClose}>
             Fermer
           </button>
@@ -285,11 +285,8 @@ export default function GererReferencesDialog({
   );
 }
 
+// Bordure, arrondi, fond et focus : style commun des champs (index.css).
 const champStyle: React.CSSProperties = {
-  padding: "7px 8px",
-  border: "1px solid var(--border-strong)",
-  borderRadius: "var(--radius)",
-  background: "var(--bg-panel)",
-  color: "var(--text)",
+  padding: "7px 10px",
   font: "inherit",
 };

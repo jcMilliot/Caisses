@@ -51,7 +51,7 @@ export default function MotDePasseAdminDialog({ trigramme, onOk, onAnnuler }: Pr
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}
+      className="modal-overlay" style={{ zIndex: 400 }}
       onClick={onAnnuler}
     >
       {oubli ? (

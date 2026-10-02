@@ -54,13 +54,14 @@ export default function CaissesStockList({ trigramme }: Props) {
   });
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 24px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 32 }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 24px 48px" }}>
+      <div className="page-header">
         <div>
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent)", marginBottom: 4 }}>
-            Caisses
-          </div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Caisses en stock</h1>
+          <h1 className="page-title">Caisses en stock</h1>
+          <p className="page-subtitle">
+            Création, modification et suppression des caisses : bouton « Gérer les caisses ». L'affectation d'une caisse
+            à une affaire se fait depuis Gestion des caisses (menu « Stock » d'une ligne).
+          </p>
         </div>
         <button className="btn btn-primary" onClick={() => setGestionOuverte(true)} disabled={readOnly}>
           Gérer les caisses
@@ -79,11 +80,6 @@ export default function CaissesStockList({ trigramme }: Props) {
         />
       )}
 
-      <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: -20, marginBottom: 24 }}>
-        Création, modification et suppression des caisses : bouton « Gérer les caisses ». L'affectation d'une caisse à
-        une affaire se fait depuis Gestion des caisses (menu « Stock » d'une ligne).
-      </p>
-
       {loading ? (
         <p style={{ color: "var(--text-muted)" }}>Chargement…</p>
       ) : caissesVisibles.length === 0 ? (
@@ -92,10 +88,10 @@ export default function CaissesStockList({ trigramme }: Props) {
           <p style={{ margin: 0 }}>Aucune caisse en stock pour l'instant.</p>
         </div>
       ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", fontSize: 13, borderCollapse: "separate", borderSpacing: 0 }}>
+        <div className="panel" style={{ padding: 0, overflowX: "auto" }}>
+          <table className="table-donnees">
             <thead>
-              <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
+              <tr>
                 <th style={thStyle}>Nom</th>
                 <th style={thStyle}>Longueur (m)</th>
                 <th style={thStyle}>Largeur (m)</th>
@@ -121,7 +117,7 @@ export default function CaissesStockList({ trigramme }: Props) {
                     style={{ background: aCommander ? "var(--danger-bg)" : c.validee ? "var(--success-bg, #d4f4dd)" : undefined }}
                   >
                     <td style={tdStyle}>
-                      {c.nom}
+                      <span style={{ fontWeight: 600 }}>{c.nom}</span>
                       {aCommander && (
                         <span
                           style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: 8, color: "var(--danger-text)", fontWeight: 700 }}
@@ -149,7 +145,11 @@ export default function CaissesStockList({ trigramme }: Props) {
                       {estArCaiss(c.nom) ? (
                         <span style={{ color: "var(--text-faint)" }}>—</span>
                       ) : (
-                        <span>{demandeProprietaire ? demandeProprietaire.affaire : "Non affectée"}</span>
+                        demandeProprietaire ? (
+                          <span style={{ fontWeight: 600 }}>{demandeProprietaire.affaire}</span>
+                        ) : (
+                          <span className="badge badge-muted">Non affectée</span>
+                        )
                       )}
                     </td>
                   </tr>
@@ -183,17 +183,6 @@ export default function CaissesStockList({ trigramme }: Props) {
   );
 }
 
-const thStyle: React.CSSProperties = {
-  padding: "9px 8px",
-  borderBottom: "2px solid var(--row-border-color)",
-  fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: "0.03em",
-  textTransform: "uppercase",
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "10px 8px",
-  borderBottom: "1px solid var(--row-border-color)",
-  verticalAlign: "top",
-};
+// En-têtes / cellules : .table-donnees (index.css).
+const thStyle: React.CSSProperties = {};
+const tdStyle: React.CSSProperties = {};

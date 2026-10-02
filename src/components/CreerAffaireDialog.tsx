@@ -19,15 +19,8 @@ export default function CreerAffaireDialog({ nomAffaire, caisses, onConfirmer, o
 
   return (
     <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.35)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100,
-      }}
+      className="modal-overlay"
+      style={{ zIndex: 100 }}
       onClick={onClose}
     >
       <div

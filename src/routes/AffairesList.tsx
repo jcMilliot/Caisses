@@ -242,11 +242,8 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 4,
 };
 
+// Bordure, arrondi, fond et focus : style commun des champs (index.css).
 const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "7px 10px",
-  border: "1px solid var(--border-strong)",
-  borderRadius: "var(--radius)",
-  background: "var(--bg-panel)",
-  color: "var(--text)",
 };

@@ -22,7 +22,7 @@ export default function CodeSecoursDialog({ code, onFermer }: Props) {
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500 }}
+      className="modal-overlay" style={{ zIndex: 500 }}
     >
       <div className="panel" style={{ width: 440, maxWidth: "92vw", padding: 26, display: "grid", gap: 14, boxShadow: "var(--shadow-lg)" }}>
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Votre code de secours</h3>

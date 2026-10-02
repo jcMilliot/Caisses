@@ -186,7 +186,7 @@ export default function DemandesAchatsList({ trigramme }: Props) {
           display: "flex",
           justifyContent: "space-between",
           alignItems: "flex-end",
-          padding: "24px 0 16px",
+          padding: "28px 0 14px",
           position: "sticky",
           top: "calc(var(--nav-h) - 1px)",
           zIndex: 40,
@@ -194,10 +194,7 @@ export default function DemandesAchatsList({ trigramme }: Props) {
         }}
       >
         <div>
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent)", marginBottom: 4 }}>
-            Demandes d'achats
-          </div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Affiche(s) à envoyer</h1>
+          <h1 className="page-title">Affiche(s) à envoyer</h1>
         </div>
 
         {toutesLesCles.length > 0 && (
@@ -234,7 +231,7 @@ export default function DemandesAchatsList({ trigramme }: Props) {
         />
       )}
 
-      <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 0, marginBottom: 24 }}>
+      <p style={{ fontSize: 13.5, color: "var(--text-muted)", marginTop: 0, marginBottom: 20 }}>
         Une affiche est générée automatiquement pour chaque caisse traitée (OK pour être commandée) sur le tableau de
         gestion des caisses.
       </p>
@@ -264,7 +261,7 @@ export default function DemandesAchatsList({ trigramme }: Props) {
 
           {lignesAchstock.length > 0 && (
             <div className="panel" style={{ padding: 16, marginBottom: 18 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 10 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 10 }}>
                 ACHSTOCK — caisses en stock à commander
               </div>
               {lignesAchstock.map((d) => {
