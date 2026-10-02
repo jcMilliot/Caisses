@@ -81,7 +81,7 @@ function StockArCaiss({ trigramme }: { trigramme: string }) {
 
   return (
     <div style={{ maxWidth: 900 }}>
-      <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 14px" }}>
+      <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 16px" }}>
         Espace de gestion des « AR_CAISS » en stock
       </p>
       {erreur && <p style={{ color: "var(--danger-text)", fontSize: 13 }}>{erreur}</p>}
@@ -89,9 +89,9 @@ function StockArCaiss({ trigramme }: { trigramme: string }) {
         <p style={{ color: "var(--text-muted)" }}>Aucune caisse AR_CAISS_ en stock.</p>
       ) : (
         <div className="panel" style={{ padding: 0, overflowX: "auto" }}>
-          <table style={{ width: "100%", fontSize: 13, borderCollapse: "separate", borderSpacing: 0 }}>
+          <table className="table-donnees">
             <thead>
-              <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
+              <tr>
                 <th style={thStyle}>Caisse</th>
                 <th style={thStyle}>Dimensions (m)</th>
                 <th style={thStyle}>Gérée</th>
@@ -162,7 +162,13 @@ function LigneStock({
         {(caisse.hauteur_mm / 1000).toFixed(2)}
       </td>
       <td style={tdStyle}>
-        <input type="checkbox" checked={gere} onChange={(e) => setGere(e.target.checked)} />
+        <input
+          type="checkbox"
+          className="interrupteur"
+          checked={gere}
+          onChange={(e) => setGere(e.target.checked)}
+          title={gere ? "Gérée : alerte « à commander » au seuil" : "Non gérée : pas d'alerte"}
+        />
       </td>
       <td style={tdStyle}>
         <input className="input" type="number" min={0} step={1} value={quantite} onChange={(e) => setQuantite(e.target.value)} style={{ width: 80 }} />
@@ -172,11 +178,11 @@ function LigneStock({
       </td>
       <td style={tdStyle}>
         {!caisse.gere ? (
-          <span style={{ color: "var(--text-faint)" }}>Non gérée</span>
+          <span className="badge badge-muted">Non gérée</span>
         ) : aCommander ? (
-          <strong style={{ color: "var(--danger-text)" }}>À commander</strong>
+          <span className="badge badge-danger">À commander</span>
         ) : (
-          <span style={{ color: "var(--ok-text)" }}>OK</span>
+          <span className="badge badge-ok">OK</span>
         )}
       </td>
       <td style={{ ...tdStyle, textAlign: "right" }}>
@@ -190,17 +196,6 @@ function LigneStock({
   );
 }
 
-const thStyle: React.CSSProperties = {
-  padding: "9px 10px",
-  borderBottom: "2px solid var(--row-border-color)",
-  fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: "0.03em",
-  textTransform: "uppercase",
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "8px 10px",
-  borderBottom: "1px solid var(--row-border-color)",
-  verticalAlign: "middle",
-};
+// En-têtes / cellules : .table-donnees (index.css).
+const thStyle: React.CSSProperties = {};
+const tdStyle: React.CSSProperties = {};

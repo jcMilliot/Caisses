@@ -9,6 +9,7 @@ import { confirmerAction, confirmerActionRisquee } from "../data/confirm";
 import { formaterHorodatage } from "../domain/dates";
 import CodeSecoursDialog from "../components/CodeSecoursDialog";
 import MotDePasseOublie from "../components/MotDePasseOublie";
+import IconeNav from "../components/IconeNav";
 
 interface Props {
   trigramme: string;
@@ -45,39 +46,26 @@ export default function Admin({ trigramme }: Props) {
   if (!session) return <DeverrouillageAdmin trigramme={trigramme} onOk={() => setSession(true)} />;
 
   return (
-    <div style={{ padding: "32px 24px", maxWidth: 1200 }}>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 12, marginBottom: 20 }}>
+    // Refonte visuelle 2026-10-02 : page centrée comme les autres écrans, en-tête homogène,
+    // onglets soulignés.
+    <div style={{ padding: "28px 24px 48px", maxWidth: 1200, margin: "0 auto" }}>
+      <div className="page-header" style={{ marginBottom: 14 }}>
         <div>
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "var(--accent)",
-              marginBottom: 4,
-            }}
-          >
-            Administration
-          </div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Admin</h1>
+          <h1 className="page-title">Administration</h1>
+          <p className="page-subtitle">Connecté en tant que {trigramme}.</p>
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+        <div className="page-actions">
           <CodeSecours trigramme={trigramme} />
           <ChangerMotDePasse />
           <button className="btn btn-sm" onClick={verrouiller} title="Refermer la page Admin sur ce poste">
-            Verrouiller
+            🔒 Verrouiller
           </button>
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "1px solid var(--border)", paddingBottom: 10 }}>
+      <div className="tabs">
         {ONGLETS.map((o) => (
-          <button
-            key={o.id}
-            className={onglet === o.id ? "btn btn-primary btn-sm" : "btn btn-sm"}
-            onClick={() => setOnglet(o.id)}
-          >
+          <button key={o.id} className={onglet === o.id ? "tab actif" : "tab"} onClick={() => setOnglet(o.id)}>
             {o.label}
           </button>
         ))}
@@ -133,8 +121,8 @@ function DeverrouillageAdmin({ trigramme, onOk }: { trigramme: string; onOk: () 
   if (oubli) {
     return (
       <div style={{ display: "flex", justifyContent: "center", padding: "80px 24px" }}>
-        <div className="panel" style={{ width: 420, maxWidth: "92vw", padding: 28 }}>
-          <h1 style={{ margin: "0 0 10px", fontSize: 18, fontWeight: 700 }}>Mot de passe oublié — {trigramme}</h1>
+        <div className="panel" style={{ width: 420, maxWidth: "92vw", padding: 32, boxShadow: "var(--shadow-md)" }}>
+          <h1 style={{ margin: "0 0 10px", fontSize: 19, fontWeight: 700 }}>Mot de passe oublié — {trigramme}</h1>
           <MotDePasseOublie
             trigramme={trigramme}
             onReinitialise={(nouveau, code) => {
@@ -153,9 +141,12 @@ function DeverrouillageAdmin({ trigramme, onOk }: { trigramme: string; onOk: () 
 
   return (
     <div style={{ display: "flex", justifyContent: "center", padding: "80px 24px" }}>
-      <div className="panel" style={{ width: 420, maxWidth: "92vw", padding: 28 }}>
-        <h1 style={{ margin: "0 0 10px", fontSize: 18, fontWeight: 700 }}>
-          {creation ? "Créer le mot de passe administrateur" : "Page Admin"}
+      <div className="panel" style={{ width: 420, maxWidth: "92vw", padding: 32, boxShadow: "var(--shadow-md)" }}>
+        <div style={iconeCadenasStyle}>
+          <IconeNav nom="admin" taille={22} />
+        </div>
+        <h1 style={{ margin: "0 0 6px", fontSize: 19, fontWeight: 700 }}>
+          {creation ? "Créer le mot de passe administrateur" : "Administration"}
         </h1>
         <p style={{ margin: "0 0 18px", fontSize: 13.5, color: "var(--text-muted)" }}>
           {creation
@@ -193,8 +184,8 @@ function DeverrouillageAdmin({ trigramme, onOk }: { trigramme: string; onOk: () 
             Mot de passe oublié ?
           </button>
         )}
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
-          <button className="btn btn-primary" onClick={valider} disabled={busy || !peutValider}>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+          <button className="btn btn-primary" onClick={valider} disabled={busy || !peutValider} style={{ minWidth: 130 }}>
             {busy ? "…" : "Déverrouiller"}
           </button>
         </div>
@@ -283,9 +274,9 @@ function ChangerMotDePasse() {
   }
 
   return (
-    <div style={backdropStyle} onClick={fermer}>
-      <div className="panel" style={{ width: 380, padding: 24 }} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ margin: "0 0 14px", fontSize: 16, fontWeight: 700 }}>Changer le mot de passe</h2>
+    <div className="modal-overlay" style={{ zIndex: 300 }} onClick={fermer}>
+      <div className="modal" style={{ width: 400, padding: 24 }} onClick={(e) => e.stopPropagation()}>
+        <h2 style={{ margin: "0 0 16px", fontSize: 17, fontWeight: 700 }}>Changer le mot de passe</h2>
         <input className="input" type="password" placeholder="Mot de passe actuel" value={ancien} autoFocus onChange={(e) => setAncien(e.target.value)} style={{ width: "100%", marginBottom: 8 }} />
         <input className="input" type="password" placeholder="Nouveau mot de passe" value={nouveau} onChange={(e) => setNouveau(e.target.value)} style={{ width: "100%", marginBottom: 8 }} />
         <input
@@ -376,14 +367,12 @@ function UtilisateursOnglet({ trigramme }: { trigramme: string }) {
 
   return (
     <div>
-      <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 14px" }}>
-        Gestion des utilisateurs
-      </p>
+      <p style={introOngletStyle}>Gestion des utilisateurs</p>
       {erreur && <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--danger-text)" }}>{erreur}</p>}
-      <div className="panel" style={{ padding: 0, overflow: "auto", maxWidth: 760 }}>
-        <table style={{ width: "100%", fontSize: 13, borderCollapse: "separate", borderSpacing: 0 }}>
+      <div className="panel" style={{ padding: 0, overflow: "auto", maxWidth: 820 }}>
+        <table className="table-donnees">
           <thead>
-            <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
+            <tr>
               <th style={thStyle}>Trigramme</th>
               <th style={thStyle}>Rôle</th>
               <th style={thStyle}>Première connexion</th>
@@ -392,9 +381,9 @@ function UtilisateursOnglet({ trigramme }: { trigramme: string }) {
           </thead>
           <tbody>
             {utilisateurs.map((u) => (
-              <tr key={u.trigramme} className="article-row">
-                <td style={{ ...tdStyle, fontWeight: 700 }} className="mono">
-                  {u.trigramme}
+              <tr key={u.trigramme}>
+                <td style={tdStyle}>
+                  <span style={avatarStyle}>{u.trigramme}</span>
                 </td>
                 <td style={tdStyle}>
                   <select
@@ -434,14 +423,16 @@ function UtilisateursOnglet({ trigramme }: { trigramme: string }) {
           </tbody>
         </table>
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14 }}>
+      <div className="panel" style={{ maxWidth: 820, marginTop: 16, padding: "14px 16px" }}>
+      <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 8 }}>Ajouter un utilisateur</div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <input
           className="input"
           value={nouveauTrigramme}
           onChange={(e) => setNouveauTrigramme(e.target.value.toUpperCase())}
           placeholder="Trigramme"
           maxLength={3}
-          style={{ width: 100 }}
+          style={{ width: 110, textTransform: "uppercase", letterSpacing: "0.06em" }}
         />
         <select value={nouveauRole} onChange={(e) => setNouveauRole(e.target.value as Role)} style={{ ...selectStyle, width: 190 }}>
           {(Object.keys(LIBELLE_ROLE) as Role[]).map((r) => (
@@ -450,13 +441,14 @@ function UtilisateursOnglet({ trigramme }: { trigramme: string }) {
             </option>
           ))}
         </select>
-        <button className="btn btn-sm" onClick={ajouter} disabled={nouveauTrigramme.trim().length !== 3}>
-          Ajouter un utilisateur
+        <button className="btn btn-primary" onClick={ajouter} disabled={nouveauTrigramme.trim().length !== 3}>
+          Ajouter
         </button>
       </div>
-      <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: "6px 0 0" }}>
+      <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "8px 0 0" }}>
         Pour déclarer quelqu'un avant son premier lancement (par exemple un nouvel administrateur).
       </p>
+      </div>
     </div>
   );
 }
@@ -507,21 +499,24 @@ function ParametresOnglet() {
   if (actuel === null) return message ? <p style={{ color: "var(--danger-text)" }}>{message.texte}</p> : null;
 
   return (
-    <div style={{ maxWidth: 640 }}>
-      <div className="panel" style={{ padding: 20, display: "grid", gap: 14 }}>
+    <div style={{ maxWidth: 680 }}>
+      <div className="panel" style={panneauReglageStyle}>
         <label style={labelStyle}>
-          <span style={libelleStyle}>Seuil d'alerte général (%)</span>
-          <input
-            className="input"
-            type="number"
-            min={1}
-            max={100}
-            value={saisie}
-            onChange={(e) => setSaisie(e.target.value)}
-            style={{ width: 90 }}
-          />
+          <span style={libelleStyle}>Seuil d'alerte général</span>
+          <span style={champUniteStyle}>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={100}
+              value={saisie}
+              onChange={(e) => setSaisie(e.target.value)}
+              style={{ width: 90 }}
+            />
+            <span style={uniteStyle}>%</span>
+          </span>
         </label>
-        <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: 0 }}>
+        <p style={aideStyle}>
           Taux de remplissage au-delà duquel une caisse passe en alerte dans Simulations. Il s'applique aux nouvelles
           affaires et, à l'enregistrement, remplace celui des affaires dont la caisse n'est pas encore livrée.
         </p>
@@ -578,13 +573,16 @@ function PoidsMaxParametre() {
   if (actuel === null) return message ? <p style={{ color: "var(--danger-text)" }}>{message.texte}</p> : null;
 
   return (
-    <div style={{ marginTop: 20 }}>
-      <div className="panel" style={{ padding: 20, display: "grid", gap: 14 }}>
+    <div style={{ marginTop: 16 }}>
+      <div className="panel" style={panneauReglageStyle}>
         <label style={labelStyle}>
-          <span style={libelleStyle}>Limite de poids d'une caisse (kg/m²)</span>
-          <input className="input" type="number" min={1} value={saisie} onChange={(e) => setSaisie(e.target.value)} style={{ width: 90 }} />
+          <span style={libelleStyle}>Limite de poids d'une caisse</span>
+          <span style={champUniteStyle}>
+            <input className="input" type="number" min={1} value={saisie} onChange={(e) => setSaisie(e.target.value)} style={{ width: 90 }} />
+            <span style={uniteStyle}>kg/m²</span>
+          </span>
         </label>
-        <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: 0 }}>
+        <p style={aideStyle}>
           Dans une affaire en simulation, si le poids total des articles présents dans une caisse dépasse la limite au
           mètre carré, une alerte apparaît.
         </p>
@@ -663,14 +661,14 @@ function SauvegardeOnglet({ trigramme }: { trigramme: string }) {
   }
 
   return (
-    <div style={{ maxWidth: 640 }}>
-      <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 16px" }}>
+    <div style={{ maxWidth: 680 }}>
+      <p style={introOngletStyle}>
         Copie de la base <span className="mono">caisses.sqlite3</span> dans le dossier choisi. La sauvegarde automatique
         est faite par le premier poste ouvert qui la trouve en retard (un seul poste la fait). Le dossier doit donc être
         accessible depuis tous les postes, et de préférence ailleurs que le dossier de la base.
       </p>
 
-      <div className="panel" style={{ padding: 20, display: "grid", gap: 14 }}>
+      <div className="panel" style={panneauReglageStyle}>
         <div style={labelStyle}>
           <span style={libelleStyle}>Dossier</span>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -720,7 +718,7 @@ function SauvegardeOnglet({ trigramme }: { trigramme: string }) {
         </p>
       )}
 
-      <div style={{ marginTop: 18, fontSize: 13, display: "grid", gap: 4 }}>
+      <div style={{ marginTop: 16, fontSize: 13, display: "grid", gap: 4, padding: "10px 14px", background: "rgba(32, 30, 26, 0.04)", borderRadius: "var(--radius)" }}>
         <div>
           <span style={{ color: "var(--text-muted)" }}>Dernière sauvegarde : </span>
           {config.derniere ? `${formaterHorodatage(config.derniere)} (poste ${config.dernier_poste ?? "?"})` : "jamais"}
@@ -831,8 +829,8 @@ function RestaurationSection({ trigramme, dossier }: { trigramme: string; dossie
   }
 
   return (
-    <div style={{ marginTop: 28 }}>
-      <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 6px" }}>Restaurer une sauvegarde</h3>
+    <div style={{ marginTop: 32, paddingTop: 24, borderTop: "1px solid var(--border)" }}>
+      <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 6px" }}>Restaurer une sauvegarde</h3>
       <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 12px" }}>
         Remplace la base par une sauvegarde. Si l'app est ouverte sur d'autres postes, ils reçoivent un message leur
         demandant de la fermer ; la restauration démarre dès que tous l'ont fermée.
@@ -875,9 +873,9 @@ function RestaurationSection({ trigramme, dossier }: { trigramme: string; dossie
         ) : fichiers.length === 0 ? (
           <p style={{ margin: 0, padding: 16, fontSize: 13, color: "var(--text-muted)" }}>Aucune sauvegarde dans ce dossier.</p>
         ) : (
-          <table style={{ width: "100%", fontSize: 13, borderCollapse: "separate", borderSpacing: 0 }}>
+          <table className="table-donnees">
             <thead>
-              <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
+              <tr>
                 <th style={thStyle}>Date</th>
                 <th style={thStyle}>Taille</th>
                 <th style={thStyle} />
@@ -885,7 +883,7 @@ function RestaurationSection({ trigramme, dossier }: { trigramme: string; dossie
             </thead>
             <tbody>
               {fichiers.map((f) => (
-                <tr key={f.chemin} className="article-row">
+                <tr key={f.chemin}>
                   <td style={tdStyle} className="mono" title={f.nom}>
                     {formaterDateSauvegarde(f.date)}
                   </td>
@@ -929,42 +927,47 @@ function formaterTaille(octets: number): string {
   return `${(octets / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
-const backdropStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0,0,0,0.35)",
-  display: "flex",
+const iconeCadenasStyle: React.CSSProperties = {
+  display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  zIndex: 300,
+  width: 44,
+  height: 44,
+  borderRadius: 12,
+  background: "var(--accent-soft)",
+  color: "var(--accent)",
+  marginBottom: 14,
 };
 
-const labelStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "180px 1fr", alignItems: "center", gap: 12 };
-const libelleStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600 };
+const labelStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "210px 1fr", alignItems: "center", gap: 12 };
+const libelleStyle: React.CSSProperties = { fontSize: 13.5, fontWeight: 600 };
+const panneauReglageStyle: React.CSSProperties = { padding: "20px 22px", display: "grid", gap: 14 };
+const aideStyle: React.CSSProperties = { fontSize: 12.5, color: "var(--text-muted)", margin: 0, lineHeight: 1.5 };
+const introOngletStyle: React.CSSProperties = { fontSize: 13, color: "var(--text-muted)", margin: "0 0 16px", lineHeight: 1.5 };
+const champUniteStyle: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 8 };
+const uniteStyle: React.CSSProperties = { fontSize: 13, color: "var(--text-muted)" };
 
+// Pastille du trigramme (onglet Utilisateurs).
+const avatarStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minWidth: 44,
+  padding: "3px 8px",
+  borderRadius: 999,
+  background: "var(--accent-soft)",
+  color: "var(--accent)",
+  fontWeight: 700,
+  fontSize: 12.5,
+  letterSpacing: "0.04em",
+};
+
+// Champs et menus : style commun de index.css (bordure, arrondi, focus).
 const selectStyle: React.CSSProperties = {
-  padding: "6px 8px",
-  border: "1px solid var(--border-strong)",
-  borderRadius: "var(--radius)",
-  background: "var(--bg-panel)",
-  color: "var(--text)",
-  font: "inherit",
   fontSize: 13,
   width: 200,
 };
 
-const thStyle: React.CSSProperties = {
-  padding: "9px 12px",
-  borderBottom: "2px solid var(--row-border-color)",
-  fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: "0.03em",
-  textTransform: "uppercase",
-  background: "var(--bg-panel)",
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "8px 12px",
-  borderBottom: "1px solid var(--row-border-color)",
-  textAlign: "left",
-};
+// En-têtes et cellules : style de .table-donnees (index.css).
+const thStyle: React.CSSProperties = {};
+const tdStyle: React.CSSProperties = {};
