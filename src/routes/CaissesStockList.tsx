@@ -142,7 +142,7 @@ export default function CaissesStockList({ trigramme }: Props) {
                     </td>
                     <td style={tdStyle}>{c.type_ouverture}</td>
                     <td style={tdStyle} className="mono">
-                      {estArCaiss(c.nom) && c.gere ? c.quantite : <span style={{ color: "var(--text-faint)" }}>—</span>}
+                      {estArCaiss(c.nom) ? c.quantite : <span style={{ color: "var(--text-faint)" }}>—</span>}
                     </td>
                     <td style={tdStyle}>{c.observations}</td>
                     <td style={tdStyle}>

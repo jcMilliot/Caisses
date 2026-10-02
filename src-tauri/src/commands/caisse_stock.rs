@@ -249,7 +249,7 @@ pub fn set_caisse_stock_validee(db: State<Db>, id: i64, validee: bool, trigramme
     Ok(())
 }
 
-/// Admin › Stock : quantité en stock, suivi (« gérée ») et seuil d'alerte d'une caisse
+/// Admin › Caisses › Stock : quantité en stock, suivi (« gérée ») et seuil d'alerte d'une caisse
 /// AR_CAISS_ (décisions 2026-10-01 / 2026-10-02 — réglage réservé aux administrateurs).
 #[tauri::command]
 pub fn set_caisse_stock_suivi(
@@ -369,7 +369,7 @@ fn lire_ligne_stock(conn: &rusqlite::Connection, t: &str, id: i64) -> Result<Lig
     Ok(LigneStock { caisse_stock_id, quantite, stock_decompte, reception })
 }
 
-/// Livraison d'une ligne de Gestion des caisses utilisant une caisse AR_CAISS_ **gérée**, pas
+/// Livraison d'une ligne de Gestion des caisses utilisant une caisse AR_CAISS_ (gérée ou non), pas
 /// encore comptée : retire sa quantité du stock (plancher à 0, la caisse n'est jamais
 /// supprimée) — ou l'**ajoute** pour une ligne ACHSTOCK (réception d'une commande). Le mouvement
 /// est mémorisé dans `stock_decompte` (positif = retiré, négatif = reçu). `None` = rien à faire.
@@ -400,7 +400,9 @@ fn decompter(
         return Ok(None);
     }
     let Ok(caisse) = get_caisse_stock(&tx, cs_id) else { return Ok(None) };
-    if !est_ar_caiss(&caisse.nom) || !caisse.gere {
+    // Toutes les AR_CAISS_ sont décomptées, gérées ou non (décision 2026-10-02 : une caisse non
+    // gérée est une caisse qu'on écoule sans la recommander) — « gérée » ne sert qu'à l'alerte.
+    if !est_ar_caiss(&caisse.nom) {
         return Ok(None);
     }
     // Mouvement signé : positif = sortie de stock, négatif = réception.
@@ -566,10 +568,10 @@ mod tests {
         assert_eq!(decompter(&mut conn, "demande", 11, "AJC").unwrap().unwrap().quantite, 2);
         assert_eq!(stock(&conn, 1), 0);
         assert_eq!(decompter(&mut conn, "demande_caisse", 20, "AJC").unwrap().unwrap().quantite, 0);
-        // Caisse non gérée, caisse de récup : pas de décompte.
-        assert!(decompter(&mut conn, "demande", 12, "AJC").unwrap().is_none());
+        // Caisse non gérée : décomptée aussi (on l'écoule) ; caisse de récup : pas de décompte.
+        assert_eq!(decompter(&mut conn, "demande", 12, "AJC").unwrap().unwrap().quantite, 1);
         assert!(decompter(&mut conn, "demande", 13, "AJC").unwrap().is_none());
-        assert_eq!((stock(&conn, 2), stock(&conn, 3)), (5, 1));
+        assert_eq!((stock(&conn, 2), stock(&conn, 3)), (4, 1));
 
         // Remise : exactement ce qui a été retiré, puis la ligne peut être re-décomptée.
         remettre(&mut conn, "demande", 11, "AJC").unwrap();

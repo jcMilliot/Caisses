@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import IconeFiltre from "./IconeFiltre";
-import { volumeUnitaireM3, formaterVolumeM3, type ChampArticleManquant } from "../domain/calculs";
+import { volumeUnitaireM3, formaterVolumeM3, champsManquants, type ChampArticleManquant } from "../domain/calculs";
 import type { Article, Caisse, NewArticle } from "../domain/types";
 import ColumnFilterMenu from "./ColumnFilterMenu";
 
@@ -45,6 +45,26 @@ function sauvegarderTri(affaireId: number, tri: Tri | null) {
 // null = pas de filtre actif sur cette colonne (tout affiché) ; sinon ensemble des valeurs
 // sélectionnées (au format texte affiché).
 type Filtres = Partial<Record<ColonneTriable, string[]>>;
+
+type FiltreInfos = "Manquantes" | "Complètes";
+
+function chargerFiltreInfos(affaireId: number): FiltreInfos | null {
+  try {
+    const v = localStorage.getItem(`caisses:filtreInfos:${affaireId}`);
+    return v === "Manquantes" || v === "Complètes" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function sauvegarderFiltreInfos(affaireId: number, f: FiltreInfos | null) {
+  try {
+    if (f) localStorage.setItem(`caisses:filtreInfos:${affaireId}`, f);
+    else localStorage.removeItem(`caisses:filtreInfos:${affaireId}`);
+  } catch {
+    // stockage indisponible : le filtre reste valable pour la session
+  }
+}
 
 function chargerFiltres(affaireId: number): Filtres {
   try {
@@ -94,6 +114,14 @@ export default function ArticlesTable({
   const [tri, setTri] = useState<Tri | null>(() => chargerTri(affaireId));
   const [filtres, setFiltres] = useState<Filtres>(() => chargerFiltres(affaireId));
   const [menuOuvert, setMenuOuvert] = useState<ColonneTriable | null>(null);
+  // Filtre « Informations » de la colonne AR (2026-10-02) : lignes dont une dimension ou le poids
+  // manque, ou lignes complètes — même règle que le bouton « Manque d'informations ».
+  const [filtreInfos, setFiltreInfos] = useState<FiltreInfos | null>(() => chargerFiltreInfos(affaireId));
+  function changerFiltreInfos(v: string | null) {
+    const f = v === "Manquantes" || v === "Complètes" ? v : null;
+    setFiltreInfos(f);
+    sauvegarderFiltreInfos(affaireId, f);
+  }
   const boutonsFiltreRef = useRef<Partial<Record<ColonneTriable, HTMLButtonElement>>>({});
 
   const caisseById = useMemo(() => new Map(caisses.map((c) => [c.id, c])), [caisses]);
@@ -128,9 +156,11 @@ export default function ArticlesTable({
 
   const articlesFiltres = useMemo(() => {
     const colonnesFiltrees = Object.entries(filtres) as [ColonneTriable, string[]][];
-    if (colonnesFiltrees.length === 0) return articles;
-    return articles.filter((a) => colonnesFiltrees.every(([colonne, valeurs]) => valeurs.includes(valeurTexte(a, colonne))));
-  }, [articles, filtres, caisseById]);
+    return articles.filter((a) => {
+      if (filtreInfos && (champsManquants(a).length > 0) !== (filtreInfos === "Manquantes")) return false;
+      return colonnesFiltrees.every(([colonne, valeurs]) => valeurs.includes(valeurTexte(a, colonne)));
+    });
+  }, [articles, filtres, caisseById, filtreInfos]);
 
   const articlesTries = useMemo(() => {
     if (!tri) return articlesFiltres;
@@ -272,24 +302,29 @@ export default function ArticlesTable({
 
   function thTriable(colonne: ColonneTriable, label: string, align: "left" | "right" = "left") {
     const actif = tri?.colonne === colonne;
-    const filtreActif = filtres[colonne] !== undefined;
+    const filtreActif = filtres[colonne] !== undefined || (colonne === "ar" && filtreInfos !== null);
     const valeursDistinctes = [...new Set(articles.map((a) => valeurTexte(a, colonne)))].sort((a, b) => a.localeCompare(b));
     const selection = filtres[colonne] ? new Set(filtres[colonne]) : null;
     return (
       <th
         className="th-filtrable"
-        style={{ ...thStyle, textAlign: align, background: filtreActif ? "var(--filtre-actif-bg)" : thStyle.background }}
+        style={{
+          ...thStyle,
+          textAlign: align,
+          verticalAlign: "top",
+          paddingBottom: 26,
+          background: filtreActif ? "var(--filtre-actif-bg)" : thStyle.background,
+        }}
       >
-        {/* Libellé (clic = tri) à gauche ou à droite, icône de filtre toujours calée à droite. */}
-        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-          <span
-            style={{ flex: 1, minWidth: 0, textAlign: align, cursor: "pointer", userSelect: "none" }}
-            onClick={() => toggleTri(colonne)}
-            title="Trier"
-          >
+        {/* Libellé en haut (clic = tri, peut passer sur plusieurs lignes), icône de filtre fixée en
+            bas à droite ; l'espace réservé en fin de texte l'empêche de recouvrir le libellé. */}
+        <div style={{ textAlign: align }}>
+          <span style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleTri(colonne)} title="Trier">
             {label}
             {actif && <span style={{ marginLeft: 4, fontSize: 10, color: "var(--accent)" }}>{tri!.sens === "asc" ? "▲" : "▼"}</span>}
           </span>
+          <span aria-hidden="true" style={{ display: "inline-block", width: 24 }} />
+        </div>
           <button
             ref={(el) => {
               if (el) boutonsFiltreRef.current[colonne] = el;
@@ -298,7 +333,9 @@ export default function ArticlesTable({
             title={filtreActif ? "Filtre actif — trier et filtrer" : "Trier et filtrer"}
             className={`btn-filtre-colonne${filtreActif ? " btn-filtre-colonne-actif" : ""}`}
             style={{
-              flexShrink: 0,
+              position: "absolute",
+              right: 6,
+              bottom: 5,
               background: filtreActif ? "var(--accent)" : "none",
               border: "none",
               borderRadius: 4,
@@ -311,7 +348,6 @@ export default function ArticlesTable({
           >
             <IconeFiltre plein={filtreActif} />
           </button>
-        </div>
         {menuOuvert === colonne && boutonsFiltreRef.current[colonne] && (
           <ColumnFilterMenu
             valeurs={valeursDistinctes}
@@ -320,19 +356,24 @@ export default function ArticlesTable({
             triActif={actif ? tri!.sens : null}
             onClose={() => setMenuOuvert(null)}
             ancre={boutonsFiltreRef.current[colonne]!}
+            conditionSpeciale={
+              colonne === "ar"
+                ? { libelle: "Informations", options: ["Manquantes", "Complètes"], actif: filtreInfos, onApply: changerFiltreInfos }
+                : undefined
+            }
           />
         )}
       </th>
     );
   }
 
-  const yATrouFiltre = Object.keys(filtres).length > 0;
+  const yATrouFiltre = Object.keys(filtres).length > 0 || filtreInfos !== null;
 
   return (
     <table style={{ width: "100%", fontSize: 13, borderCollapse: "separate", borderSpacing: 0 }}>
       <thead>
         <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
-          {onStartDrag && <th style={{ ...thStyle, width: 20 }}></th>}
+          {onStartDrag && <th style={{ ...thStyle, width: 64, textAlign: "center" }}>Déplacer</th>}
           <th style={thStyle}>
             <input
               type="checkbox"

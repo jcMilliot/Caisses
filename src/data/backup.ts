@@ -1,4 +1,4 @@
-import { relaunch } from "@tauri-apps/plugin-process";
+import { exit, relaunch } from "@tauri-apps/plugin-process";
 import { call } from "./client";
 
 export type FrequenceBackup = "desactivee" | "quotidienne" | "hebdomadaire";
@@ -26,7 +26,17 @@ export const backupApi = {
   chooseFolder: () => call<string | null>("choose_backup_folder"),
   now: (trigramme: string) => call<string>("backup_now", { trigramme }),
   ifDue: (trigramme: string) => call<string | null>("backup_if_due", { trigramme }),
-  signalerPresence: (trigramme: string) => call<void>("signaler_presence", { trigramme }),
+  // Renvoie le trigramme de l'admin qui demande la fermeture des postes (restauration), ou null.
+  signalerPresence: (trigramme: string) => call<string | null>("signaler_presence", { trigramme }),
+  // Restauration avec d'autres postes ouverts (2026-10-02) : demande de fermeture et attente.
+  autresPostesActifs: () => call<string[]>("list_autres_postes_actifs"),
+  demanderFermeture: (trigramme: string) => call<void>("demander_fermeture_postes", { trigramme }),
+  annulerFermeture: () => call<void>("annuler_fermeture_postes"),
+  // Poste qui accepte la demande : retiré des postes actifs, puis l'app se ferme.
+  quitterPourRestauration: async () => {
+    await call<void>("quitter_poste");
+    await exit(0);
+  },
   listSauvegardes: () => call<FichierSauvegarde[]>("list_sauvegardes"),
   chooseFichierRestauration: () => call<string | null>("choose_fichier_restauration"),
   // Renvoie le chemin de la copie de sécurité de la base remplacée.

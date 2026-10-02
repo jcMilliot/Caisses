@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { tauxPourDemande, tauxPourSousCaisse, type RemplissageCaisse } from "../domain/remplissage";
 import { demandesApi } from "../data/demandes";
 import { demandeCaisseApi } from "../data/demandeCaisse";
 import { caisseStockApi } from "../data/caisseStock";
@@ -130,16 +131,36 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     return () => onDirtyChange?.(false);
   }, [modifie, onDirtyChange]);
 
+  // Taux de remplissage des affaires simulées (colonne « Taux de remplissage », 2026-10-02).
+  const [remplissage, setRemplissage] = useState<RemplissageCaisse[]>([]);
+  // Taux par ligne : caisse(s) de Simulations liées à la ligne mère ou à la sous-caisse.
+  function seuilAffaire(nomAffaire: string): number {
+    return affaires.find((a) => memeNomAffaire(a.nom, nomAffaire))?.seuil_defaut ?? 70;
+  }
+  const tauxRemplissage = {
+    mere: (d: Demande) => {
+      const caisses = tauxPourDemande(remplissage, d);
+      return caisses.length > 0 ? { caisses, seuil: seuilAffaire(d.affaire) } : null;
+    },
+    sous: (sc: DemandeCaisse, mere: Demande) => {
+      const caisses = tauxPourSousCaisse(remplissage, sc);
+      return caisses.length > 0 ? { caisses, seuil: seuilAffaire(mere.affaire) } : null;
+    },
+  };
+
+
   async function reload() {
     setLoading(true);
     try {
-      const [d, dc, cs, opts, aff] = await Promise.all([
+      const [d, dc, cs, opts, aff, remp] = await Promise.all([
         demandesApi.list(),
         demandeCaisseApi.listAll(),
         caisseStockApi.list(),
         optionsListeApi.list(),
         affairesApi.list(),
+        affairesApi.remplissage().catch(() => [] as RemplissageCaisse[]),
       ]);
+      setRemplissage(remp);
       setDemandes(d);
       setBrouillon(d);
       setDemandeCaisses(dc);
@@ -830,6 +851,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
             onSimulerAffaire={onSimulerAffaire}
             optionsPersonnalisees={optionsPersonnalisees}
             slotOptions={slotOptions}
+            tauxRemplissage={tauxRemplissage}
             readOnly={readOnly}
           />
         </div>

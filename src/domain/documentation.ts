@@ -48,13 +48,13 @@ export const SECTIONS_DOC: SectionDoc[] = [
         "Les informations se modifient directement dans le tableau, et certaines modifications en déclenchent d'autres : changer le type d'envoi agit sur le type d'ouverture et le traitement, sélectionner une caisse de stock agit sur les dimensions et le type d'ouverture, etc. Les modifications ne sont enregistrées qu'au clic sur « Enregistrer » (« Annuler » revient à l'état enregistré).",
       ),
       li(
-        "La première colonne contient des cases à cocher : dès qu'une ligne est cochée, des boutons permettent de valider ou de dévalider la livraison de toute la sélection.",
+        "La première colonne contient des cases à cocher : dès qu'une ligne est cochée, des boutons permettent de marquer toute la sélection comme livrée ou non livrée.",
       ),
       li(
         "La deuxième colonne, « OK pour être commandée », génère l'affiche à copier dans le mail de demande d'achat, à condition que les informations nécessaires soient remplies (voir « Passer la commande »).",
       ),
       li("Sur la dernière colonne (« Actions ») :", [
-        "**Livré** valide la livraison de la caisse (« Dévalider » pour revenir en arrière). Une caisse livrée ne peut plus être modifiée tant qu'elle n'a pas été dévalidée.",
+        "**Livré** valide la livraison de la caisse (« Non livré » pour revenir en arrière). Une caisse livrée ne peut plus être modifiée tant qu'elle n'a pas été repassée en « Non livré ».",
         "**+ Caisse** ajoute une nouvelle caisse à cette affaire. Elle hérite de la caisse mère : type d'envoi, date de picking, traitement (s'il y en a un).",
         "**Suppr.** supprime l'affaire du tableau, après confirmation.",
         "**Simuler** ouvre la ou les caisses de cette affaire dans la page Simulations, pour y ajouter les articles, estimer le volume et vérifier que la caisse correspond bien au besoin.",

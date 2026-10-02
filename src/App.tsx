@@ -12,6 +12,7 @@ import FirstLaunchSetup from "./components/FirstLaunchSetup";
 import TrigrammeSetup from "./components/TrigrammeSetup";
 import UpdateAvailableDialog from "./components/UpdateAvailableDialog";
 import ConfirmDialogHost from "./components/ConfirmDialogHost";
+import DemandeFermetureDialog from "./components/DemandeFermetureDialog";
 import { confirmerAction } from "./data/confirm";
 import { adminApi, type Role } from "./data/admin";
 import { definirLectureSeuleRole } from "./hooks/useSectionLock";
@@ -41,7 +42,7 @@ export default function App() {
   const { update, installing, confirmInstall, dismiss } = useUpdateCheck(dbStatus === "ready");
   const utilisateurPret = dbStatus === "ready" && userStatus === "ready" ? trigramme : null;
   useBackupAuto(utilisateurPret);
-  usePresence(utilisateurPret);
+  const demandeFermeture = usePresence(utilisateurPret);
   // Alimente la liste des utilisateurs de la page Admin (dernière connexion).
   useEffect(() => {
     if (utilisateurPret) adminApi.enregistrerConnexion(utilisateurPret).catch(() => {});
@@ -307,6 +308,7 @@ export default function App() {
       )}
 
       <ConfirmDialogHost />
+      {demandeFermeture && <DemandeFermetureDialog demandeur={demandeFermeture} />}
     </div>
   );
 }

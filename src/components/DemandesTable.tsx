@@ -1,4 +1,9 @@
 import PastilleAlerte from "./PastilleAlerte";
+import TauxRemplissage from "./TauxRemplissage";
+import type { TauxCaisse } from "../domain/remplissage";
+
+type TauxLigne = { caisses: TauxCaisse[]; seuil: number };
+import { libelleCaisseStock } from "../domain/caisseStock";
 import IconeFiltre from "./IconeFiltre";
 import { MESSAGE_ALERTE_COMMANDE, estACommanderUrgent } from "../domain/caissesACommander";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -46,6 +51,12 @@ interface Props {
   // Nœud DOM (dans l'en-tête de DemandesList) où porter le bouton « Options » via un portail,
   // pour le grouper avec « Créer une nouvelle caisse » / « Gérer les références » / etc.
   slotOptions?: HTMLElement | null;
+  // Taux de remplissage des caisses de Simulations liées à une ligne mère / sous-caisse
+  // (null = aucune caisse remplie liée).
+  tauxRemplissage?: {
+    mere: (d: Demande) => TauxLigne | null;
+    sous: (sc: DemandeCaisse, mere: Demande) => TauxLigne | null;
+  };
   readOnly?: boolean;
 }
 
@@ -69,6 +80,9 @@ type Champ =
   | "cde_passee_affaire"
   | "cde_passee_achat_stock"
   | "observations";
+
+// Colonnes affichables : les champs de la demande + des colonnes calculées (non filtrables).
+type Colonne = Champ | "taux_remplissage";
 
 type Tri = { colonne: Champ; sens: "asc" | "desc" };
 
@@ -115,18 +129,58 @@ function sauvegarderFiltres(filtres: Filtres) {
 const CLE_COLONNES_VISIBLES = "caisses:colonnesVisibles:demandes";
 const CLE_COMPACT = "caisses:compact:demandes";
 
-function chargerColonnesVisibles(toutesLesColonnes: Champ[]): Set<Champ> {
+// Colonnes ajoutées après coup : visibles d'office la première fois, même si le poste avait déjà
+// enregistré sa liste de colonnes visibles (sinon elles resteraient cachées sans qu'on le sache).
+const NOUVELLES_COLONNES: Colonne[] = ["taux_remplissage"];
+const CLE_COLONNES_CONNUES = "caisses:colonnesConnues:demandes";
+
+function chargerColonnesVisibles(toutesLesColonnes: Colonne[]): Set<Colonne> {
   try {
     const brut = localStorage.getItem(CLE_COLONNES_VISIBLES);
     if (!brut) return new Set(toutesLesColonnes);
-    return new Set(JSON.parse(brut) as Champ[]);
+    const visibles = new Set(JSON.parse(brut) as Colonne[]);
+    const connues = new Set(JSON.parse(localStorage.getItem(CLE_COLONNES_CONNUES) ?? "[]") as Colonne[]);
+    for (const c of NOUVELLES_COLONNES) if (!connues.has(c)) visibles.add(c);
+    localStorage.setItem(CLE_COLONNES_CONNUES, JSON.stringify(toutesLesColonnes));
+    return visibles;
   } catch {
     return new Set(toutesLesColonnes);
   }
 }
 
-function sauvegarderColonnesVisibles(visibles: Set<Champ>) {
+function sauvegarderColonnesVisibles(visibles: Set<Colonne>) {
   localStorage.setItem(CLE_COLONNES_VISIBLES, JSON.stringify([...visibles]));
+  localStorage.setItem(CLE_COLONNES_CONNUES, JSON.stringify(TOUTES_LES_COLONNES));
+}
+
+// Ordre des colonnes choisi dans Options (2026-10-02) ; une colonne inconnue de l'ordre
+// enregistré (ajoutée depuis) se place à sa position par défaut.
+const CLE_ORDRE_COLONNES = "caisses:ordreColonnes:demandes";
+
+function chargerOrdreColonnes(): Colonne[] {
+  try {
+    const brut = localStorage.getItem(CLE_ORDRE_COLONNES);
+    if (!brut) return TOUTES_LES_COLONNES;
+    const ordre = (JSON.parse(brut) as Colonne[]).filter((c) => TOUTES_LES_COLONNES.includes(c));
+    for (const c of TOUTES_LES_COLONNES) {
+      if (ordre.includes(c)) continue;
+      const iDefaut = TOUTES_LES_COLONNES.indexOf(c);
+      const precedente = TOUTES_LES_COLONNES.slice(0, iDefaut).reverse().find((p) => ordre.includes(p));
+      ordre.splice(precedente ? ordre.indexOf(precedente) + 1 : 0, 0, c);
+    }
+    return ordre;
+  } catch {
+    return TOUTES_LES_COLONNES;
+  }
+}
+
+function sauvegarderOrdreColonnes(ordre: Colonne[] | null) {
+  try {
+    if (ordre) localStorage.setItem(CLE_ORDRE_COLONNES, JSON.stringify(ordre));
+    else localStorage.removeItem(CLE_ORDRE_COLONNES);
+  } catch {
+    // stockage indisponible : l'ordre reste valable pour la session
+  }
 }
 
 function chargerCompact(): boolean {
@@ -165,16 +219,16 @@ function sauvegarderInverse(inverse: boolean) {
 const CLE_LARGEURS = "caisses:largeursColonnes:demandes";
 const LARGEUR_MIN = 40;
 
-function chargerLargeurs(): Partial<Record<Champ, number>> {
+function chargerLargeurs(): Partial<Record<Colonne, number>> {
   try {
     const brut = localStorage.getItem(CLE_LARGEURS);
-    return brut ? (JSON.parse(brut) as Partial<Record<Champ, number>>) : {};
+    return brut ? (JSON.parse(brut) as Partial<Record<Colonne, number>>) : {};
   } catch {
     return {};
   }
 }
 
-function sauvegarderLargeurs(largeurs: Partial<Record<Champ, number>>) {
+function sauvegarderLargeurs(largeurs: Partial<Record<Colonne, number>>) {
   localStorage.setItem(CLE_LARGEURS, JSON.stringify(largeurs));
 }
 
@@ -222,7 +276,7 @@ function valeurTexte(d: Demande, champ: Champ): string {
 
 // align: "center" pour les dates et Qté, "left" (défaut) pour tout le reste — toutes les
 // valeurs texte sont alignées à gauche avec une petite marge (cf. tdStyle).
-const COLONNES: { champ: Champ; label: string; align?: "left" | "center" }[] = [
+const COLONNES: { champ: Colonne; label: string; align?: "left" | "center" }[] = [
   { champ: "ok_pour_passer_cde", label: "OK pour être commandée" },
   { champ: "affaire", label: "Affaire" },
   { champ: "type_envoi_caisse", label: "Type envoi caisse" },
@@ -241,6 +295,8 @@ const COLONNES: { champ: Champ; label: string; align?: "left" | "center" }[] = [
   { champ: "informations_supp", label: "Infos suppl." },
   { champ: "cde_passee_affaire", label: "Cde passée affaire" },
   { champ: "cde_passee_achat_stock", label: "Cde passée achat stock" },
+  // Calculée : taux de remplissage de l'affaire simulée du même nom (non filtrable).
+  { champ: "taux_remplissage", label: "Taux de remplissage" },
   // `observations` reste un champ (marqueur Livré/Reçu) mais n'est plus affiché en colonne.
 ];
 
@@ -264,6 +320,7 @@ export default function DemandesTable({
   optionsPersonnalisees,
   slotOptions,
   readOnly,
+  tauxRemplissage,
 }: Props) {
   const { parChamp: optionsParChamp, parChampSousLigne: optionsParChampSousLigne } = useMemo(
     () => buildOptions(optionsPersonnalisees),
@@ -273,18 +330,18 @@ export default function DemandesTable({
   const [tri, setTri] = useState<Tri | null>(() => chargerTri());
   const [filtres, setFiltres] = useState<Filtres>(() => chargerFiltres());
   const [menuOuvert, setMenuOuvert] = useState<Champ | null>(null);
-  const [colonnesVisibles, setColonnesVisibles] = useState<Set<Champ>>(() => chargerColonnesVisibles(TOUTES_LES_COLONNES));
+  const [colonnesVisibles, setColonnesVisibles] = useState<Set<Colonne>>(() => chargerColonnesVisibles(TOUTES_LES_COLONNES));
+  const [ordreColonnes, setOrdreColonnes] = useState<Colonne[]>(() => chargerOrdreColonnes());
   const [compact, setCompact] = useState(() => chargerCompact());
   const [masquerValidees, setMasquerValidees] = useState(() => chargerMasquerValidees());
   const [inverse, setInverse] = useState(() => chargerInverse());
-  const [menuContextuel, setMenuContextuel] = useState<{ demande: Demande; x: number; y: number; validee: boolean } | null>(null);
-  const [largeurs, setLargeurs] = useState<Partial<Record<Champ, number>>>(() => chargerLargeurs());
+  const [largeurs, setLargeurs] = useState<Partial<Record<Colonne, number>>>(() => chargerLargeurs());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const boutonsFiltreRef = useRef<Partial<Record<Champ, HTMLButtonElement>>>({});
-  const redimensionnement = useRef<{ champ: Champ; xDepart: number; largeurDepart: number } | null>(null);
+  const redimensionnement = useRef<{ champ: Colonne; xDepart: number; largeurDepart: number } | null>(null);
   const conteneurScrollRef = useRef<HTMLDivElement>(null);
 
-  function commencerRedimensionnement(e: React.PointerEvent, champ: Champ, largeurActuelle: number) {
+  function commencerRedimensionnement(e: React.PointerEvent, champ: Colonne, largeurActuelle: number) {
     e.preventDefault();
     e.stopPropagation();
     redimensionnement.current = { champ, xDepart: e.clientX, largeurDepart: largeurActuelle };
@@ -308,18 +365,9 @@ export default function DemandesTable({
     document.addEventListener("pointerup", onUp);
   }
 
-  function largeurColonne(champ: Champ): number {
+  function largeurColonne(champ: Colonne): number {
     return largeurs[champ] ?? (compact ? 90 : 130);
   }
-
-  useEffect(() => {
-    if (!menuContextuel) return;
-    function fermer() {
-      setMenuContextuel(null);
-    }
-    document.addEventListener("click", fermer);
-    return () => document.removeEventListener("click", fermer);
-  }, [menuContextuel]);
 
   // Une ligne sélectionnée peut disparaître du brouillon (suppression de l'affaire avant
   // enregistrement) sans passer par toggleSelect/validerSelection — purger la sélection pour
@@ -333,9 +381,15 @@ export default function DemandesTable({
     });
   }, [demandes]);
 
-  function changerColonnesVisibles(visibles: Set<Champ>) {
+  function changerColonnesVisibles(visibles: Set<Colonne>) {
     setColonnesVisibles(visibles);
     sauvegarderColonnesVisibles(visibles);
+  }
+
+  // null = ordre par défaut.
+  function changerOrdreColonnes(ordre: Colonne[] | null) {
+    setOrdreColonnes(ordre ?? TOUTES_LES_COLONNES);
+    sauvegarderOrdreColonnes(ordre);
   }
 
   function changerCompact(v: boolean) {
@@ -378,13 +432,15 @@ export default function DemandesTable({
     setSelectedIds(new Set());
   }
 
-  const colonnesAffichees = COLONNES.filter((c) => colonnesVisibles.has(c.champ));
+  const colonnesAffichees = ordreColonnes
+    .map((id) => COLONNES.find((c) => c.champ === id)!)
+    .filter((c) => c && colonnesVisibles.has(c.champ));
 
   // Colonnes qui passent par EditableCellInput (texte/nombre/date) — les booléens et "stock"
   // ont leur propre widget (case à cocher / <select>) et ne font pas partie du parcours Tab.
   const champsEditablesOrdre = colonnesAffichees
     .map((c) => c.champ)
-    .filter((champ) => !CHAMPS_BOOL.has(champ) && champ !== "stock");
+    .filter((champ): champ is Champ => champ !== "taux_remplissage" && !CHAMPS_BOOL.has(champ) && champ !== "stock");
 
   function champEditableSuivant(champActuel: Champ, backward: boolean): Champ | null {
     const index = champsEditablesOrdre.indexOf(champActuel);
@@ -501,7 +557,7 @@ export default function DemandesTable({
   }
 
   function cell(demande: Demande, champ: Champ, align: "left" | "center" = "left", td: React.CSSProperties = tdStyle) {
-    // Ligne livrée / rapatriée : plus rien n'est modifiable (seul « Dévalider » reste possible).
+    // Ligne livrée / rapatriée : plus rien n'est modifiable (seul « Non livré » reste possible).
     const figee = readOnly || estDemandeValidee(demande);
     if (CHAMPS_BOOL.has(champ)) {
       return (
@@ -529,7 +585,7 @@ export default function DemandesTable({
             <option value="">—</option>
             {options.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.nom}
+                {libelleCaisseStock(c)}
               </option>
             ))}
           </select>
@@ -634,12 +690,18 @@ export default function DemandesTable({
           maxWidth: largeur,
           // Un filtre actif sur la colonne teinte son en-tête (repère visuel).
           background: filtreActif ? "var(--filtre-actif-bg)" : th.background,
+          verticalAlign: "top",
+          paddingBottom: 26,
         }}
       >
-        {/* Libellé à gauche (ou centré), icône toujours calée à droite de la colonne. */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-          <span style={{ flex: 1, minWidth: 0, textAlign: align, wordBreak: "keep-all", overflowWrap: "normal" }}>{label}</span>
-          <button
+        {/* Libellé en haut (il peut passer sur plusieurs lignes à gauche), icône fixée en bas à
+            droite de la cellule. L'espace réservé en fin de texte empêche l'icône de le recouvrir,
+            même quand la colonne est étroite (retour utilisateur du 2026-10-02). */}
+        <div style={{ textAlign: align, wordBreak: "keep-all", overflowWrap: "normal" }}>
+          {label}
+          <span aria-hidden="true" style={{ display: "inline-block", width: actif ? 34 : 24 }} />
+        </div>
+        <button
             ref={(el) => {
               if (el) boutonsFiltreRef.current[champ] = el;
             }}
@@ -647,7 +709,9 @@ export default function DemandesTable({
             title={filtreActif ? "Filtre actif — trier et filtrer" : "Trier et filtrer"}
             className={`btn-filtre-colonne${actif || filtreActif ? " btn-filtre-colonne-actif" : ""}`}
             style={{
-              flexShrink: 0,
+              position: "absolute",
+              right: 8,
+              bottom: 5,
               background: filtreActif ? "var(--accent)" : "none",
               border: "none",
               borderRadius: 4,
@@ -664,7 +728,6 @@ export default function DemandesTable({
             <IconeFiltre plein={filtreActif} />
             {actif && (tri!.sens === "asc" ? "▲" : "▼")}
           </button>
-        </div>
         {menuOuvert === champ && boutonsFiltreRef.current[champ] && (
           <ColumnFilterMenu
             valeurs={valeursDistinctes}
@@ -699,7 +762,8 @@ export default function DemandesTable({
 
   const optionsMenu = (
     <TableOptionsMenu
-      colonnes={COLONNES.map((c) => ({ champ: c.champ, label: c.label }))}
+      colonnes={ordreColonnes.map((id) => ({ champ: id, label: COLONNES.find((c) => c.champ === id)!.label }))}
+      onChangeOrdre={changerOrdreColonnes}
       colonnesVisibles={colonnesVisibles}
       onChangeColonnesVisibles={changerColonnesVisibles}
       compact={compact}
@@ -723,7 +787,7 @@ export default function DemandesTable({
                   Valider la sélection ({selectedIds.size})
                 </button>
                 <button className="btn btn-sm" onClick={() => validerSelection(false)}>
-                  Dévalider la sélection
+                  Non livré (sélection)
                 </button>
               </div>
             )}
@@ -750,9 +814,22 @@ export default function DemandesTable({
                   onChange={toggleSelectAll}
                 />
               </th>
-              {colonnesAffichees.map((c) => (
-                <Fragment key={c.champ}>{thFiltrable(c.champ, c.label, c.align, th)}</Fragment>
-              ))}
+              {colonnesAffichees.map((c) =>
+                c.champ === "taux_remplissage" ? (
+                  <th
+                    key={c.champ}
+                    style={{ ...th, position: "sticky", top: 0, verticalAlign: "top", textAlign: "center", width: largeurColonne(c.champ), maxWidth: largeurColonne(c.champ) }}
+                  >
+                    {c.label}
+                    <div
+                      onPointerDown={(e) => commencerRedimensionnement(e, c.champ, largeurColonne(c.champ))}
+                      style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 6, cursor: "col-resize", touchAction: "none" }}
+                    />
+                  </th>
+                ) : (
+                  <Fragment key={c.champ}>{thFiltrable(c.champ, c.label, c.align, th)}</Fragment>
+                ),
+              )}
               <th style={{ ...th, width: 210 }}>Actions</th>
             </tr>
           </thead>
@@ -782,10 +859,6 @@ export default function DemandesTable({
                   <Fragment key={d.id}>
                     <tr
                       className="article-row"
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setMenuContextuel({ demande: d, x: e.clientX, y: e.clientY, validee: estValidee });
-                      }}
                       style={{
                         background: selectedIds.has(d.id)
                           ? "var(--accent-soft-strong)"
@@ -819,13 +892,22 @@ export default function DemandesTable({
                       <td style={td}>
                         <input type="checkbox" checked={selectedIds.has(d.id)} onChange={() => toggleSelect(d.id)} />
                       </td>
-                      {colonnesAffichees.map((c) => (
-                        <Fragment key={c.champ}>{cell(d, c.champ, c.align, td)}</Fragment>
-                      ))}
+                      {colonnesAffichees.map((c) =>
+                        c.champ === "taux_remplissage" ? (
+                          <td key={c.champ} style={{ ...td, textAlign: "center", width: largeurColonne(c.champ), maxWidth: largeurColonne(c.champ) }}>
+                            {(() => {
+                              const t = tauxRemplissage?.mere(d);
+                              return t ? <TauxRemplissage caisses={t.caisses} seuil={t.seuil} pastille /> : null;
+                            })()}
+                          </td>
+                        ) : (
+                          <Fragment key={c.champ}>{cell(d, c.champ, c.align, td)}</Fragment>
+                        ),
+                      )}
                       <td style={{ ...td, whiteSpace: "nowrap" }}>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           <button className="btn btn-sm btn-pastel-green" onClick={() => onValider(d.id, !estValidee)} disabled={readOnly}>
-                            {estValidee ? "Dévalider" : "Livré"}
+                            {estValidee ? "Non livré" : "Livré"}
                           </button>
                           <button className="btn btn-sm btn-pastel-orange" onClick={() => onSimulerAffaire(d)}>
                             Simuler
@@ -857,6 +939,7 @@ export default function DemandesTable({
                           onEdit={(patch) => onEditDemandeCaisse(sc.id, patch)}
                           onDelete={() => onDeleteDemandeCaisse(sc.id)}
                           onSelectStock={(id) => onSelectStockSousLigne(sc.id, id)}
+                          taux={tauxRemplissage?.sous(sc, d) ?? null}
                         />
                       ))}
                   </Fragment>
@@ -867,76 +950,16 @@ export default function DemandesTable({
         </table>
       </div>
 
-      {menuContextuel &&
-        createPortal(
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: "fixed",
-              // Recale le menu dans le viewport : sur un clic droit près du bas de l'écran
-              // (dernière ligne du tableau), il s'ouvrait vers le bas et se retrouvait tronqué.
-              ...positionMenuContextuel(menuContextuel.x, menuContextuel.y, 190, 132),
-              background: "var(--bg-panel)",
-              border: "1px solid var(--border-strong)",
-              borderRadius: "var(--radius)",
-              boxShadow: "var(--shadow-lg)",
-              zIndex: 1000,
-              fontSize: 13,
-              minWidth: 180,
-            }}
-          >
-            <button
-              onClick={() => {
-                onValider(menuContextuel.demande.id, !menuContextuel.validee);
-                setMenuContextuel(null);
-              }}
-              style={menuBoutonStyle}
-            >
-              {menuContextuel.validee ? "Dévalider la caisse" : "Valider la caisse"}
-            </button>
-            <button
-              onClick={() => {
-                onSimulerAffaire(menuContextuel.demande);
-                setMenuContextuel(null);
-              }}
-              style={menuBoutonStyle}
-            >
-              Simuler l'affaire
-            </button>
-            <button
-              onClick={() => {
-                onCreerDemandeCaisse(menuContextuel.demande);
-                setMenuContextuel(null);
-              }}
-              disabled={readOnly || menuContextuel.validee}
-              title={menuContextuel.validee ? "Caisse livrée : dévalider d'abord" : undefined}
-              style={{ ...menuBoutonStyle, opacity: readOnly || menuContextuel.validee ? 0.45 : 1 }}
-            >
-              Créer une nouvelle caisse
-            </button>
-          </div>,
-          document.body
-        )}
-
       <ScrollToTopButton cible={conteneurScrollRef} />
     </div>
   );
-}
-
-// Cale un menu contextuel (dimensions estimées `larg` × `haut`) dans le viewport à partir du
-// point de clic : bascule vers le haut / la gauche s'il déborderait, avec une marge de 8px.
-function positionMenuContextuel(x: number, y: number, larg: number, haut: number): { top: number; left: number } {
-  const marge = 8;
-  const top = y + haut + marge > window.innerHeight ? Math.max(marge, y - haut) : y;
-  const left = x + larg + marge > window.innerWidth ? Math.max(marge, x - larg) : x;
-  return { top, left };
 }
 
 // Correspondance entre les colonnes de la demande parente et le champ équivalent porté par une
 // sous-caisse — permet d'aligner chaque valeur sous la colonne du tableau qui lui correspond,
 // pour que la sous-ligne se lise visuellement comme une vraie ligne du même tableau plutôt qu'un
 // mini-formulaire séparé. `null` = pas d'équivalent, la cellule reste vide sous cette colonne.
-const CHAMP_SOUS_LIGNE: Partial<Record<Champ, keyof DemandeCaisse>> = {
+const CHAMP_SOUS_LIGNE: Partial<Record<Colonne, keyof DemandeCaisse>> = {
   affaire: "nom",
   type_envoi_caisse: "type_envoi_caisse",
   type_ouverture: "type_ouverture",
@@ -976,9 +999,10 @@ function SousLigneCaisse({
   onEdit,
   onDelete,
   onSelectStock,
+  taux,
 }: {
   caisse: DemandeCaisse;
-  colonnesAffichees: { champ: Champ; label: string; align?: "left" | "center"; largeur: number }[];
+  colonnesAffichees: { champ: Colonne; label: string; align?: "left" | "center"; largeur: number }[];
   caissesStock: CaisseStock[];
   optionsParChamp: Partial<Record<keyof DemandeCaisse, string[]>>;
   td: React.CSSProperties;
@@ -987,6 +1011,7 @@ function SousLigneCaisse({
   onEdit: (patch: Partial<DemandeCaisse>) => void;
   onDelete: () => void;
   onSelectStock: (caisseStockId: number | null) => void;
+  taux: TauxLigne | null;
 }) {
   const [champEnEdition, setChampEnEdition] = useState<keyof DemandeCaisse | null>(null);
 
@@ -1020,7 +1045,7 @@ function SousLigneCaisse({
     }
   }
 
-  function cellulePourColonne(colonne: { champ: Champ; align?: "left" | "center"; largeur: number }) {
+  function cellulePourColonne(colonne: { champ: Colonne; align?: "left" | "center"; largeur: number }) {
     const champSousLigne = CHAMP_SOUS_LIGNE[colonne.champ];
     const style: React.CSSProperties = {
       ...td,
@@ -1030,6 +1055,13 @@ function SousLigneCaisse({
       whiteSpace: "normal",
       wordBreak: "break-word",
     };
+    if (colonne.champ === "taux_remplissage") {
+      return (
+        <td style={{ ...style, textAlign: "center" }}>
+          {taux && <TauxRemplissage caisses={taux.caisses} seuil={taux.seuil} pastille />}
+        </td>
+      );
+    }
 
     if (!champSousLigne) return <td style={style} />;
 
@@ -1047,7 +1079,7 @@ function SousLigneCaisse({
             <option value="">—</option>
             {options.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.nom}
+                {libelleCaisseStock(c)}
               </option>
             ))}
           </select>
@@ -1342,17 +1374,6 @@ function AvertissementBadge({ texte, rouge }: { texte: string; rouge?: boolean }
     </span>
   );
 }
-
-const menuBoutonStyle: React.CSSProperties = {
-  display: "block",
-  width: "100%",
-  textAlign: "left",
-  padding: "8px 12px",
-  background: "none",
-  border: "none",
-  cursor: "pointer",
-  font: "inherit",
-};
 
 const thStyle: React.CSSProperties = {
   padding: "10px 8px",

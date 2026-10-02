@@ -5,7 +5,8 @@ import type { Article, Caisse, CaisseStock, Demande, DemandeCaisse } from "./typ
 
 // Suggestion de caisse en stock pour une caisse de Simulations (décisions 2026-10-01 / 2026-10-02) :
 //  - seulement pour un envoi STANDARD (pas de caisse en stock en 4B / 4C) ;
-//  - caisses candidates : AR_CAISS_ gérées avec au moins 1 en stock, et caisses de récup
+//  - caisses candidates : AR_CAISS_ avec au moins 1 en stock (gérées ou non : une non gérée est
+//    une caisse qu'on écoule, décision 2026-10-02), et caisses de récup
 //    disponibles (pas livrées, pas déjà prises par une autre ligne de Gestion des caisses) ;
 //  - la caisse doit contenir les plus grandes dimensions des articles (axes stricts, comme
 //    l'alerte « article plus grand que la caisse » : dim1↔longueur, dim2↔largeur, dim3↔hauteur)
@@ -57,7 +58,7 @@ export function suggererCaisseStock(params: {
   const dim3 = Math.max(...articles.map((a) => a.dim3_mm));
 
   const candidates = caissesStock.filter((cs) => {
-    const disponible = estArCaiss(cs.nom) ? cs.gere && cs.quantite > 0 : recupDisponible(cs, demandes, demandeCaisses, liens);
+    const disponible = estArCaiss(cs.nom) ? cs.quantite > 0 : recupDisponible(cs, demandes, demandeCaisses, liens);
     if (!disponible) return false;
     if (dim1 - cs.longueur_mm > TOLERANCE_MM || dim2 - cs.largeur_mm > TOLERANCE_MM || dim3 - cs.hauteur_mm > TOLERANCE_MM) return false;
     return volume <= volumeInterneM3(cs) * (seuilPct / 100);

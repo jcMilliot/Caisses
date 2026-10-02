@@ -377,10 +377,7 @@ function UtilisateursOnglet({ trigramme }: { trigramme: string }) {
   return (
     <div>
       <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 14px" }}>
-        Trigrammes saisis sur les postes qui utilisent cette base. Un trigramme apparaît ici dès que quelqu'un l'a
-        choisi au premier lancement ; la dernière connexion est mise à jour à chaque démarrage de l'app. Rôles :
-        Utilisateur (accès normal), Lecteur (lecture seule partout), Administrateur (page Admin, mot de passe
-        personnel). Il reste toujours au moins un administrateur.
+        Gestion des utilisateurs
       </p>
       {erreur && <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--danger-text)" }}>{erreur}</p>}
       <div className="panel" style={{ padding: 0, overflow: "auto", maxWidth: 760 }}>
@@ -537,6 +534,69 @@ function ParametresOnglet() {
       {message && (
         <p style={{ margin: "12px 0 0", fontSize: 13, color: message.ok ? "var(--ok-text)" : "var(--danger-text)" }}>{message.texte}</p>
       )}
+      <PoidsMaxParametre />
+    </div>
+  );
+}
+
+// Limite de poids au m² d'une caisse (alerte « Charge trop lourde » de Simulations, 2026-10-02).
+function PoidsMaxParametre() {
+  const [actuel, setActuel] = useState<number | null>(null);
+  const [saisie, setSaisie] = useState("");
+  const [message, setMessage] = useState<{ ok: boolean; texte: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    affairesApi
+      .getPoidsMaxKgM2()
+      .then((p) => {
+        setActuel(p);
+        setSaisie(String(p));
+      })
+      .catch((e) => setMessage({ ok: false, texte: String(e) }));
+  }, []);
+
+  const valeur = Number(saisie.replace(",", "."));
+  const valide = saisie.trim() !== "" && Number.isFinite(valeur) && valeur > 0;
+  const modifie = actuel !== null && valide && valeur !== actuel;
+
+  async function enregistrer() {
+    if (!modifie) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await affairesApi.setPoidsMaxKgM2(valeur);
+      setActuel(valeur);
+      setMessage({ ok: true, texte: "Limite de poids enregistrée — prise en compte à la prochaine ouverture d'une affaire." });
+    } catch (e) {
+      setMessage({ ok: false, texte: String(e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (actuel === null) return message ? <p style={{ color: "var(--danger-text)" }}>{message.texte}</p> : null;
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      <div className="panel" style={{ padding: 20, display: "grid", gap: 14 }}>
+        <label style={labelStyle}>
+          <span style={libelleStyle}>Limite de poids d'une caisse (kg/m²)</span>
+          <input className="input" type="number" min={1} value={saisie} onChange={(e) => setSaisie(e.target.value)} style={{ width: 90 }} />
+        </label>
+        <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: 0 }}>
+          Dans une affaire en simulation, si le poids total des articles présents dans une caisse dépasse la limite au
+          mètre carré, une alerte apparaît.
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button className="btn btn-primary" onClick={enregistrer} disabled={!modifie || busy}>
+            Enregistrer
+          </button>
+        </div>
+      </div>
+      {message && (
+        <p style={{ margin: "12px 0 0", fontSize: 13, color: message.ok ? "var(--ok-text)" : "var(--danger-text)" }}>{message.texte}</p>
+      )}
     </div>
   );
 }
@@ -682,12 +742,47 @@ function RestaurationSection({ trigramme, dossier }: { trigramme: string; dossie
   const [fichiers, setFichiers] = useState<FichierSauvegarde[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Attente de la fermeture des autres postes (demande envoyée) : trigrammes encore ouverts.
+  const [attente, setAttente] = useState<{ chemin: string; postes: string[] } | null>(null);
 
   useEffect(() => {
     setFichiers(null);
     setErreur(null);
     backupApi.listSauvegardes().then(setFichiers).catch((e) => setErreur(String(e)));
   }, [dossier]);
+
+  // Pendant l'attente : on relit les postes ouverts toutes les 3 s, et la restauration part
+  // d'elle-même quand il n'en reste plus.
+  useEffect(() => {
+    if (!attente) return;
+    let annule = false;
+    const id = window.setInterval(async () => {
+      try {
+        const postes = await backupApi.autresPostesActifs();
+        if (annule) return;
+        if (postes.length === 0) {
+          window.clearInterval(id);
+          setAttente(null);
+          await lancerRestauration(attente.chemin);
+        } else {
+          setAttente((a) => (a ? { ...a, postes } : a));
+        }
+      } catch (e) {
+        setErreur(String(e));
+      }
+    }, 3000);
+    return () => {
+      annule = true;
+      window.clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attente?.chemin]);
+
+  async function annulerAttente() {
+    setAttente(null);
+    setBusy(false);
+    await backupApi.annulerFermeture().catch(() => {});
+  }
 
   async function restaurer(chemin: string, libelle: string) {
     const confirme = await confirmerActionRisquee(
@@ -697,6 +792,24 @@ function RestaurationSection({ trigramme, dossier }: { trigramme: string; dossie
       "Restaurer une sauvegarde",
     );
     if (!confirme) return;
+    setErreur(null);
+    // Autres postes ouverts : on leur demande de fermer l'app, et on attend (décision 2026-10-02).
+    const postes = await backupApi.autresPostesActifs().catch(() => [] as string[]);
+    if (postes.length > 0) {
+      setBusy(true);
+      try {
+        await backupApi.demanderFermeture(trigramme);
+        setAttente({ chemin, postes });
+      } catch (e) {
+        setErreur(String(e));
+        setBusy(false);
+      }
+      return;
+    }
+    await lancerRestauration(chemin);
+  }
+
+  async function lancerRestauration(chemin: string) {
     setBusy(true);
     setErreur(null);
     try {
@@ -721,9 +834,34 @@ function RestaurationSection({ trigramme, dossier }: { trigramme: string; dossie
     <div style={{ marginTop: 28 }}>
       <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 6px" }}>Restaurer une sauvegarde</h3>
       <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 12px" }}>
-        Remplace la base par une sauvegarde. Impossible tant que l'app est ouverte sur un autre poste : la fermer
-        partout ailleurs d'abord.
+        Remplace la base par une sauvegarde. Si l'app est ouverte sur d'autres postes, ils reçoivent un message leur
+        demandant de la fermer ; la restauration démarre dès que tous l'ont fermée.
       </p>
+
+      {attente && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            margin: "0 0 12px",
+            padding: "10px 14px",
+            background: "var(--info-bg)",
+            border: "1px solid var(--info-border)",
+            color: "var(--info-text)",
+            borderRadius: 8,
+            fontSize: 13,
+          }}
+        >
+          <span style={{ flex: 1 }}>
+            En attente de la fermeture de l'app sur : <strong>{attente.postes.join(", ")}</strong>. La restauration démarrera
+            automatiquement.
+          </span>
+          <button className="btn btn-sm" onClick={annulerAttente}>
+            Annuler
+          </button>
+        </div>
+      )}
 
       {erreur && (
         <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--danger-text)", wordBreak: "break-word" }}>{erreur}</p>

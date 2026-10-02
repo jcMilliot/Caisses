@@ -5,7 +5,8 @@ mod models;
 mod user_config;
 
 use commands::affaires::{
-    create_affaire, delete_affaire, get_seuil_general, list_affaires, set_seuil_general, update_affaire,
+    create_affaire, delete_affaire, get_poids_max_kg_m2, get_seuil_general, list_affaires, list_remplissage_affaires, set_poids_max_kg_m2,
+    set_seuil_general, update_affaire,
 };
 use commands::articles::{
     assign_articles, bulk_create_articles, create_article, delete_article, list_articles,
@@ -45,7 +46,8 @@ use commands::options_liste::{
     count_option_liste_usage, create_option_liste, delete_option_liste, list_options_liste, rename_option_liste,
 };
 use commands::restauration::{
-    choose_fichier_restauration, list_sauvegardes, restore_sauvegarde, signaler_presence, PosteId,
+    annuler_fermeture_postes, choose_fichier_restauration, demander_fermeture_postes, list_autres_postes_actifs,
+    list_sauvegardes, quitter_poste, restore_sauvegarde, signaler_presence, PosteId,
 };
 use commands::setup::{choose_db_folder, get_db_status, init_db, set_db_folder};
 use commands::user::{get_user_status, set_trigramme};
@@ -89,6 +91,9 @@ pub fn run() {
             update_affaire,
             delete_affaire,
             get_seuil_general,
+            get_poids_max_kg_m2,
+            set_poids_max_kg_m2,
+            list_remplissage_affaires,
             set_seuil_general,
             list_caisses,
             create_caisse,
@@ -168,6 +173,10 @@ pub fn run() {
             list_sauvegardes,
             choose_fichier_restauration,
             restore_sauvegarde,
+            list_autres_postes_actifs,
+            demander_fermeture_postes,
+            annuler_fermeture_postes,
+            quitter_poste,
             set_alerte_barre_taches,
         ])
         .run(tauri::generate_context!())

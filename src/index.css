@@ -33,6 +33,10 @@
 
   /* En-tête d'une colonne ayant un filtre actif (tous les tableaux). */
   --filtre-actif-bg: #eae4f4;
+  /* Violet pastel : pastille « Taux de remplissage » de Gestion des caisses. */
+  --violet-bg: #f1ebfb;
+  --violet-border: #bda8e6;
+  --violet-text: #5b3f9e;
 
   --radius: 8px;
   --radius-lg: 12px;

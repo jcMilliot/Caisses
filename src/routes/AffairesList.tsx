@@ -1,4 +1,6 @@
 import { estLectureSeuleRole } from "../hooks/useSectionLock";
+import TauxRemplissage from "../components/TauxRemplissage";
+import { tauxParAffaire, type TauxCaisse } from "../domain/remplissage";
 import { useEffect, useState } from "react";
 import { affairesApi } from "../data/affaires";
 import { locksApi } from "../data/locks";
@@ -19,12 +21,19 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
   const [creating, setCreating] = useState(false);
   const [nom, setNom] = useState("");
   const [recherche, setRecherche] = useState("");
+  // Taux de remplissage des caisses (avec dimensions et articles) de chaque affaire.
+  const [taux, setTaux] = useState<Map<number, TauxCaisse[]>>(new Map());
 
   async function reload() {
     setLoading(true);
     try {
-      const [a, locks] = await Promise.all([affairesApi.list(), locksApi.list()]);
+      const [a, locks, remplissages] = await Promise.all([
+        affairesApi.list(),
+        locksApi.list(),
+        affairesApi.remplissage().catch(() => []),
+      ]);
       setAffaires(a);
+      setTaux(tauxParAffaire(remplissages));
       const map = new Map<number, SectionLock>();
       for (const lock of locks) {
         if (lock.expire) continue;
@@ -198,6 +207,12 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
                 </div>
                 <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 2 }}>
                   Créée le {new Date(a.date_creation).toLocaleDateString("fr-FR")} · seuil d'alerte {a.seuil_defaut}%
+                  {taux.has(a.id) && (
+                    <>
+                      {" · remplissage "}
+                      <TauxRemplissage caisses={taux.get(a.id)!} seuil={a.seuil_defaut} />
+                    </>
+                  )}
                 </div>
               </div>
               <button

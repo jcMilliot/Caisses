@@ -243,6 +243,28 @@ export default function CaisseCard({
             </div>
           )}
 
+          {caisse.poidsTropLourd && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "7px 10px",
+                background: "var(--danger-bg)",
+                border: "1px solid var(--danger-border)",
+                color: "var(--danger-text)",
+                borderRadius: 6,
+                fontSize: 12,
+              }}
+            >
+              <div style={{ fontWeight: 700 }}>
+                ⚠ Charge trop lourde : {Math.floor(caisse.poidsParM2)} kg/m² (max {caisse.poidsMaxKgM2} kg/m²)
+              </div>
+              <div style={{ marginTop: 2 }}>
+                {caisse.poidsTotalKg.toFixed(1)} kg d'articles sur un fond de {caisse.surfaceFondM2.toFixed(2)} m² — prévoir une
+                caisse plus grande ou répartir les articles.
+              </div>
+            </div>
+          )}
+
           {caisse.articlesTropGrands.length > 0 && (
             <div
               style={{
@@ -282,6 +304,9 @@ export default function CaisseCard({
               <Row label="Volume disponible" value={`${formaterVolumeM3(caisse.volumeDisponibleM3)} m³`} />
             )}
             <Row label="Poids total" value={`${caisse.poidsTotalKg.toFixed(3)} kg`} />
+            {caisse.surfaceFondM2 > 0 && (
+              <Row label={`Poids au m² (max ${caisse.poidsMaxKgM2})`} value={`${Math.floor(caisse.poidsParM2)} kg/m²`} />
+            )}
             <Row label="Seuil d'alerte" value={`${caisse.seuilEffectif}%`} />
           </div>
 
