@@ -78,13 +78,11 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
   const affairesFiltrees = affaires.filter((a) => a.nom.toLowerCase().includes(recherche.trim().toLowerCase()));
 
   return (
-    <div style={{ maxWidth: 920, margin: "0 auto", padding: "48px 24px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 32 }}>
+    <div style={{ maxWidth: 920, margin: "0 auto", padding: "28px 24px 48px" }}>
+      <div className="page-header">
         <div>
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent)", marginBottom: 4 }}>
-            Caisses
-          </div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Affaires</h1>
+          <h1 className="page-title">Affaires</h1>
+          <p className="page-subtitle">Simulations du remplissage et du poids des caisses, par affaire.</p>
         </div>
         <button
           className="btn btn-primary"
@@ -182,11 +180,15 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                padding: "16px 18px",
+                gap: 14,
+                padding: "14px 16px",
                 cursor: "pointer",
               }}
             >
-              <div>
+              <span aria-hidden="true" style={tuileAffaireStyle}>
+                📦
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontWeight: 600, fontSize: 15 }}>{a.nom}</span>
                   {verrou && (
@@ -226,6 +228,9 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
               >
                 Supprimer
               </button>
+              <span aria-hidden="true" style={{ color: "var(--text-faint)", fontSize: 20, lineHeight: 1 }}>
+                ›
+              </span>
             </div>
             );
           })}
@@ -234,6 +239,18 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
     </div>
   );
 }
+
+const tuileAffaireStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 38,
+  height: 38,
+  borderRadius: 10,
+  background: "var(--accent-soft)",
+  fontSize: 19,
+  flexShrink: 0,
+};
 
 const labelStyle: React.CSSProperties = {
   display: "block",

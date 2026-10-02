@@ -555,15 +555,15 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
   return (
     <div style={{ maxWidth: 1600, margin: "0 auto", padding: "28px 24px 60px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24, paddingBottom: 18, borderBottom: "1px solid var(--border)" }}>
-        <button className="btn btn-sm" onClick={onBack}>
+        <button className="btn btn-sm btn-ghost" onClick={onBack} title="Revenir à la liste des affaires">
           ← Affaires
         </button>
         <div style={{ width: 1, height: 20, background: "var(--border-strong)" }} />
-        <h1 style={{ fontSize: 21, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>{affaire.nom}</h1>
+        <h1 style={{ fontSize: 23, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>{affaire.nom}</h1>
         <span
           title="Seuil de remplissage au-delà duquel une caisse passe en alerte — réglé dans l'Admin"
           style={{
-            fontSize: 15,
+            fontSize: 14,
             fontWeight: 600,
             color: "var(--warn-text)",
             background: "var(--warn-bg)",
@@ -707,9 +707,11 @@ function RecapAffaireBandeau({
         gap: 10,
         marginBottom: 24,
         padding: "12px 18px",
-        background: "var(--bg-panel-alt)",
+        background: "rgba(255, 255, 255, 0.94)",
+        backdropFilter: "blur(6px)",
         border: "1px solid var(--border)",
-        borderRadius: "var(--radius)",
+        borderRadius: "var(--radius-lg)",
+        boxShadow: "var(--shadow-sm)",
         fontSize: 13,
         // Se cale juste sous la barre de navigation principale (sticky, --nav-h) pendant le scroll.
         position: "sticky",
@@ -760,9 +762,7 @@ function RecapAffaireBandeau({
 function RecapValeur({ label, valeur }: { label: string; valeur: string }) {
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--text-muted)" }}>
-        {label}
-      </span>
+      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>{label}</span>
       <span className="mono" style={{ fontWeight: 700 }}>
         {valeur}
       </span>
@@ -771,12 +771,10 @@ function RecapValeur({ label, valeur }: { label: string; valeur: string }) {
 }
 
 const sectionTitleStyle: React.CSSProperties = {
-  fontSize: 14,
+  fontSize: 16,
   fontWeight: 700,
   margin: 0,
-  letterSpacing: "0.02em",
-  textTransform: "uppercase",
-  color: "var(--text-muted)",
+  color: "var(--text)",
   display: "flex",
   alignItems: "center",
   gap: 8,
@@ -785,11 +783,9 @@ const sectionTitleStyle: React.CSSProperties = {
 const sectionCountStyle: React.CSSProperties = {
   fontSize: 11.5,
   fontWeight: 700,
-  color: "var(--text)",
-  background: "var(--bg-panel-alt)",
-  border: "1px solid var(--border)",
+  background: "var(--accent-soft)",
+  color: "var(--accent)",
+  border: "none",
   borderRadius: 999,
-  padding: "1px 8px",
-  letterSpacing: 0,
-  textTransform: "none",
+  padding: "1px 9px",
 };
