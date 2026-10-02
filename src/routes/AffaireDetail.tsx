@@ -312,7 +312,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
     <section
       style={
         caissesPosition === "droite"
-          ? { width: 300, flexShrink: 0, position: "sticky", top: 120, maxHeight: "calc(100vh - 140px)", overflowY: "auto" }
+          ? { width: 300, flexShrink: 0, position: "sticky", top: "calc(var(--nav-h) + 74px)", maxHeight: "calc(100vh - var(--nav-h) - 94px)", overflowY: "auto" }
           : { marginBottom: 28 }
       }
     >
@@ -711,9 +711,9 @@ function RecapAffaireBandeau({
         border: "1px solid var(--border)",
         borderRadius: "var(--radius)",
         fontSize: 13,
-        // Se cale juste sous la barre de navigation principale (sticky, ~46px) pendant le scroll.
+        // Se cale juste sous la barre de navigation principale (sticky, --nav-h) pendant le scroll.
         position: "sticky",
-        top: 46,
+        top: "var(--nav-h)",
         zIndex: 20,
       }}
     >

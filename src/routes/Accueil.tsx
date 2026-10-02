@@ -3,6 +3,8 @@ import { demandesApi } from "../data/demandes";
 import { caisseStockApi } from "../data/caisseStock";
 import { caissesStockACommander } from "../domain/caisseStock";
 import PastilleAlerte from "../components/PastilleAlerte";
+import IconeNav from "../components/IconeNav";
+import iconeApp from "../assets/app-icon.png";
 import { dateIsoVersAffichage } from "../domain/dates";
 import { MESSAGE_ALERTE_COMMANDE, caissesACommanderCetteSemaine, caissesARapatrierCetteSemaine, type AffaireACommander } from "../domain/caissesACommander";
 import type { CaisseStock, Demande } from "../domain/types";
@@ -68,16 +70,21 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
     {/* Pas de bandeau sur l'accueil : Admin et Documentation y sont posés aux coins de l'écran
         (Admin en haut à droite comme dans le bandeau des autres pages). */}
     {estAdmin && (
-      <button className="btn btn-sm" onClick={() => onSelect("admin")} style={{ position: "fixed", top: 16, right: 24, zIndex: 50 }}>
+      <button className="nav-lien" onClick={() => onSelect("admin")} style={{ position: "fixed", top: 14, right: 20, zIndex: 50 }}>
+        <IconeNav nom="admin" taille={15} />
         Admin
       </button>
     )}
-    <button className="btn btn-sm" onClick={() => onSelect("documentation")} style={{ position: "fixed", bottom: 16, left: 24, zIndex: 50 }}>
+    <button className="nav-lien" onClick={() => onSelect("documentation")} style={{ position: "fixed", bottom: 14, left: 20, zIndex: 50 }}>
+      <IconeNav nom="documentation" taille={15} />
       Documentation
     </button>
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "48px 24px", display: "flex", gap: 48 }}>
       <div style={{ flex: "0 0 auto", width: 520 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, margin: "0 0 24px", letterSpacing: "-0.01em" }}>Accueil</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 24px" }}>
+          <img src={iconeApp} alt="" style={{ width: 36, height: 36, borderRadius: 9 }} />
+          <h1 className="page-title">Accueil</h1>
+        </div>
         <div
           style={{
             display: "grid",
@@ -86,24 +93,9 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
           }}
         >
           {CARDS.map((c) => (
-            <button
-              key={c.id}
-              className="panel"
-              onClick={() => onSelect(c.id)}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-start",
-                gap: 8,
-                padding: 24,
-                textAlign: "left",
-                cursor: "pointer",
-                border: "1px solid var(--border)",
-                background: "var(--bg-panel)",
-              }}
-            >
-              <span style={{ fontSize: 32 }}>{c.icone}</span>
-              <span style={{ fontSize: 18, fontWeight: 600 }}>{c.titre}</span>
+            <button key={c.id} className="panel carte-accueil" onClick={() => onSelect(c.id)}>
+              <span className="carte-accueil-icone">{c.icone}</span>
+              <span style={{ fontSize: 16.5, fontWeight: 650, marginTop: 6 }}>{c.titre}</span>
               <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{c.description}</span>
             </button>
           ))}
@@ -135,8 +127,8 @@ function ListeAffaires({
 }) {
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 16px", letterSpacing: "-0.01em" }}>{titre}</h2>
-      <div className="panel" style={{ padding: affaires.length > 0 ? 0 : 24, color: "var(--text-muted)" }}>
+      <h2 style={titreBlocStyle}>{titre}</h2>
+      <div className="panel liste-accueil" style={{ padding: affaires.length > 0 ? 0 : "18px 20px", color: "var(--text-muted)", overflow: "hidden" }}>
         {chargement ? (
           <p style={{ margin: 0, padding: 24 }}>Chargement…</p>
         ) : affaires.length === 0 ? (
@@ -150,8 +142,7 @@ function ListeAffaires({
                   display: "flex",
                   justifyContent: "space-between",
                   gap: 12,
-                  padding: "10px 16px",
-                  borderBottom: "1px solid var(--border)",
+                  padding: "11px 18px",
                   background: urgent ? "var(--danger-bg)" : undefined,
                 }}
                 title={urgent ? MESSAGE_ALERTE_COMMANDE : undefined}
@@ -178,8 +169,8 @@ function ListeAffaires({
 function StockACommander({ caisses, onOuvrir }: { caisses: CaisseStock[]; onOuvrir: () => void }) {
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 16px", letterSpacing: "-0.01em" }}>Caisses de stock à commander</h2>
-      <div className="panel" style={{ padding: 0 }}>
+      <h2 style={titreBlocStyle}>Caisses de stock à commander</h2>
+      <div className="panel liste-accueil" style={{ padding: 0, overflow: "hidden" }}>
         <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
           {caisses.map((c) => (
             <li
@@ -190,8 +181,7 @@ function StockACommander({ caisses, onOuvrir }: { caisses: CaisseStock[]; onOuvr
                 justifyContent: "space-between",
                 alignItems: "center",
                 gap: 12,
-                padding: "10px 16px",
-                borderBottom: "1px solid var(--border)",
+                padding: "11px 18px",
                 background: "var(--danger-bg)",
                 cursor: "pointer",
               }}
@@ -211,3 +201,5 @@ function StockACommander({ caisses, onOuvrir }: { caisses: CaisseStock[]; onOuvr
     </div>
   );
 }
+
+const titreBlocStyle: React.CSSProperties = { fontSize: 17, fontWeight: 700, margin: "0 0 12px" };

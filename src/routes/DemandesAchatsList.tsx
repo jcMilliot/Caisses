@@ -188,7 +188,7 @@ export default function DemandesAchatsList({ trigramme }: Props) {
           alignItems: "flex-end",
           padding: "24px 0 16px",
           position: "sticky",
-          top: 45,
+          top: "calc(var(--nav-h) - 1px)",
           zIndex: 40,
           background: "var(--bg)",
         }}
