@@ -13,6 +13,8 @@ import TrigrammeSetup from "./components/TrigrammeSetup";
 import BandeauMiseAJour from "./components/BandeauMiseAJour";
 import ConfirmDialogHost from "./components/ConfirmDialogHost";
 import DemandeFermetureDialog from "./components/DemandeFermetureDialog";
+import IconeNav from "./components/IconeNav";
+import iconeApp from "./assets/app-icon.png";
 import { confirmerAction } from "./data/confirm";
 import { adminApi, type Role } from "./data/admin";
 import { definirLectureSeuleRole } from "./hooks/useSectionLock";
@@ -226,42 +228,41 @@ export default function App() {
       )}
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column" }}>
       {section !== "accueil" && (
-        <nav
-          style={{
-            display: "flex",
-            gap: 4,
-            padding: "10px 24px",
-            borderBottom: "1px solid var(--border)",
-            background: "var(--bg-panel)",
-            position: "sticky",
-            top: 0,
-            zIndex: 50,
-          }}
-        >
-          <button className="btn btn-sm" onClick={() => handleSelectSection("accueil")}>
-            ← Accueil
+        // Barre de navigation en onglets (refonte visuelle 2026-10-02) : logo + nom à gauche,
+        // entrées inchangées (Accueil, 4 sections), Documentation / Admin en liens discrets à droite.
+        // Hauteur = --nav-h (index.css), repère des bandeaux collants des écrans.
+        <nav className="app-nav">
+          <div className="app-nav-brand">
+            <img src={iconeApp} alt="" />
+            Caisses
+          </div>
+          <button className="nav-tab" onClick={() => handleSelectSection("accueil")}>
+            <IconeNav nom="accueil" taille={15} />
+            Accueil
           </button>
           {SECTIONS.map((s) => (
             <button
               key={s.id}
-              className={section === s.id ? "btn btn-primary btn-sm" : "btn btn-sm"}
+              className={section === s.id ? "nav-tab actif" : "nav-tab"}
               onClick={() => handleSelectSection(s.id)}
             >
               {s.label}
             </button>
           ))}
+          <span style={{ marginLeft: "auto" }} />
           <button
-            className={section === "documentation" ? "btn btn-primary btn-sm" : "btn btn-sm"}
+            className={section === "documentation" ? "nav-lien actif" : "nav-lien"}
             onClick={() => handleSelectSection("documentation")}
-            style={{ marginLeft: "auto" }}
           >
+            <IconeNav nom="documentation" taille={15} />
             Documentation
           </button>
           {estAdmin && (
             <button
-              className={section === "admin" ? "btn btn-primary btn-sm" : "btn btn-sm"}
+              className={section === "admin" ? "nav-lien actif" : "nav-lien"}
               onClick={() => handleSelectSection("admin")}
             >
+              <IconeNav nom="admin" taille={15} />
               Admin
             </button>
           )}
