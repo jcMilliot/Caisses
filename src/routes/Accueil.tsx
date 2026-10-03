@@ -4,7 +4,6 @@ import { caisseStockApi } from "../data/caisseStock";
 import { caissesStockACommander } from "../domain/caisseStock";
 import PastilleAlerte from "../components/PastilleAlerte";
 import IconeNav from "../components/IconeNav";
-import iconeApp from "../assets/app-icon.png";
 import { dateIsoVersAffichage } from "../domain/dates";
 import { MESSAGE_ALERTE_COMMANDE, caissesACommanderCetteSemaine, caissesARapatrierCetteSemaine, type AffaireACommander } from "../domain/caissesACommander";
 import type { CaisseStock, Demande } from "../domain/types";
@@ -81,10 +80,7 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
     </button>
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "48px 24px", display: "flex", gap: 48 }}>
       <div style={{ flex: "0 0 auto", width: 520 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 24px" }}>
-          <img src={iconeApp} alt="" style={{ width: 36, height: 36, borderRadius: 9 }} />
-          <h1 className="page-title">Accueil</h1>
-        </div>
+        <h1 className="page-title" style={{ margin: "0 0 24px" }}>Accueil</h1>
         <div
           style={{
             display: "grid",

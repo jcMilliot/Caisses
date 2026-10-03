@@ -14,7 +14,6 @@ import BandeauMiseAJour from "./components/BandeauMiseAJour";
 import ConfirmDialogHost from "./components/ConfirmDialogHost";
 import DemandeFermetureDialog from "./components/DemandeFermetureDialog";
 import IconeNav from "./components/IconeNav";
-import iconeApp from "./assets/app-icon.png";
 import { confirmerAction } from "./data/confirm";
 import { adminApi, type Role } from "./data/admin";
 import { definirLectureSeuleRole } from "./hooks/useSectionLock";
@@ -232,10 +231,7 @@ export default function App() {
         // entrées inchangées (Accueil, 4 sections), Documentation / Admin en liens discrets à droite.
         // Hauteur = --nav-h (index.css), repère des bandeaux collants des écrans.
         <nav className="app-nav">
-          <div className="app-nav-brand">
-            <img src={iconeApp} alt="" />
-            Caisses
-          </div>
+          <div className="app-nav-brand">Caisses</div>
           <button className="nav-tab" onClick={() => handleSelectSection("accueil")}>
             <IconeNav nom="accueil" taille={15} />
             Accueil

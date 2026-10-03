@@ -185,7 +185,8 @@ export default function CaisseCard({
                   <span title="Ligne de Gestion des caisses rattachée à cette caisse (taux de remplissage, synchro des dimensions)">
                     Gestion des caisses : {lien.libelle ?? <em>non liée</em>}
                   </span>
-                  {!readOnly && (
+                  {/* « Lier… » seulement tant que la caisse n'est liée à aucune ligne (2026-10-03). */}
+                  {!readOnly && lien.libelle === null && (
                     <button
                       onClick={lien.onLier}
                       style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--accent)", fontSize: 12, fontWeight: 600 }}
