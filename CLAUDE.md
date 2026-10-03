@@ -1287,6 +1287,12 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 - Validation : `npx tsc --noEmit`, `npx vite build` (police bien embarquée dans `dist/assets`),
   `cargo check` (aucun fichier Rust touché). **Pas vu à l'écran** (pas d'outil pour lancer et
   regarder l'app) : à vérifier par l'utilisateur avec `npm run tauri dev` sur la branche.
+- **2026-10-03** : retours de l'utilisateur après relecture — logo retiré (barre de navigation et
+  accueil : il est déjà dans la barre de titre de la fenêtre, `assets/app-icon.png` supprimé) ;
+  « Lier… » de la `CaisseCard` affiché **seulement si la caisse n'est liée à aucune ligne** (plus
+  de moyen de délier / relier depuis l'app une fois liée — à rouvrir si le besoin revient).
+  Branche fusionnée dans `main` (avance rapide) et publiée en **0.12.0**, avec la mise à jour
+  suivie dans l'app et le bouton « Lier… » de la veille.
 
 ## Prochaines étapes
 
@@ -1828,12 +1834,10 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 > **sans termes techniques**. Texte statique : **le mettre à jour en même temps que cette section
 > et « À réfléchir plus tard »** (ajout d'un point, point terminé → le retirer).
 
-*Refonte visuelle (branche `refonte-visuelle`, 2026-10-02)*
+*Refonte visuelle (fusionnée dans `main` et publiée en 0.12.0, 2026-10-03)*
 
-- **Relire la refonte à l'écran** (`git checkout refonte-visuelle` puis `npm run tauri dev`), puis
-  décider : fusionner dans `main` (avant la prochaine release), retoucher, ou abandonner
-  (`git checkout main`, la branche peut être supprimée). Points laissés à la décision de
-  l'utilisateur :
+- **Points encore ouverts, à trancher par l'utilisateur si besoin** (la refonte elle-même est
+  validée) :
   - textes nouveaux : titre « Administration » (au lieu de « Admin »), « Connecté en tant que
     XXX », sous-titre de la liste des affaires ;
   - « + Créer une nouvelle caisse » reste plus grand que les autres boutons de l'en-tête
@@ -1844,7 +1848,6 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
     le texte avec infobulle changerait la lecture → non fait ;
   - tableau d'articles et cartes de caisse de Simulations : seulement la police, pas retouchés ;
   - accueil : Admin / Documentation restent aux coins (pas de barre de navigation sur l'accueil) ;
-    logo de la barre de navigation non cliquable (l'onglet « Accueil » le fait) ;
   - icônes emoji des cartes de l'accueil gardées (D.A actuelle) plutôt que des icônes au trait.
 
 *Fiabilité et infrastructure*
