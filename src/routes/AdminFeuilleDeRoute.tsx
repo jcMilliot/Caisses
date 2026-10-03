@@ -13,6 +13,21 @@ const A_FAIRE: Point[] = [
 
 const A_VERIFIER: Point[] = [
   {
+    titre: "Mise à jour dans l'application",
+    detail:
+      "À la prochaine version publiée après celle-ci : une barre doit apparaître en haut de l'app avec « Installer » / « Plus tard », puis montrer le téléchargement et redémarrer l'app toute seule, sans la fenêtre de l'installeur Windows.",
+  },
+  {
+    titre: "Nouvel aspect de l'application",
+    detail:
+      "Parcourir les écrans sur chaque poste (navigation en onglets, Admin, Gestion des caisses, fenêtres) et signaler tout texte coupé, bouton mal placé ou écran moins lisible qu'avant.",
+  },
+  {
+    titre: "Lier une caisse (Simulations)",
+    detail:
+      "Sur une caisse non liée, « Lier… » doit permettre de choisir la ligne de Gestion des caisses ; le taux de remplissage doit ensuite s'afficher sur cette ligne, et le bouton disparaître.",
+  },
+  {
     titre: "Restauration avec d'autres postes ouverts",
     detail:
       "Lancer une restauration alors que l'app est ouverte sur un autre poste : ce poste doit afficher « L'application doit être fermée… », se fermer après validation, et la restauration doit démarrer seule.",
