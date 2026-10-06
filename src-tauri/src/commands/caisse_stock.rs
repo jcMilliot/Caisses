@@ -32,12 +32,38 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<CaisseStock> {
         type_ouverture: row.get(15)?,
         gere: row.get(16)?,
         seuil_alerte: row.get(17)?,
+        matiere: row.get(18)?,
+        ext_longueur_mm: row.get(19)?,
+        ext_largeur_mm: row.get(20)?,
+        ext_hauteur_mm: row.get(21)?,
     })
 }
 
 const SELECT_COLS: &str = "id, nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observations, affaire_id, ordre,
     validee, demandeur, demande_le, demande_statut, demande_affaire_cible_id, demande_cible_id, type_ouverture,
-    gere, seuil_alerte";
+    gere, seuil_alerte, matiere, ext_longueur_mm, ext_largeur_mm, ext_hauteur_mm";
+
+// Matières proposées dans « Gérer les caisses » (obligatoire à la création / modification).
+const MATIERES: [&str; 2] = ["Bois", "Contreplaqué"];
+
+// Champs obligatoires d'une caisse en stock créée / modifiée dans « Gérer les caisses »
+// (2026-10-06) : nom, dimensions intérieures, type d'ouverture, matière. Dimensions extérieures
+// facultatives.
+fn verifier_caisse(caisse: &NewCaisseStock) -> Result<(), String> {
+    if caisse.nom.trim().is_empty() {
+        return Err("Le nom de la caisse est obligatoire.".to_string());
+    }
+    if caisse.longueur_mm <= 0.0 || caisse.largeur_mm <= 0.0 || caisse.hauteur_mm <= 0.0 {
+        return Err("Les dimensions intérieures de la caisse sont obligatoires.".to_string());
+    }
+    if caisse.type_ouverture.trim().is_empty() {
+        return Err("Le type d'ouverture de la caisse est obligatoire.".to_string());
+    }
+    if !MATIERES.contains(&caisse.matiere.as_str()) {
+        return Err("Choisissez la matière de la caisse (Bois ou Contreplaqué).".to_string());
+    }
+    Ok(())
+}
 
 fn get_caisse_stock(conn: &rusqlite::Connection, id: i64) -> Result<CaisseStock, String> {
     let sql = format!("SELECT {} FROM caisse_stock WHERE id = ?1", SELECT_COLS);
@@ -59,12 +85,14 @@ pub fn create_caisse_stock(db: State<Db>, caisse: NewCaisseStock, trigramme: Str
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     require_lock(conn, "stock", &trigramme)?;
+    verifier_caisse(&caisse)?;
     let ordre: i64 = conn
         .query_row("SELECT COALESCE(MAX(ordre), -1) + 1 FROM caisse_stock", [], |row| row.get(0))
         .map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO caisse_stock (nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observations, affaire_id, ordre, type_ouverture)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO caisse_stock (nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observations, affaire_id, ordre, type_ouverture, matiere,
+         ext_longueur_mm, ext_largeur_mm, ext_hauteur_mm)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         rusqlite::params![
             caisse.nom,
             caisse.longueur_mm,
@@ -75,6 +103,10 @@ pub fn create_caisse_stock(db: State<Db>, caisse: NewCaisseStock, trigramme: Str
             caisse.affaire_id,
             ordre,
             caisse.type_ouverture,
+            caisse.matiere,
+            caisse.ext_longueur_mm,
+            caisse.ext_largeur_mm,
+            caisse.ext_hauteur_mm,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -125,6 +157,7 @@ pub fn update_caisse_stock(db: State<Db>, id: i64, caisse: NewCaisseStock, trigr
 
 fn modifier_caisse_stock(conn: &mut rusqlite::Connection, id: i64, caisse: &NewCaisseStock, trigramme: &str) -> Result<(), String> {
     require_lock(conn, "stock", trigramme)?;
+    verifier_caisse(&caisse)?;
 
     let actuelle = get_caisse_stock(conn, id)?;
     if caisse.affaire_id != actuelle.affaire_id && actuelle.validee && !est_ar_caiss(&actuelle.nom) {
@@ -136,7 +169,8 @@ fn modifier_caisse_stock(conn: &mut rusqlite::Connection, id: i64, caisse: &NewC
         // `quantite` non modifiée ici : suivie dans Admin › Stock et décomptée à la livraison —
         // le dialogue « Gérer les caisses » renverrait une valeur périmée.
         "UPDATE caisse_stock SET nom = ?1, longueur_mm = ?2, largeur_mm = ?3, hauteur_mm = ?4,
-         observations = ?5, affaire_id = ?6, type_ouverture = ?7 WHERE id = ?8",
+         observations = ?5, affaire_id = ?6, type_ouverture = ?7, matiere = ?8,
+         ext_longueur_mm = ?9, ext_largeur_mm = ?10, ext_hauteur_mm = ?11 WHERE id = ?12",
         rusqlite::params![
             caisse.nom,
             caisse.longueur_mm,
@@ -145,6 +179,10 @@ fn modifier_caisse_stock(conn: &mut rusqlite::Connection, id: i64, caisse: &NewC
             caisse.observations,
             caisse.affaire_id,
             caisse.type_ouverture,
+            caisse.matiere,
+            caisse.ext_longueur_mm,
+            caisse.ext_largeur_mm,
+            caisse.ext_hauteur_mm,
             id,
         ],
     )
@@ -615,6 +653,10 @@ mod tests {
             observations: c.observations.clone(),
             affaire_id: c.affaire_id,
             type_ouverture: c.type_ouverture.clone(),
+            matiere: "Bois".to_string(),
+            ext_longueur_mm: c.ext_longueur_mm,
+            ext_largeur_mm: c.ext_largeur_mm,
+            ext_hauteur_mm: c.ext_hauteur_mm,
         }
     }
 }

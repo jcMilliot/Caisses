@@ -5,6 +5,7 @@ import type { TauxCaisse } from "../domain/remplissage";
 type TauxLigne = { caisses: TauxCaisse[]; seuil: number };
 import { libelleCaisseStock } from "../domain/caisseStock";
 import IconeFiltre from "./IconeFiltre";
+import { largeurPlusLongMot, largeurTexte } from "./mesureTexte";
 import { MESSAGE_ALERTE_COMMANDE, estACommanderUrgent } from "../domain/caissesACommander";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -218,6 +219,7 @@ function sauvegarderInverse(inverse: boolean) {
 
 const CLE_LARGEURS = "caisses:largeursColonnes:demandes";
 const LARGEUR_MIN = 40;
+const LARGEUR_ACTIONS = 210;
 
 function chargerLargeurs(): Partial<Record<Colonne, number>> {
   try {
@@ -340,6 +342,48 @@ export default function DemandesTable({
   const boutonsFiltreRef = useRef<Partial<Record<Champ, HTMLButtonElement>>>({});
   const redimensionnement = useRef<{ champ: Colonne; xDepart: number; largeurDepart: number } | null>(null);
   const conteneurScrollRef = useRef<HTMLDivElement>(null);
+  // Les largeurs minimales sont mesurées avec la police de l'app : on les recalcule une fois
+  // la police Inter chargée (sinon mesure faite avec la police de secours).
+  const [policesPretes, setPolicesPretes] = useState(false);
+  useEffect(() => {
+    let actif = true;
+    document.fonts?.ready.then(() => actif && setPolicesPretes(true));
+    return () => {
+      actif = false;
+    };
+  }, []);
+
+  // Largeur minimale de chaque colonne (retour utilisateur du 2026-10-05) : le redimensionnement
+  // s'arrête quand le titre ne tient plus sans couper un mot (+ la place de l'icône de filtre),
+  // et la colonne Affaire garde toujours la place du nom d'affaire le plus long (insécable).
+  const largeursMin = useMemo(() => {
+    const taillePoliceTh = compact ? 11 : 12;
+    const paddingTh = compact ? 12 : 16;
+    const paddingTd = compact ? 12 : 20;
+    // L'icône de filtre (+ flèche de tri) est sous le libellé, dans la marge basse de l'en-tête :
+    // la colonne doit seulement pouvoir l'afficher en entier.
+    const largeurIcone = 34;
+    const min: Partial<Record<Colonne, number>> = {};
+    for (const c of COLONNES) {
+      // Un titre de plusieurs mots peut passer sur plusieurs lignes : seul le mot le plus long compte.
+      const plusLong = largeurPlusLongMot(c.label, taillePoliceTh, 600);
+      const titre = c.champ === "taux_remplissage" ? plusLong : Math.max(plusLong, largeurIcone);
+      min[c.champ] = Math.ceil(titre + paddingTh + 1 + 4);
+    }
+    const taillePoliceTd = compact ? 12 : 13;
+    const nomsAffaire = [
+      ...demandes.map((d) => largeurTexte(d.affaire, taillePoliceTd, 700)),
+      ...demandeCaisses.map((c) => largeurPlusLongMot(c.nom, taillePoliceTd, 400)),
+    ];
+    min.affaire = Math.max(min.affaire ?? 0, Math.ceil(Math.max(0, ...nomsAffaire) + paddingTd + 1 + 4));
+    // Taux : au moins la pastille réduite la plus large (« ⚠ 100% »).
+    min.taux_remplissage = Math.max(
+      min.taux_remplissage ?? 0,
+      Math.ceil(largeurTexte("⚠ 100%", 12, 600) + 16 + paddingTd + 1 + 4),
+    );
+    return min;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compact, demandes, demandeCaisses, policesPretes]);
 
   function commencerRedimensionnement(e: React.PointerEvent, champ: Colonne, largeurActuelle: number) {
     e.preventDefault();
@@ -349,7 +393,7 @@ export default function DemandesTable({
     function onMove(ev: PointerEvent) {
       if (!redimensionnement.current) return;
       const { champ, xDepart, largeurDepart } = redimensionnement.current;
-      const nouvelle = Math.max(LARGEUR_MIN, largeurDepart + (ev.clientX - xDepart));
+      const nouvelle = Math.max(largeursMin[champ] ?? LARGEUR_MIN, largeurDepart + (ev.clientX - xDepart));
       setLargeurs((prev) => ({ ...prev, [champ]: nouvelle }));
     }
     function onUp() {
@@ -366,7 +410,7 @@ export default function DemandesTable({
   }
 
   function largeurColonne(champ: Colonne): number {
-    return largeurs[champ] ?? (compact ? 90 : 130);
+    return Math.max(largeurs[champ] ?? (compact ? 90 : 130), largeursMin[champ] ?? LARGEUR_MIN);
   }
 
   // Une ligne sélectionnée peut disparaître du brouillon (suppression de l'affaire avant
@@ -451,16 +495,33 @@ export default function DemandesTable({
 
   const demandesVisibles = masquerValidees ? demandes.filter((d) => !estDemandeValidee(d)) : demandes;
 
+  // Colonne Stock : nom de la caisse choisie dans le menu, à défaut le nom écrit dans la colonne
+  // `stock` (lignes anciennes reprises de l'Excel, sans caisse liée). Filtre et tri utilisent
+  // exactement ce qui est affiché (retour du 2026-10-06 : le filtre lisait le texte alors que la
+  // cellule affichait « — »).
+  function stockAffiche(d: { caisse_stock_id: number | null; stock: string }): string {
+    if (d.caisse_stock_id !== null) {
+      return caissesStock.find((c) => c.id === d.caisse_stock_id)?.nom ?? d.stock.trim();
+    }
+    return d.stock.trim();
+  }
+
+  function valeurCellule(d: Demande, champ: Champ): string {
+    return champ === "stock" ? stockAffiche(d) : valeurTexte(d, champ);
+  }
+
   const demandesFiltrees = useMemo(() => {
     const colonnesFiltrees = Object.entries(filtres) as [Champ, string[]][];
     if (colonnesFiltrees.length === 0) return demandesVisibles;
-    return demandesVisibles.filter((d) => colonnesFiltrees.every(([champ, valeurs]) => valeurs.includes(valeurTexte(d, champ))));
-  }, [demandesVisibles, filtres]);
+    return demandesVisibles.filter((d) => colonnesFiltrees.every(([champ, valeurs]) => valeurs.includes(valeurCellule(d, champ))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demandesVisibles, filtres, caissesStock]);
 
   const demandesTriees = useMemo(() => {
     if (!tri) return demandesFiltrees;
     const facteur = tri.sens === "asc" ? 1 : -1;
     const valeur = (d: Demande): string | number => {
+      if (tri.colonne === "stock") return stockAffiche(d).toLowerCase();
       const v = d[tri.colonne];
       if (typeof v === "boolean") return v ? 1 : 0;
       if (typeof v === "number") return v;
@@ -473,7 +534,8 @@ export default function DemandesTable({
       if (va > vb) return 1 * facteur;
       return 0;
     });
-  }, [demandesFiltrees, tri]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demandesFiltrees, tri, caissesStock]);
 
   // Ordre d'affichage effectif : le tableau inversé retourne la liste triée pour placer les
   // lignes les plus anciennes en haut (saisie de haut en bas façon Excel).
@@ -582,7 +644,8 @@ export default function DemandesTable({
             onChange={(e) => onSelectStock(demande.id, e.target.value === "" ? null : Number(e.target.value))}
             style={{ width: "100%", padding: "2px 0", border: "none", background: "transparent", font: "inherit", color: "inherit" }}
           >
-            <option value="">—</option>
+            {/* Ligne ancienne sans caisse liée : nom écrit dans la colonne Stock (2026-10-06). */}
+            <option value="">{demande.stock.trim() || "—"}</option>
             {options.map((c) => (
               <option key={c.id} value={c.id}>
                 {libelleCaisseStock(c)}
@@ -619,8 +682,9 @@ export default function DemandesTable({
           padding: enEdition ? 2 : td.padding,
           width: largeur,
           maxWidth: largeur,
-          whiteSpace: "normal",
-          wordBreak: "break-word",
+          // Nom d'affaire insécable (jamais coupé ni renvoyé à la ligne).
+          whiteSpace: champ === "affaire" ? "nowrap" : "normal",
+          wordBreak: champ === "affaire" ? "keep-all" : "break-word",
           fontWeight: champ === "affaire" ? 700 : undefined,
         }}
         className={estNombre ? "mono" : undefined}
@@ -671,9 +735,9 @@ export default function DemandesTable({
     // pour ne jamais proposer une valeur qui vide le tableau une fois sélectionnée.
     const autresFiltres = Object.entries(filtres).filter(([c]) => c !== champ) as [Champ, string[]][];
     const baseValeurs = demandesVisibles.filter((d) =>
-      autresFiltres.every(([c, vals]) => vals.includes(valeurTexte(d, c))),
+      autresFiltres.every(([c, vals]) => vals.includes(valeurCellule(d, c))),
     );
-    const valeursDistinctes = [...new Set(baseValeurs.map((d) => valeurTexte(d, champ)))].sort((a, b) =>
+    const valeursDistinctes = [...new Set(baseValeurs.map((d) => valeurCellule(d, champ)))].sort((a, b) =>
       a.localeCompare(b),
     );
     const selection = filtres[champ] ? new Set(filtres[champ]) : null;
@@ -694,13 +758,10 @@ export default function DemandesTable({
           paddingBottom: 26,
         }}
       >
-        {/* Libellé en haut (il peut passer sur plusieurs lignes à gauche), icône fixée en bas à
-            droite de la cellule. L'espace réservé en fin de texte empêche l'icône de le recouvrir,
-            même quand la colonne est étroite (retour utilisateur du 2026-10-02). */}
-        <div style={{ textAlign: align, wordBreak: "keep-all", overflowWrap: "normal" }}>
-          {label}
-          <span aria-hidden="true" style={{ display: "inline-block", width: actif ? 34 : 24 }} />
-        </div>
+        {/* Libellé en haut (il peut passer sur plusieurs lignes, coupé aux espaces seulement),
+            icône fixée en bas à droite, dans la marge basse (paddingBottom) : elle ne recouvre
+            jamais le libellé. */}
+        <div style={{ textAlign: align, wordBreak: "keep-all", overflowWrap: "normal" }}>{label}</div>
         <button
             ref={(el) => {
               if (el) boutonsFiltreRef.current[champ] = el;
@@ -812,6 +873,10 @@ export default function DemandesTable({
             borderCollapse: "separate",
             borderSpacing: 0,
             tableLayout: "fixed",
+            // Largeur explicite : sans elle, la mise en page « fixed » n'est pas appliquée et le
+            // navigateur tasse les colonnes sur petit écran (texte des boutons Actions qui
+            // débordait, titres coupés).
+            width: 44 + 32 + colonnesAvecLargeur.reduce((somme, c) => somme + c.largeur, 0) + LARGEUR_ACTIONS,
           }}
         >
           <thead>
@@ -840,7 +905,7 @@ export default function DemandesTable({
                   <Fragment key={c.champ}>{thFiltrable(c.champ, c.label, c.align, th)}</Fragment>
                 ),
               )}
-              <th style={{ ...th, width: 210 }}>Actions</th>
+              <th style={{ ...th, width: LARGEUR_ACTIONS, verticalAlign: "top" }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -907,7 +972,14 @@ export default function DemandesTable({
                           <td key={c.champ} style={{ ...td, textAlign: "center", width: largeurColonne(c.champ), maxWidth: largeurColonne(c.champ) }}>
                             {(() => {
                               const t = tauxRemplissage?.mere(d);
-                              return t ? <TauxRemplissage caisses={t.caisses} seuil={t.seuil} pastille /> : null;
+                              return t ? (
+                                <TauxRemplissage
+                                  caisses={t.caisses}
+                                  seuil={t.seuil}
+                                  pastille
+                                  largeurDispo={largeurColonne(c.champ) - 2 * (td === tdStyleCompact ? 6 : 10) - 1}
+                                />
+                              ) : null;
                             })()}
                           </td>
                         ) : (
@@ -1063,12 +1135,20 @@ function SousLigneCaisse({
       width: colonne.largeur,
       maxWidth: colonne.largeur,
       whiteSpace: "normal",
-      wordBreak: "break-word",
+      // Nom de la caisse (colonne Affaire) : retour à la ligne aux espaces, jamais au milieu d'un mot.
+      wordBreak: colonne.champ === "affaire" ? "keep-all" : "break-word",
     };
     if (colonne.champ === "taux_remplissage") {
       return (
         <td style={{ ...style, textAlign: "center" }}>
-          {taux && <TauxRemplissage caisses={taux.caisses} seuil={taux.seuil} pastille />}
+          {taux && (
+            <TauxRemplissage
+              caisses={taux.caisses}
+              seuil={taux.seuil}
+              pastille
+              largeurDispo={colonne.largeur - 2 * (td === tdStyleCompact ? 6 : 10) - 1}
+            />
+          )}
         </td>
       );
     }
@@ -1086,7 +1166,7 @@ function SousLigneCaisse({
             onChange={(e) => onSelectStock(e.target.value === "" ? null : Number(e.target.value))}
             style={{ width: "100%", padding: "2px 0", border: "none", background: "transparent", font: "inherit", color: "inherit" }}
           >
-            <option value="">—</option>
+            <option value="">{caisse.stock.trim() || "—"}</option>
             {options.map((c) => (
               <option key={c.id} value={c.id}>
                 {libelleCaisseStock(c)}
@@ -1420,7 +1500,8 @@ const tdStyle: React.CSSProperties = {
 // Boutons d'action d'une ligne : grille 2 × 2 de largeur égale (Livré / Simuler, + Caisse / Suppr.).
 const actionsLigneStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  // Jamais plus étroit que le libellé du bouton (le texte ne déborde pas du bouton).
+  gridTemplateColumns: "repeat(2, minmax(max-content, 1fr))",
   gap: 5,
 };
 

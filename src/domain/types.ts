@@ -173,6 +173,13 @@ export interface CaisseStock {
   gere: boolean;
   // Alerte « à commander » quand quantite <= seuil_alerte (caisse gérée).
   seuil_alerte: number;
+  // 0033 — « Bois » / « Contreplaqué » ; vide pour une caisse créée avant (obligatoire à la
+  // prochaine modification dans « Gérer les caisses »).
+  matiere: string;
+  // 0035 — dimensions extérieures (mm), 0 = non renseignée.
+  ext_longueur_mm: number;
+  ext_largeur_mm: number;
+  ext_hauteur_mm: number;
 }
 
 // Mouvement de stock d'une caisse AR_CAISS_ gérée fait à la livraison d'une ligne : quantité
@@ -195,6 +202,10 @@ export interface NewCaisseStock {
   observations: string;
   affaire_id: number | null;
   type_ouverture: string;
+  matiere: string;
+  ext_longueur_mm: number;
+  ext_largeur_mm: number;
+  ext_hauteur_mm: number;
 }
 
 // Listes de valeurs de la section Demandes auxquelles l'utilisateur peut ajouter ses propres

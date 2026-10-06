@@ -274,16 +274,15 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
     }
   }
 
-  // Libellé de la ligne de Gestion des caisses liée explicitement à la caisse (null = aucune).
+  // Libellé de la ligne de Gestion des caisses liée explicitement à la caisse (null = aucune, ou
+  // ligne supprimée depuis : la carte propose alors « Lier… »).
   function libelleLien(c: Caisse): string | null {
-    const dims = (l: number, w: number, h: number) => `${(l / 1000).toFixed(2)} × ${(w / 1000).toFixed(2)} × ${(h / 1000).toFixed(2)} m`;
     if (c.demande_caisse_id !== null) {
       const sc = demandeCaissesLiees.find((x) => x.id === c.demande_caisse_id);
-      return sc ? `${sc.nom || "caisse détaillée"} (${dims(sc.longueur_mm, sc.largeur_mm, sc.hauteur_mm)})` : "caisse détaillée supprimée";
+      return sc ? sc.nom || "caisse détaillée" : null;
     }
     if (c.demande_id !== null) {
-      const d = toutesDemandes.find((x) => x.id === c.demande_id);
-      return d ? `${d.affaire} (${dims(d.longueur_mm, d.largeur_mm, d.hauteur_mm)})` : "ligne supprimée";
+      return toutesDemandes.find((x) => x.id === c.demande_id)?.affaire ?? null;
     }
     return null;
   }
@@ -312,7 +311,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
     <section
       style={
         caissesPosition === "droite"
-          ? { width: 300, flexShrink: 0, position: "sticky", top: "calc(var(--nav-h) + 74px)", maxHeight: "calc(100vh - var(--nav-h) - 94px)", overflowY: "auto" }
+          ? { width: 350, flexShrink: 0, position: "sticky", top: "calc(var(--nav-h) + 74px)", maxHeight: "calc(100vh - var(--nav-h) - 94px)", overflowY: "auto" }
           : { marginBottom: 28 }
       }
     >

@@ -31,9 +31,9 @@ export function categorieEnvoi(typeEnvoiCaisse: string): CategorieEnvoi {
 export function libelleCategorie(typeEnvoiCaisse: string): string {
   switch (categorieEnvoi(typeEnvoiCaisse)) {
     case "4c":
-      return "4C";
+      return "Mer (4C)";
     case "4b":
-      return "4B";
+      return "Standard (4B)";
     default:
       return "Standard";
   }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { CaisseStock, NewCaisseStock } from "../domain/types";
 import { OUVERTURE_PAR_DESSUS, TYPES_OUVERTURE } from "../domain/demandeOptions";
+import { MATIERES_CAISSE, dimensionsExterieures } from "../domain/caisseStock";
 import { confirmerAction, confirmerSuppression } from "../data/confirm";
 
 interface Props {
@@ -21,6 +22,10 @@ const CAISSE_VIDE: NewCaisseStock = {
   observations: "",
   affaire_id: null,
   type_ouverture: OUVERTURE_PAR_DESSUS,
+  matiere: "",
+  ext_longueur_mm: 0,
+  ext_largeur_mm: 0,
+  ext_hauteur_mm: 0,
 };
 
 function versNew(c: CaisseStock): NewCaisseStock {
@@ -33,6 +38,10 @@ function versNew(c: CaisseStock): NewCaisseStock {
     observations: c.observations,
     affaire_id: c.affaire_id,
     type_ouverture: c.type_ouverture,
+    matiere: c.matiere,
+    ext_longueur_mm: c.ext_longueur_mm,
+    ext_largeur_mm: c.ext_largeur_mm,
+    ext_hauteur_mm: c.ext_hauteur_mm,
   };
 }
 
@@ -185,10 +194,18 @@ export default function GererCaissesStockDialog({ caisses, onCreer, onModifier, 
                   ) : (
                     <>
                       <span style={{ flex: "0 0 200px", fontWeight: 600, wordBreak: "break-word" }}>{c.nom}</span>
-                      <span className="mono" style={{ flex: "0 0 150px" }}>
-                        {(c.longueur_mm / 1000).toFixed(2)} × {(c.largeur_mm / 1000).toFixed(2)} × {(c.hauteur_mm / 1000).toFixed(2)} m
+                      <span className="mono" style={{ flex: "0 0 160px", display: "flex", flexDirection: "column", gap: 2 }}>
+                        <span title="Dimensions intérieures">
+                          {(c.longueur_mm / 1000).toFixed(2)} × {(c.largeur_mm / 1000).toFixed(2)} × {(c.hauteur_mm / 1000).toFixed(2)} m
+                        </span>
+                        <span title="Dimensions extérieures" style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                          ext. {dimensionsExterieures(c) ?? "—"}
+                        </span>
                       </span>
                       <span style={{ flex: "0 0 170px" }}>{c.type_ouverture}</span>
+                      <span style={{ flex: "0 0 100px", color: c.matiere ? undefined : "var(--text-muted)" }}>
+                        {c.matiere || "Matière ?"}
+                      </span>
                       <span style={{ flex: 1, color: "var(--text-muted)", wordBreak: "break-word" }}>{c.observations}</span>
                       <button className="btn btn-sm" disabled={enCours} onClick={() => setEditionId(c.id)}>
                         Modifier
@@ -241,24 +258,45 @@ function FormulaireCaisse({
 }) {
   const [nom, setNom] = useState(initial.nom);
   const [dims, setDims] = useState([texteDim(initial.longueur_mm), texteDim(initial.largeur_mm), texteDim(initial.hauteur_mm)]);
+  const [dimsExt, setDimsExt] = useState([
+    texteDim(initial.ext_longueur_mm),
+    texteDim(initial.ext_largeur_mm),
+    texteDim(initial.ext_hauteur_mm),
+  ]);
   const [typeOuverture, setTypeOuverture] = useState(initial.type_ouverture || OUVERTURE_PAR_DESSUS);
   const [observations, setObservations] = useState(initial.observations);
+  const [matiere, setMatiere] = useState(initial.matiere);
+  // Champs obligatoires (2026-10-06) : nom, dimensions intérieures, type d'ouverture, matière.
+  // Dimensions extérieures facultatives.
+  const manquants = [
+    nom.trim() === "" && "nom",
+    dims.some((d) => mmDepuisTexte(d) <= 0) && "dimensions intérieures",
+    typeOuverture === "" && "type d'ouverture",
+    matiere === "" && "matière",
+  ].filter((m): m is string => Boolean(m));
+  const incomplet = manquants.length > 0;
 
   async function valider() {
-    if (nom.trim() === "" || enCours) return;
+    if (incomplet || enCours) return;
     const ok = await onValider({
       ...initial,
       nom: nom.trim(),
       longueur_mm: mmDepuisTexte(dims[0]),
       largeur_mm: mmDepuisTexte(dims[1]),
       hauteur_mm: mmDepuisTexte(dims[2]),
+      ext_longueur_mm: mmDepuisTexte(dimsExt[0]),
+      ext_largeur_mm: mmDepuisTexte(dimsExt[1]),
+      ext_hauteur_mm: mmDepuisTexte(dimsExt[2]),
       type_ouverture: typeOuverture,
+      matiere,
       observations,
     });
     if (ok && viderApres) {
       setNom("");
       setDims(["", "", ""]);
+      setDimsExt(["", "", ""]);
       setTypeOuverture(OUVERTURE_PAR_DESSUS);
+      setMatiere("");
       setObservations("");
     }
   }
@@ -274,24 +312,32 @@ function FormulaireCaisse({
   }
 
   return (
-    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }} onKeyDown={surTouche}>
-      <input autoFocus={!viderApres} value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Nom" style={{ ...champStyle, width: 190 }} />
-      {["L", "l", "H"].map((libelle, i) => (
-        <input
-          key={libelle}
-          type="text"
-          inputMode="decimal"
-          value={dims[i]}
-          onChange={(e) => setDims((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))}
-          onFocus={(e) => e.target.select()}
-          placeholder={`${libelle} (m)`}
-          style={{ ...champStyle, width: 70 }}
-        />
-      ))}
+    <div style={{ display: "flex", gap: 6, alignItems: "flex-end", flexWrap: "wrap" }} onKeyDown={surTouche}>
+      <input autoFocus={!viderApres} value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Nom" style={{ ...champStyle, width: 190, background: nom.trim() === "" ? "var(--warn-bg)" : undefined }} />
+      {/* Dimensions intérieures et extérieures regroupées sous un titre chacune, pour ne pas
+          les confondre (2026-10-06). Extérieures facultatives : la caisse n'est pas forcément
+          disponible pour être mesurée à sa création. */}
+      <GroupeDimensions titre="Dimensions intérieures" valeurs={dims} onChange={setDims} obligatoire accent />
+      <GroupeDimensions titre="Dimensions extérieures (facultatif)" valeurs={dimsExt} onChange={setDimsExt} />
       <select value={typeOuverture} onChange={(e) => setTypeOuverture(e.target.value)} style={{ ...champStyle, width: 190 }}>
         {TYPES_OUVERTURE.map((t) => (
           <option key={t} value={t}>
             {t}
+          </option>
+        ))}
+      </select>
+      {/* Matière obligatoire (fond orangé tant qu'elle n'est pas choisie, comme les champs
+          obligatoires de la création de caisse). */}
+      <select
+        value={matiere}
+        onChange={(e) => setMatiere(e.target.value)}
+        title="Matière (obligatoire)"
+        style={{ ...champStyle, width: 140, background: matiere === "" ? "var(--warn-bg)" : undefined }}
+      >
+        <option value="">— Matière —</option>
+        {MATIERES_CAISSE.map((m) => (
+          <option key={m} value={m}>
+            {m}
           </option>
         ))}
       </select>
@@ -301,7 +347,12 @@ function FormulaireCaisse({
         placeholder="Observations"
         style={{ ...champStyle, flex: 1, minWidth: 120 }}
       />
-      <button className="btn btn-sm btn-primary" disabled={nom.trim() === "" || enCours} onClick={valider}>
+      <button
+        className="btn btn-sm btn-primary"
+        disabled={incomplet || enCours}
+        title={incomplet ? `À renseigner : ${manquants.join(", ")}` : undefined}
+        onClick={valider}
+      >
         {libelleValider}
       </button>
       {onAnnuler && (
@@ -310,6 +361,52 @@ function FormulaireCaisse({
         </button>
       )}
     </div>
+  );
+}
+
+// Encadré d'un groupe de dimensions (intérieures / extérieures), titre en haut — deux blocs bien
+// distincts pour ne pas les confondre (retour du 2026-10-06). `obligatoire` : fond orangé sur
+// les champs vides ou nuls.
+function GroupeDimensions({
+  titre,
+  valeurs,
+  onChange,
+  obligatoire,
+  accent,
+}: {
+  titre: string;
+  valeurs: string[];
+  onChange: (valeurs: string[]) => void;
+  obligatoire?: boolean;
+  accent?: boolean;
+}) {
+  return (
+    <fieldset
+      style={{
+        margin: 0,
+        padding: "4px 8px 8px",
+        border: `1px solid ${accent ? "var(--accent)" : "var(--border-strong)"}`,
+        borderRadius: "var(--radius)",
+        background: accent ? "var(--accent-soft)" : "var(--bg-panel)",
+      }}
+    >
+      <legend style={{ padding: "0 4px", fontSize: 11.5, fontWeight: 700, color: accent ? "var(--accent)" : "var(--text-muted)" }}>{titre}</legend>
+      <div style={{ display: "flex", gap: 4 }}>
+        {["L", "l", "H"].map((libelle, i) => (
+          <input
+            key={libelle}
+            type="text"
+            inputMode="decimal"
+            value={valeurs[i]}
+            onChange={(e) => onChange(valeurs.map((v, j) => (j === i ? e.target.value : v)))}
+            onFocus={(e) => e.target.select()}
+            placeholder={`${libelle} (m)`}
+            title={titre}
+            style={{ ...champStyle, width: 70, background: obligatoire && mmDepuisTexte(valeurs[i]) <= 0 ? "var(--warn-bg)" : "var(--bg-panel)" }}
+          />
+        ))}
+      </div>
+    </fieldset>
   );
 }
 

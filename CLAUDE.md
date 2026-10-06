@@ -146,8 +146,8 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-10-02 : migrations `0001` à `0031` (dernière :
-`0031_add_suivi_stock_ar_caiss.sql` ; pas de `0019_reorder` — supprimé avant
+État au 2026-10-06 : migrations `0001` à `0035` (dernière :
+`0035_add_caisse_stock_dims_exterieures.sql` ; pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes).
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
 triées côté frontend par `demandeOptions.ts::comparerOption` (quantité de tête puis n° de
@@ -217,6 +217,8 @@ caisse_stock (id, nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observatio
          demande_affaire_cible_id INTEGER NULL, demande_cible_id INTEGER NULL,  -- 0013
          type_ouverture TEXT DEFAULT 'Par dessus',  -- 0024, repris (et verrouillé) sur la
                                                     --   ligne de demande qui sélectionne la caisse
+         matiere TEXT,                     -- 0033, 'Bois' | 'Contreplaqué' ('' = caisse antérieure)
+         ext_longueur_mm, ext_largeur_mm, ext_hauteur_mm REAL,  -- 0035, dims extérieures, 0 = non saisie
          gere BOOL, seuil_alerte INTEGER,  -- 0031 : gere = on la recommande → alerte « à commander »
                                            --   si quantite <= seuil_alerte. Toutes les AR_CAISS_
                                            --   sont décomptées, gérées ou non (2026-10-02)
@@ -1294,6 +1296,112 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   Branche fusionnée dans `main` (avance rapide) et publiée en **0.12.0**, avec la mise à jour
   suivie dans l'app et le bouton « Lier… » de la veille.
 
+### 2026-10-05 — Gestion des caisses : largeurs de colonnes minimales, Actions, taux
+
+- **Retours de l'utilisateur** sur le tableau de Gestion des caisses (`DemandesTable`) :
+  - **titres jamais coupés** : chaque colonne a une largeur minimale (`largeursMin`, mesurée au
+    canvas avec la police de l'app, `components/mesureTexte.ts`) = mot le plus long du titre
+    (un titre de plusieurs mots passe sur plusieurs lignes, ex. « OK pour être commandée » sur
+    3 lignes), et au moins la largeur de l'icône de filtre — placée dans la marge basse de
+    l'en-tête, elle ne réserve plus de place après le libellé. Le redimensionnement s'arrête là, et
+    une largeur enregistrée plus petite (`localStorage`) est relevée à l'affichage. Remesuré
+    une fois Inter chargée (`document.fonts.ready`) ;
+  - **nom d'affaire insécable** (`nowrap`), et la colonne Affaire ne descend jamais sous le nom
+    le plus long ; nom des sous-caisses : retour à la ligne aux espaces seulement ;
+  - **boutons Actions qui débordaient sur petit écran** : la table n'avait pas de largeur, donc
+    `tableLayout: fixed` n'était pas appliqué et le navigateur tassait les colonnes. Largeur
+    explicite = somme des colonnes (`LARGEUR_ACTIONS` = 210) ; grille des boutons en
+    `minmax(max-content, 1fr)` ;
+  - **pastille de taux** (`TauxRemplissage` prop `largeurDispo`) : passe en taille réduite
+    (12 px) quand elle ne tient plus dans la colonne, puis autorise le retour à la ligne
+    (plusieurs caisses) ; la colonne ne descend pas sous la pastille réduite « ⚠ 100% ».
+- Validation : `npx tsc --noEmit`. **Non testé en conditions réelles**.
+- **2026-10-06 — Accueil** : une ligne des blocs « Caisses à commander / à rapatrier cette
+  semaine » dont la demande est cochée « OK pour être commandée » affiche « En commande » en
+  vert (`--ok-text`) après le nom de l'affaire (`Accueil.tsx::ListeAffaires`).
+
+### 2026-10-06 — Lot de retours du 2026-10-05 (points rapides)
+
+- **Admin** : petite barre de défilement verticale à droite des onglets supprimée (`.tabs`
+  `overflow-y: hidden`, soulignement de l'onglet actif remonté à `bottom: 0` — il débordait
+  d'1 px et déclenchait le défilement).
+- **Gestion des caisses** : titre « Actions » aligné en haut comme les autres colonnes.
+- **Simulations — `CaisseCard`** : panneau des caisses élargi (300 → 350 px, position à
+  droite) ; valeurs des lignes jamais coupées (`Row`, `nowrap`) ; « Dim. max articles (L/l/H) »
+  avec « / » entre les dimensions ; « Poids au m² hors caisse ».
+- **Type d'envoi « STANDARD (4C) » → « MER (4C) »** : c'était une **valeur stockée**
+  (`TYPES_ENVOI_CAISSE`) → migration `0032` sur `demande`, `demande_caisse` et `caisse`
+  (valeur exacte, trim + casse ; les autres graphies restent détectées comme 4C par `/4C/i`).
+  Majuscules gardées comme « STANDARD (4B) ». Libellés courts (`affiches.ts::libelleCategorie`,
+  pastille des affiches et statistiques) : « Standard », « Standard (4B) », « Mer (4C) ».
+- **Statistiques** : « Caisses sur mesure par type d'envoi », « Dimensions des caisses sur
+  mesure les plus utilisées ».
+- **Matière d'une caisse en stock** (migration `0033`, `caisse_stock.matiere`) : menu
+  **Bois / Contreplaqué** dans « Gérer les caisses » (création et modification), **obligatoire**
+  (bouton désactivé + fond orangé tant qu'elle n'est pas choisie ; refus aussi côté Rust,
+  `caisse_stock.rs::verifier_matiere`), **vide** pour les caisses existantes (décisions du
+  2026-10-05) — elles la reçoivent à leur prochaine modification. Affichée dans la liste du
+  dialogue (« Matière ? » si vide) et dans Admin › Caisses (colonne « Matière »). Liste
+  `MATIERES_CAISSE` (`domain/caisseStock.ts`) dupliquée en Rust (`MATIERES`).
+- **Admin › Caisses** : colonne « Dimensions (m) » → « Dimensions intérieures (m) ».
+- Validation : `cargo test --lib` (10), `cargo check`, `npx tsc --noEmit`. **Non testé en
+  conditions réelles**.
+
+### 2026-10-06 — Lien caisse ↔ Gestion des caisses, dimensions extérieures, graphique stock / sur mesure
+
+- **« Lier… » affiché à tort** : `App.handleConfirmerCreationAffaire` (« Simuler » sur une
+  affaire qui n'existe pas encore dans Simulations) créait la caisse mère **sans**
+  `caisse.demande_id` — le lien n'était posé que pour une affaire déjà existante
+  (`creerCaissesManquantes`). Corrigé (`linkDemande` après la création) + migration `0034` qui
+  lie les caisses existantes quand c'est sans ambiguïté (caisse non liée, au nom de son affaire,
+  une seule ligne de demande de ce nom). `CaisseCard` : **plus rien n'est affiché quand la caisse
+  est liée** (demande de l'utilisateur) ; seulement « Gestion des caisses : non liée » +
+  « Lier… », y compris si la ligne liée a été supprimée.
+- **Dimensions extérieures des caisses en stock** (migration `0035`, `ext_longueur_mm` /
+  `ext_largeur_mm` / `ext_hauteur_mm`, 0 = non saisie) : 3 champs L/l/H en mètres,
+  **facultatifs** (confirmé par l'utilisateur : la caisse n'est pas forcément disponible pour
+  être mesurée à sa création), saisis dans « Gérer les caisses » sous un titre « Dimensions
+  extérieures (facultatif) », à côté du groupe « Dimensions intérieures » (même placeholders
+  « L (m) »… — regroupement demandé pour éviter la confusion, `GroupeDimensions` : deux
+  encadrés `fieldset`, intérieures teintées `--accent`, extérieures neutres) ; affichées dans la liste
+  du dialogue (« ext. … ») et dans Admin › Caisses (colonne « Dimensions extérieures (m) »).
+  `domain/caisseStock.ts::dimensionsExterieures`. Pas affichées ailleurs (Caisses en stock,
+  affiches) pour l'instant.
+- **Graphique « Caisses de stock et sur mesure »** (Admin › Caisses › Statistiques, en tête de
+  page, `components/BarresStockSurMesure.tsx`) : barres verticales **groupées** (côte à côte).
+  **Indépendant de la période du haut** (retour de l'utilisateur) : ses propres onglets, une
+  **année** (ses 12 mois, `groupesMoisDeLAnnee`) ou **« Tout »** (une barre par année,
+  `groupesParAnnee`) ; onglet par défaut = année en cours. Calculé sur toutes les livraisons
+  (`Statistiques.parMois`, lignes sans date exclues). Bleu `#2a78d6` (stock, récup comprises) /
+  orange `#eb6834` (sur mesure), palette passée au validateur (daltonisme ΔE 24,7), légende avec
+  le total de l'onglet, infobulle au survol. Première version (par mois, sur la période du haut,
+  défilement horizontal) : avec « Tout », seuls les premiers mois (2022-2023) étaient visibles
+  sans défiler, alors que les caisses de stock n'apparaissent qu'à partir de 2025 → « les
+  caisses de stock ne s'affichent pas ».
+- **Champs obligatoires d'une caisse en stock** (« Gérer les caisses ») : nom, dimensions
+  intérieures (> 0), type d'ouverture, matière — fond orangé sur les champs manquants, bouton
+  désactivé avec infobulle « À renseigner : … », refus aussi côté Rust
+  (`caisse_stock.rs::verifier_caisse`, remplace `verifier_matiere`). Le type d'ouverture a
+  toujours une valeur (« Par dessus » par défaut, confirmé par l'utilisateur).
+- **Graphique, 2023-2024 sans caisses de stock** : vérifié sur la base — en 2023-2024, toutes
+  les lignes livrées qui portent un nom de caisse de stock sont des affaires **ACHSTOCK**
+  (commandes pour le stock), exclues des statistiques par construction ; les caisses de stock
+  utilisées pour des expéditions n'apparaissent qu'à partir de 2025. **Décision de
+  l'utilisateur** : avant 2025, une ligne ACHSTOCK de **quantité 1** est une vraie affaire
+  renommée dans l'ancien Excel → comptée comme caisse utilisée
+  (`statistiques.ts::estAncienneAffaireRenommeeAchstock`, lignes mères seulement — aucune
+  sous-caisse ACHSTOCK en base), dans tout l'onglet Statistiques, pas seulement le graphique.
+  Base de test : 2 caisses de stock en 2023, 4 en 2024.
+- **Filtre de la colonne Stock (Gestion des caisses)** : ~80 lignes anciennes (reprises de
+  l'Excel) ont un nom écrit dans `demande.stock` (`AR_CAISS_00001`, `RECUP A7`…) sans
+  `caisse_stock_id` → la cellule affichait « — » mais le filtre lisait le texte, et une ligne
+  liée par `caisse_stock_id` sans texte était filtrée comme vide. Décision de l'utilisateur :
+  **afficher l'ancien nom** dans la cellule (option vide du menu, ligne mère et sous-ligne) ;
+  filtre et tri passent par `DemandesTable::stockAffiche` (nom de la caisse liée, à défaut le
+  texte) — ce qu'on voit = ce qu'on filtre. L'app n'écrit plus jamais `stock` (texte hérité).
+- Validation : `cargo test --lib` (10, migrations appliquées sur base neuve), `npx tsc --noEmit`,
+  `parMois` vérifié sur un petit jeu (fichier jetable). **Non testé en conditions réelles**.
+
 ## Prochaines étapes
 
 ### Fait
@@ -1836,19 +1944,12 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 
 *Refonte visuelle (fusionnée dans `main` et publiée en 0.12.0, 2026-10-03)*
 
-- **Points encore ouverts, à trancher par l'utilisateur si besoin** (la refonte elle-même est
-  validée) :
-  - textes nouveaux : titre « Administration » (au lieu de « Admin »), « Connecté en tant que
-    XXX », sous-titre de la liste des affaires ;
-  - « + Créer une nouvelle caisse » reste plus grand que les autres boutons de l'en-tête
-    (demande du 2026-09-11) : harmoniser la hauteur ou non ;
-  - menus déroulants : flèche native de Windows gardée (un chevron maison obligerait à retoucher
-    les styles en ligne de chaque menu) ;
-  - densité du tableau de Gestion des caisses (cellules « Infos suppl. » très hautes) : tronquer
-    le texte avec infobulle changerait la lecture → non fait ;
-  - tableau d'articles et cartes de caisse de Simulations : seulement la police, pas retouchés ;
-  - accueil : Admin / Documentation restent aux coins (pas de barre de navigation sur l'accueil) ;
-  - icônes emoji des cartes de l'accueil gardées (D.A actuelle) plutôt que des icônes au trait.
+- **Points laissés ouverts — tous tranchés par l'utilisateur le 2026-10-06, rien ne change** :
+  textes nouveaux gardés (« Administration », « Connecté en tant que XXX », sous-titre de la
+  liste des affaires) ; « + Créer une nouvelle caisse » reste plus grand ; flèche native des
+  menus déroulants gardée ; « Infos suppl. » non tronquée ; tableau d'articles et cartes de
+  caisse de Simulations non retouchés ; accueil inchangé (Admin / Documentation aux coins) ;
+  icônes emoji des cartes de l'accueil gardées.
 
 *Fiabilité et infrastructure*
 
@@ -1861,48 +1962,36 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   attendant** : éviter d'éditer la même affaire depuis deux postes en même temps, et mettre en
   place une sauvegarde régulière (point suivant).
 - **Sauvegarde régulière de `caisses.sqlite3`** — implémentée le 2026-09-28 (page Admin ›
-  Sauvegarde, cf. journal). **Reste à faire par l'utilisateur** : choisir le dossier (ailleurs
-  que le partage de la base, accessible depuis tous les postes) et la fréquence, puis vérifier
-  qu'un fichier `caisses_*.sqlite3` apparaît. **Critère de complétude (pas encore atteint)** :
-  une sauvegarde automatique réelle constatée dans le dossier choisi.
-  **Constat du 2026-10-01** (capture locale, non commitée :
-  `docs/captures/2026-10-01_admin-sauvegarde-erreur-onedrive.png`) : dossier configuré =
-  dossier **OneDrive personnel du poste AJC** (`C:\Users\<profil>\OneDrive - …\Backups DB
-  Caisses`). La sauvegarde du 30/09 11:17 a bien été faite par le poste AJC, mais le poste FBA
-  échoue (« Dossier de sauvegarde inaccessible », os error 3 : ce chemin local n'existe pas sur
-  son poste) et la liste de restauration y est vide. **À vérifier / faire** : partager ce
-  dossier OneDrive avec le second admin (FBA) — et le synchroniser chez lui — pour qu'il ait
-  accès aux sauvegardes et puisse gérer (restaurer) en l'absence du premier. Attention : le
-  chemin est enregistré **une seule fois en base pour tous les postes**, or un dossier OneDrive
-  partagé n'a pas le même chemin local sur chaque poste (profil différent, raccourci « Ajouter à
-  mon OneDrive »). Si les chemins diffèrent, il faudra soit un dossier au chemin commun (partage
-  réseau), soit faire évoluer l'app (chemin de sauvegarde par poste) — décision à prendre.
+  Sauvegarde, cf. journal). **Sauvegarde automatique confirmée par l'utilisateur le
+  2026-10-06.** **Dossier partagé avec le second admin (FBA) — résolu le 2026-10-06**, sans
+  code : le chemin de sauvegarde est unique en base pour tous les postes, alors que le dossier
+  OneDrive a un chemin par profil Windows. Solution : une **jonction** au même chemin sur chaque
+  poste, `mklink /J C:\CaissesSauvegardes "C:\Users\<profil>\OneDrive - entreprise\Backups DB Caisses"` (dossier OneDrive partagé avec FBA + « Ajouter un raccourci à
+  Mon OneDrive » chez lui), et `C:\CaissesSauvegardes` choisi une fois dans Admin › Sauvegarde.
+  **Nouveau poste admin** : refaire la jonction (copier le chemin exact depuis l'explorateur ;
+  « Location is not available » = jonction vers un chemin inexistant → `rmdir` puis recréer).
+  Alternative si ça devient pénible : accepter `%USERPROFILE%` dans le chemin, ou un chemin par
+  poste (évolution de l'app, non faite).
+- **Vérifié en conditions réelles par l'utilisateur le 2026-10-06** : alerte de poids,
+  suggestion de caisse en stock, statistiques, pastille de la barre des tâches, rôles,
+  restauration avec d'autres postes ouverts, sauvegarde automatique, dates JJ/MM/AAAA.
 - **Tester manuellement en conditions réelles** la section Demandes (édition inline, cases à
   cocher, tri) et la navigation par menu — pas d'outil d'automation UI dans l'environnement de
   dev assisté. Le collage Excel 19 colonnes n'est plus à tester : il ne servait qu'à la reprise
   initiale des affaires, l'utilisateur ne collera plus de lignes dans Demandes (2026-09-28).
 
-*Retours utilisateur 2026-10-01*
+*Retours utilisateur 2026-10-01* — suivi des `AR_CAISS_` renseigné dans Admin › Caisses
+(confirmé par l'utilisateur le 2026-10-06).
 
-- **Renseigner le suivi des caisses `AR_CAISS_`** (action utilisateur, après la release) : dans
-  Admin › Caisses, cocher « Gérée », saisir la quantité réelle en stock et le seuil d'alerte de
-  chaque caisse, d'après le **fichier « caisses » du bureau** de l'utilisateur (jamais vu par
-  l'assistant). Le statut « gérée » est en place (journal du 2026-10-02).
+*Retours utilisateur 2026-10-05* — **tous traités le 2026-10-06**, voir le journal du même
+jour.
 
 *Retours utilisateur 2026-09-30* — **tous traités le même jour** (seuil, caisse, manque
 d'informations, seuil général, rôles, collage AR/ZR, documentation modifiable) : voir le journal
 « 2026-09-30 — Rôles, seuil général, collage AR/ZR, documentation modifiable ».
 
-*Retours utilisateur 2026-09-25*
-
-- **Vérifier le format des dates après la prochaine release** : correctif `--lang=fr-FR`
-  (`tauri.conf.json` → `additionalBrowserArgs`, cf. [Bugs.md](Bugs.md) « Sélecteur de date en
-  MM/DD/YYYY ») pas encore testé — non reproductible sur le poste maison. Une fois la release
-  publiée et le poste du bureau mis à jour : ouvrir un sélecteur de date (création de caisse,
-  édition inline Date picking / Date demandée à S2C) et confirmer l'affichage JJ/MM/AAAA. Si ce
-  n'est pas le cas, piste suivante : remplacer `<input type="date">` par une saisie texte
-  JJ/MM/AAAA contrôlée par l'app. **Critère de complétude (pas encore atteint)** : dates en
-  JJ/MM/AAAA dans les sélecteurs sur le poste du bureau.
+*Retours utilisateur 2026-09-25* — format des dates (`--lang=fr-FR`) **confirmé en
+JJ/MM/AAAA sur le poste du bureau** le 2026-10-06.
 
 *Gestion des caisses — retours utilisateur 2026-09-11* — **tous traités, voir "Fait" ci-dessus**
 (bloc "Gestion des caisses — retours utilisateur 2026-09-11 (lot complet)").
@@ -1941,6 +2030,15 @@ bien celui souhaité, aucun changement de code nécessaire.
     l'app charge du contenu externe, inutile tant que tout est local et échappé.
 
 ### À réfléchir plus tard
+
+- **API de l'intranet (en attente du développeur de l'entreprise, 2026-10-06)** — récupérer la
+  liste des articles d'une affaire (à la place du collage Excel) et des identifiants de
+  connexion. Rien de codé. Attendu du développeur : collection Postman (ou doc OpenAPI), adresse
+  de base et accès réseau depuis les postes, mode d'authentification (clé, jeton, SSO…), un
+  exemple de réponse réelle (champs, unités, AR/ZR), environnement de test. À clarifier avec
+  l'utilisateur : « identifiants de connexion » = remplacer trigramme + mot de passe admin par
+  le compte intranet (changement structurant) ou seulement importer la liste des utilisateurs ?
+  Appels à faire côté Rust ; aucun secret dans le dépôt (public).
 
 - **Droits par tâche** — les rôles Utilisateur / Lecteur / Administrateur existent depuis le
   2026-09-30 (`utilisateur.role`, cf. journal). Si des droits plus fins deviennent utiles

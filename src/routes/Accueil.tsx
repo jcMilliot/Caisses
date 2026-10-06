@@ -148,6 +148,10 @@ function ListeAffaires({
                   {urgent && (
                     <span style={{ marginLeft: 10, fontSize: 12.5, fontWeight: 700, color: "var(--danger-text)" }}>À commander</span>
                   )}
+                  {/* Cochée « OK pour être commandée » (demande de l'utilisateur du 2026-10-06). */}
+                  {demande.ok_pour_passer_cde && (
+                    <span style={{ marginLeft: 10, fontSize: 12.5, fontWeight: 700, color: "var(--ok-text)" }}>En commande</span>
+                  )}
                 </span>
                 <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
                   Picking {dateIsoVersAffichage(datePickingAffichage)}

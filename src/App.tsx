@@ -177,8 +177,9 @@ export default function App() {
         trigramme,
       );
     }
-    // Caisse mère créée systématiquement, en plus des sous-caisses éventuelles.
-    await caissesApi.create(
+    // Caisse mère créée systématiquement, en plus des sous-caisses éventuelles, et liée à sa
+    // ligne de demande (oubli corrigé le 2026-10-06 : sans ce lien, la carte proposait « Lier… »).
+    const caisseMere = await caissesApi.create(
       affaire.id,
       creationAffaire.affaire,
       creationAffaire.longueur_mm,
@@ -190,6 +191,7 @@ export default function App() {
       null,
       trigramme,
     );
+    if (creationAffaire.id > 0) await caissesApi.linkDemande(caisseMere.id, creationAffaire.id, trigramme);
     setCreationAffaire(null);
     setCreationSousCaisses([]);
     setAffaireId(affaire.id);

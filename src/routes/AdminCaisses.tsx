@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { caisseStockApi } from "../data/caisseStock";
-import { estArCaiss, estStockACommander } from "../domain/caisseStock";
+import { dimensionsExterieures, estArCaiss, estStockACommander } from "../domain/caisseStock";
 import type { CaisseStock } from "../domain/types";
 import StatistiquesCaisses from "../components/StatistiquesCaisses";
 
@@ -93,7 +93,9 @@ function StockArCaiss({ trigramme }: { trigramme: string }) {
             <thead>
               <tr>
                 <th style={thStyle}>Caisse</th>
-                <th style={thStyle}>Dimensions (m)</th>
+                <th style={thStyle}>Dimensions intérieures (m)</th>
+                <th style={thStyle}>Dimensions extérieures (m)</th>
+                <th style={thStyle}>Matière</th>
                 <th style={thStyle}>Gérée</th>
                 <th style={thStyle}>Qté en stock</th>
                 <th style={thStyle}>Seuil d'alerte</th>
@@ -161,6 +163,10 @@ function LigneStock({
         {(caisse.longueur_mm / 1000).toFixed(2)} × {(caisse.largeur_mm / 1000).toFixed(2)} ×{" "}
         {(caisse.hauteur_mm / 1000).toFixed(2)}
       </td>
+      <td style={{ ...tdStyle, color: dimensionsExterieures(caisse) ? undefined : "var(--text-muted)" }} className="mono">
+        {dimensionsExterieures(caisse)?.replace(/ m$/, "") ?? "—"}
+      </td>
+      <td style={{ ...tdStyle, color: caisse.matiere ? undefined : "var(--text-muted)" }}>{caisse.matiere || "—"}</td>
       <td style={tdStyle}>
         <input
           type="checkbox"

@@ -187,6 +187,12 @@ pub struct CaisseStock {
     pub gere: bool,
     /// 0031 — alerte « à commander » quand `quantite <= seuil_alerte` (caisse gérée).
     pub seuil_alerte: i64,
+    /// 0033 — « Bois » / « Contreplaqué » ; vide pour une caisse créée avant.
+    pub matiere: String,
+    /// 0035 — dimensions extérieures (mm), 0 = non renseignée.
+    pub ext_longueur_mm: f64,
+    pub ext_largeur_mm: f64,
+    pub ext_hauteur_mm: f64,
 }
 
 /// Mouvement de stock d'une caisse AR_CAISS_ gérée, renvoyé à l'UI après un décompte à la
@@ -208,6 +214,10 @@ pub struct NewCaisseStock {
     pub observations: String,
     pub affaire_id: Option<i64>,
     pub type_ouverture: String,
+    pub matiere: String,
+    pub ext_longueur_mm: f64,
+    pub ext_largeur_mm: f64,
+    pub ext_hauteur_mm: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

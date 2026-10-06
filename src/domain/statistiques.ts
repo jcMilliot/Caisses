@@ -6,7 +6,8 @@ import type { CaisseStock, Demande, DemandeCaisse } from "./types";
 
 // Statistiques d'utilisation des caisses (Admin › Caisses, décisions du 2026-10-02) :
 //  - une « caisse utilisée » = une ligne de Gestion des caisses (mère ou sous-caisse) **livrée**,
-//    hors affaires ACHSTOCK (commandes pour le stock, pas des caisses expédiées) ;
+//    hors affaires ACHSTOCK (commandes pour le stock, pas des caisses expédiées) — sauf les
+//    ACHSTOCK de quantité 1 d'avant 2025 (`estAncienneAffaireRenommeeAchstock`) ;
 //  - comptage en **quantités** (colonne Qté), pas en nombre de lignes ;
 //  - période sur la **date de picking** (celle de la sous-caisse, sinon celle de sa mère) ;
 //  - caisse **de stock** = caisse choisie dans le menu Stock (ou, pour une ligne ancienne, nom
@@ -20,11 +21,19 @@ export interface Periode {
 
 export interface LigneUtilisee {
   quantite: number;
-  typeEnvoi: string; // libellé Standard / 4B / 4C
+  typeEnvoi: string; // libellé Standard / Standard (4B) / Mer (4C)
   longueurMm: number;
   largeurMm: number;
   hauteurMm: number;
   caisseStock: string | null; // nom de la caisse de stock, null = sur mesure
+  mois: string | null; // AAAA-MM de la date de picking, null = date illisible
+}
+
+// Comparatif mensuel stock / sur mesure (graphique en barres, 2026-10-06).
+export interface UsageMois {
+  mois: string; // AAAA-MM
+  stock: number;
+  surMesure: number;
 }
 
 export interface FormatSurMesure {
@@ -55,12 +64,25 @@ export interface Statistiques {
   surMesureSansDimensions: number;
   // Lignes livrées sans date de picking lisible : exclues dès qu'une période est choisie.
   sansDate: number;
+  // Un élément par mois, du premier au dernier mois ayant des livraisons (mois vides inclus) ;
+  // lignes sans date exclues.
+  parMois: UsageMois[];
 }
 
 function dateIso(s: string): string | null {
   const t = s.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
   return dateExcelVersIso(t) || null;
+}
+
+// Avant 2025, de vraies expéditions avec une caisse de stock ont été renommées « ACHSTOCK » dans
+// l'ancien fichier Excel : on les reconnaît à leur quantité de 1 (une vraie commande pour le
+// stock en compte plusieurs). Elles comptent comme caisses utilisées (décision du 2026-10-06).
+const ANNEE_FIN_ACHSTOCK_RENOMMEES = "2025";
+
+function estAncienneAffaireRenommeeAchstock(d: Demande): boolean {
+  const date = dateIso(d.date_picking);
+  return d.quantite === 1 && date !== null && date.slice(0, 4) < ANNEE_FIN_ACHSTOCK_RENOMMEES;
 }
 
 export function lignesUtilisees(
@@ -76,8 +98,9 @@ export function lignesUtilisees(
   const lignes: LigneUtilisee[] = [];
   let sansDate = 0;
   const avecPeriode = periode.du !== null || periode.au !== null;
-  const ajouter = (datePicking: string, ligne: LigneUtilisee) => {
+  const ajouter = (datePicking: string, ligneSansMois: Omit<LigneUtilisee, "mois">) => {
     const d = dateIso(datePicking);
+    const ligne: LigneUtilisee = { ...ligneSansMois, mois: d ? d.slice(0, 7) : null };
     if (avecPeriode) {
       if (!d) {
         sansDate++;
@@ -89,7 +112,7 @@ export function lignesUtilisees(
   };
 
   for (const d of demandes) {
-    if (estDemandeAchstock(d)) continue;
+    if (estDemandeAchstock(d) && !estAncienneAffaireRenommeeAchstock(d)) continue;
     const mereLivree = estDemandeValidee(d);
     if (mereLivree) {
       ajouter(d.date_picking, {
@@ -116,7 +139,7 @@ export function lignesUtilisees(
   return { lignes, sansDate };
 }
 
-const ORDRE_TYPES = ["Standard", "4B", "4C"];
+const ORDRE_TYPES = ["Standard", "Standard (4B)", "Mer (4C)"]; // libellés de `libelleCategorie`
 
 export function calculerStatistiques(
   demandes: Demande[],
@@ -159,6 +182,14 @@ export function calculerStatistiques(
   }
 
   const parQuantite = <T extends { quantite: number }>(a: T, b: T) => b.quantite - a.quantite;
+  const parMois = new Map<string, UsageMois>();
+  for (const l of lignes) {
+    if (l.mois === null) continue;
+    const u = parMois.get(l.mois) ?? { mois: l.mois, stock: 0, surMesure: 0 };
+    if (l.caisseStock !== null) u.stock += l.quantite;
+    else u.surMesure += l.quantite;
+    parMois.set(l.mois, u);
+  }
   return {
     total: surMesure + enStock,
     surMesure,
@@ -168,7 +199,71 @@ export function calculerStatistiques(
     caissesStock: [...stock.values()].sort(parQuantite),
     surMesureSansDimensions,
     sansDate,
+    parMois: moisContigus(parMois),
   };
+}
+
+// Mois du premier au dernier présent, les mois sans livraison à 0 (l'axe du temps reste régulier).
+function moisContigus(parMois: Map<string, UsageMois>): UsageMois[] {
+  const cles = [...parMois.keys()].sort();
+  if (cles.length === 0) return [];
+  const resultat: UsageMois[] = [];
+  let [a, m] = cles[0].split("-").map(Number);
+  const fin = cles[cles.length - 1];
+  for (;;) {
+    const cle = `${a}-${String(m).padStart(2, "0")}`;
+    resultat.push(parMois.get(cle) ?? { mois: cle, stock: 0, surMesure: 0 });
+    if (cle >= fin) break;
+    m++;
+    if (m > 12) {
+      m = 1;
+      a++;
+    }
+  }
+  return resultat;
+}
+
+// Graphique stock / sur mesure (Admin › Caisses › Statistiques, 2026-10-06) : indépendant de
+// la période choisie en haut, avec ses propres onglets — une année (ses 12 mois) ou « Tout »
+// (une barre par année).
+export interface GroupeBarres {
+  cle: string;
+  court: string; // sous l'axe
+  long: string; // dans l'infobulle
+  stock: number;
+  surMesure: number;
+}
+
+export function anneesAvecLivraisons(parMois: UsageMois[]): string[] {
+  return [...new Set(parMois.filter((m) => m.stock + m.surMesure > 0).map((m) => m.mois.slice(0, 4)))].sort();
+}
+
+export function groupesMoisDeLAnnee(parMois: UsageMois[], annee: string): GroupeBarres[] {
+  return Array.from({ length: 12 }, (_, i) => {
+    const cle = `${annee}-${String(i + 1).padStart(2, "0")}`;
+    const m = parMois.find((x) => x.mois === cle);
+    const date = new Date(Number(annee), i, 1);
+    return {
+      cle,
+      court: date.toLocaleDateString("fr-FR", { month: "short" }),
+      long: date.toLocaleDateString("fr-FR", { month: "long", year: "numeric" }),
+      stock: m?.stock ?? 0,
+      surMesure: m?.surMesure ?? 0,
+    };
+  });
+}
+
+export function groupesParAnnee(parMois: UsageMois[]): GroupeBarres[] {
+  return anneesAvecLivraisons(parMois).map((annee) => {
+    const mois = parMois.filter((m) => m.mois.startsWith(`${annee}-`));
+    return {
+      cle: annee,
+      court: annee,
+      long: annee,
+      stock: mois.reduce((t, m) => t + m.stock, 0),
+      surMesure: mois.reduce((t, m) => t + m.surMesure, 0),
+    };
+  });
 }
 
 // Bornes des raccourcis de période (date de picking), en jours calendaires locaux.

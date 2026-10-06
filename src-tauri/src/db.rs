@@ -134,6 +134,22 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0031_add_suivi_stock_ar_caiss",
         include_str!("../../migrations/0031_add_suivi_stock_ar_caiss.sql"),
     ),
+    (
+        "0032_type_envoi_mer_4c",
+        include_str!("../../migrations/0032_type_envoi_mer_4c.sql"),
+    ),
+    (
+        "0033_add_caisse_stock_matiere",
+        include_str!("../../migrations/0033_add_caisse_stock_matiere.sql"),
+    ),
+    (
+        "0034_lier_caisses_meres",
+        include_str!("../../migrations/0034_lier_caisses_meres.sql"),
+    ),
+    (
+        "0035_add_caisse_stock_dims_exterieures",
+        include_str!("../../migrations/0035_add_caisse_stock_dims_exterieures.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {

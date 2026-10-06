@@ -21,3 +21,14 @@ export function estStockACommander(c: CaisseStock): boolean {
 export function caissesStockACommander(caisses: CaisseStock[]): CaisseStock[] {
   return caisses.filter(estStockACommander);
 }
+
+// Matières d'une caisse en stock, choisies dans « Gérer les caisses » (obligatoire, 2026-10-05).
+// Liste dupliquée côté Rust (`caisse_stock.rs::MATIERES`) — garder les deux alignées.
+export const MATIERES_CAISSE = ["Bois", "Contreplaqué"];
+
+// Dimensions extérieures « L × l × H m », null si aucune n'est renseignée (champs facultatifs).
+export function dimensionsExterieures(c: Pick<CaisseStock, "ext_longueur_mm" | "ext_largeur_mm" | "ext_hauteur_mm">): string | null {
+  if (c.ext_longueur_mm <= 0 && c.ext_largeur_mm <= 0 && c.ext_hauteur_mm <= 0) return null;
+  const m = (mm: number) => (mm / 1000).toFixed(2);
+  return `${m(c.ext_longueur_mm)} × ${m(c.ext_largeur_mm)} × ${m(c.ext_hauteur_mm)} m`;
+}

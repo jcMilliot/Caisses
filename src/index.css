@@ -567,6 +567,10 @@ table {
   border-bottom: 1px solid var(--border);
   margin-bottom: 20px;
   overflow-x: auto;
+  /* overflow-x: auto force aussi overflow-y: auto : le soulignement de l'onglet actif, qui
+     débordait d'1 px sous la bordure, faisait apparaître une petite barre de défilement
+     verticale. Soulignement remonté (bottom: 0) et défilement vertical interdit. */
+  overflow-y: hidden;
 }
 
 .tab {
@@ -586,7 +590,7 @@ table {
   position: absolute;
   left: 8px;
   right: 8px;
-  bottom: -1px;
+  bottom: 0;
   height: 2px;
   border-radius: 2px 2px 0 0;
   background: transparent;

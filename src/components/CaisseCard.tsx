@@ -180,13 +180,14 @@ export default function CaisseCard({
               {caisseStockNom && (
                 <div style={{ fontSize: 12, color: "var(--info-text)", fontWeight: 600, marginTop: 2 }}>Caisse en stock : {caisseStockNom}</div>
               )}
-              {lien && (
+              {/* Rien d'affiché quand la caisse est liée à une ligne de Gestion des caisses
+                  (2026-10-06) : seulement « non liée » + « Lier… ». */}
+              {lien && lien.libelle === null && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginTop: 3, color: "var(--text-muted)" }}>
                   <span title="Ligne de Gestion des caisses rattachée à cette caisse (taux de remplissage, synchro des dimensions)">
-                    Gestion des caisses : {lien.libelle ?? <em>non liée</em>}
+                    Gestion des caisses : <em>non liée</em>
                   </span>
-                  {/* « Lier… » seulement tant que la caisse n'est liée à aucune ligne (2026-10-03). */}
-                  {!readOnly && lien.libelle === null && (
+                  {!readOnly && (
                     <button
                       onClick={lien.onLier}
                       style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--accent)", fontSize: 12, fontWeight: 600 }}
@@ -313,8 +314,8 @@ export default function CaisseCard({
           <div style={{ marginTop: 12, fontSize: 12.5, display: "flex", flexDirection: "column", gap: 4 }}>
             {(caisse.dim1MaxMm > 0 || caisse.dim2MaxMm > 0 || caisse.dim3MaxMm > 0) && (
               <Row
-                label="Dim. max articles (L×l×H)"
-                value={`${caisse.dim1MaxMm} × ${caisse.dim2MaxMm} × ${caisse.dim3MaxMm} mm`}
+                label="Dim. max articles (L/l/H)"
+                value={`${caisse.dim1MaxMm} / ${caisse.dim2MaxMm} / ${caisse.dim3MaxMm} mm`}
               />
             )}
             <Row label="Volume interne" value={`${formaterVolumeM3(caisse.volumeInterneM3)} m³`} />
@@ -324,7 +325,7 @@ export default function CaisseCard({
             )}
             <Row label="Poids total" value={`${caisse.poidsTotalKg.toFixed(3)} kg`} />
             {caisse.surfaceFondM2 > 0 && (
-              <Row label={`Poids au m² (max ${caisse.poidsMaxKgM2})`} value={`${Math.floor(caisse.poidsParM2)} kg/m²`} />
+              <Row label={`Poids au m² hors caisse (max ${caisse.poidsMaxKgM2})`} value={`${Math.floor(caisse.poidsParM2)} kg/m²`} />
             )}
             <Row label="Seuil d'alerte" value={`${caisse.seuilEffectif}%`} />
           </div>
@@ -355,9 +356,10 @@ export default function CaisseCard({
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
       <span style={{ color: "var(--text-muted)" }}>{label}</span>
-      <span className="mono" style={{ fontWeight: 500 }}>{value}</span>
+      {/* Valeur jamais coupée (dimensions sur une seule ligne, retour du 2026-10-05). */}
+      <span className="mono" style={{ fontWeight: 500, whiteSpace: "nowrap", textAlign: "right" }}>{value}</span>
     </div>
   );
 }

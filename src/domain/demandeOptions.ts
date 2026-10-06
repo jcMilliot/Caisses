@@ -3,7 +3,7 @@
 
 import type { Demande, DemandeCaisse, ListeOption, OptionListe } from "./types";
 
-export const TYPES_ENVOI_CAISSE = ["STANDARD", "STANDARD (4B)", "STANDARD (4C)"];
+export const TYPES_ENVOI_CAISSE = ["STANDARD", "STANDARD (4B)", "MER (4C)"];
 
 export const TYPES_OUVERTURE = ["Par dessus", "Par dessus et par devant", "Par devant"];
 

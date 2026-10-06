@@ -13,6 +13,26 @@ const A_FAIRE: Point[] = [
 
 const A_VERIFIER: Point[] = [
   {
+    titre: "Caisses en stock : matière et dimensions extérieures",
+    detail:
+      "Dans « Gérer les caisses », renseigner la matière (obligatoire) et, si besoin, les dimensions extérieures de chaque caisse ; vérifier qu'elles apparaissent dans Admin › Caisses.",
+  },
+  {
+    titre: "Graphique stock / sur mesure",
+    detail:
+      "Dans Admin › Caisses › Statistiques, vérifier le graphique en tête de page : un onglet par année (détail des 12 mois) et « Tout » (une barre par année), les caisses de stock et sur mesure, et les quantités au survol.",
+  },
+  {
+    titre: "Filtre de la colonne Stock",
+    detail:
+      "Dans Gestion des caisses, les anciennes lignes affichent maintenant le nom de caisse écrit dans l'Excel au lieu de « — » ; filtrer sur une caisse ne doit montrer que des lignes qui affichent ce nom.",
+  },
+  {
+    titre: "Caisses liées (Simulations)",
+    detail:
+      "Ouvrir une affaire créée depuis Gestion des caisses : la carte de la caisse ne doit plus afficher « Lier… » ni la ligne « Gestion des caisses ».",
+  },
+  {
     titre: "Mise à jour dans l'application",
     detail:
       "À la prochaine version publiée après celle-ci : une barre doit apparaître en haut de l'app avec « Installer » / « Plus tard », puis montrer le téléchargement et redémarrer l'app toute seule, sans la fenêtre de l'installeur Windows.",
@@ -28,58 +48,9 @@ const A_VERIFIER: Point[] = [
       "Sur une caisse non liée, « Lier… » doit permettre de choisir la ligne de Gestion des caisses ; le taux de remplissage doit ensuite s'afficher sur cette ligne, et le bouton disparaître.",
   },
   {
-    titre: "Restauration avec d'autres postes ouverts",
-    detail:
-      "Lancer une restauration alors que l'app est ouverte sur un autre poste : ce poste doit afficher « L'application doit être fermée… », se fermer après validation, et la restauration doit démarrer seule.",
-  },
-  {
     titre: "Taux de remplissage",
     detail:
       "Vérifier qu'il s'affiche dans la liste des affaires de Simulations et dans la colonne « Taux de remplissage » de Gestion des caisses, pour les affaires qui ont des caisses avec des articles (une valeur par caisse s'il y en a plusieurs).",
-  },
-  {
-    titre: "Alerte de poids (Simulations)",
-    detail:
-      "Sur une caisse dont les articles pèsent 320 kg ou plus par m² de fond, vérifier que la carte passe en rouge avec « Charge trop lourde ». La limite se règle dans l'onglet Paramètres ; le poids de la caisse elle-même est compris dans la marge.",
-  },
-  {
-    titre: "Statistiques des caisses",
-    detail:
-      "Dans Admin › Caisses › Statistiques, vérifier que les chiffres correspondent à ce qui a été livré (sur mesure, caisses de stock, formats les plus utilisés) et que le choix de période fonctionne.",
-  },
-  {
-    titre: "Stock des caisses « AR_CAISS_ »",
-    detail:
-      "Dans l'onglet Caisses de l'Admin, cocher « Gérée » et saisir la quantité réelle et le seuil d'alerte de chaque caisse (d'après le fichier « caisses » du bureau). Puis passer en « Livré » une caisse qui en utilise une : la quantité doit baisser, et l'alerte « à commander » apparaître (Caisses en stock, accueil, barre des tâches) quand le seuil est atteint. Repasser en « Non livré » : l'app doit proposer de remettre la quantité en stock. Passer en « Livré » une commande ACHSTOCK d'une caisse gérée : la quantité doit augmenter.",
-  },
-  {
-    titre: "Suggestion de caisse en stock (Simulations)",
-    detail:
-      "Sur une affaire avec des articles et une caisse Standard, vérifier qu'une caisse en stock est proposée sur la carte de la caisse, et que « Utiliser » reprend ses dimensions et la sélectionne aussi dans Gestion des caisses. Modifier ensuite une dimension : la caisse en stock doit être désélectionnée.",
-  },
-  {
-    titre: "Sauvegarde automatique",
-    detail:
-      "Choisir le dossier et la fréquence dans l'onglet Sauvegarde, puis vérifier qu'une copie apparaît bien dans le dossier.",
-  },
-  {
-    titre: "Dossier de sauvegarde partagé avec le second administrateur",
-    detail:
-      "Le dossier de sauvegarde est un dossier OneDrive personnel : le poste FBA ne le trouve pas (« Dossier de sauvegarde inaccessible »). Le partager avec le second administrateur pour qu'il ait accès aux sauvegardes et puisse les gérer en l'absence du premier. Attention : le même chemin sert pour tous les postes, il doit donc exister à l'identique sur chacun.",
-  },
-  {
-    titre: "Format des dates",
-    detail: "Sur le poste du bureau, vérifier que les calendriers affichent les dates en JJ/MM/AAAA.",
-  },
-  {
-    titre: "Alerte « À commander »",
-    detail:
-      "Vérifier que la pastille rouge apparaît sur l'icône de l'application dans la barre des tâches quand une affaire est en alerte.",
-  },
-  {
-    titre: "Rôles",
-    detail:
-      "Passer un utilisateur en Lecteur et vérifier qu'il ne peut rien modifier ; nommer un 2e administrateur et vérifier qu'il crée son mot de passe à sa première ouverture de l'Admin.",
   },
   {
     titre: "Code de secours",

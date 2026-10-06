@@ -2,13 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { caisseStockApi } from "../data/caisseStock";
 import { demandesApi } from "../data/demandes";
 import { demandeCaisseApi } from "../data/demandeCaisse";
+import BarresStockSurMesure from "./BarresStockSurMesure";
 import { calculerStatistiques, periodeDepuisMois, type Periode } from "../domain/statistiques";
 import type { CaisseStock, Demande, DemandeCaisse } from "../domain/types";
 
 // Admin › Caisses › Statistiques : quelles caisses sont le plus utilisées (sur mesure et de
 // stock), en quantités livrées, sur une période de date de picking (décisions du 2026-10-02).
-// Calcul dans domain/statistiques.ts. Une seule série (quantités) → une seule couleur, pas de
-// légende ; chaque barre a une infobulle et le chiffre exact est écrit à côté.
+// Calcul dans domain/statistiques.ts. Classements : une seule série (quantités) → une seule
+// couleur, pas de légende ; chaque barre a une infobulle et le chiffre exact est écrit à côté.
+// Comparatif stock / sur mesure : BarresStockSurMesure (deux séries, légende), en tête de page,
+// avec ses propres onglets par année (hors période).
 
 type ChoixPeriode = "3m" | "12m" | "tout" | "libre";
 
@@ -37,6 +40,13 @@ export default function StatistiquesCaisses() {
     [donnees, periode.du, periode.au],
   );
 
+  // Graphique stock / sur mesure : toutes les livraisons, indépendamment de la période du haut
+  // (il a ses propres onglets par année).
+  const parMoisTout = useMemo(
+    () => (donnees ? calculerStatistiques(donnees.demandes, donnees.demandeCaisses, donnees.caissesStock, { du: null, au: null }).parMois : []),
+    [donnees],
+  );
+
   if (erreur) return <p style={{ color: "var(--danger-text)" }}>{erreur}</p>;
   if (!stats) return <p style={{ color: "var(--text-muted)" }}>Chargement…</p>;
 
@@ -49,6 +59,13 @@ export default function StatistiquesCaisses() {
 
   return (
     <div style={{ display: "grid", gap: 20, maxWidth: 980 }}>
+      <Bloc
+        titre="Caisses de stock et sur mesure"
+        note="Quantités livrées, hors ACHSTOCK, réparties selon la date de picking (lignes sans date non comptées)."
+      >
+        <BarresStockSurMesure parMois={parMoisTout} />
+      </Bloc>
+
       {/* Période (date de picking) */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: 13, color: "var(--text-muted)", marginRight: 4 }}>Date de picking :</span>
@@ -89,14 +106,14 @@ export default function StatistiquesCaisses() {
         </div>
       ) : (
         <>
-          <Bloc titre="Sur mesure par type d'envoi">
+          <Bloc titre="Caisses sur mesure par type d'envoi">
             <Classement
               lignes={stats.surMesureParType.map((t) => ({ cle: t.typeEnvoi, libelle: t.typeEnvoi, quantite: t.quantite }))}
             />
           </Bloc>
 
           <Bloc
-            titre="Formats sur mesure les plus utilisés"
+            titre="Dimensions des caisses sur mesure les plus utilisées"
             note={
               stats.surMesureSansDimensions > 0
                 ? `${stats.surMesureSansDimensions} caisse(s) sur mesure sans dimensions ne sont pas classées.`
