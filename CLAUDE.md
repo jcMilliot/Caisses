@@ -1401,6 +1401,9 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   texte) — ce qu'on voit = ce qu'on filtre. L'app n'écrit plus jamais `stock` (texte hérité).
 - Validation : `cargo test --lib` (10, migrations appliquées sur base neuve), `npx tsc --noEmit`,
   `parMois` vérifié sur un petit jeu (fichier jetable). **Non testé en conditions réelles**.
+- **Release 0.13.0** (2026-10-06) : retours des 2026-10-05 / 06 ci-dessus + migrations `0032` à
+  `0035` (appliquées sur la base partagée au premier lancement). Commit du travail `dff5231`,
+  puis bump de version. Soumission Microsoft Defender à faire dès publication.
 
 ## Prochaines étapes
 
