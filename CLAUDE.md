@@ -1728,6 +1728,10 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   propose maintenant « Modifier l'adresse de l'intranet » ; l'adresse saisie n'est enregistrée
   qu'après une connexion réussie (`connexion_intranet` prend `url` facultative) ; message
   explicite sur un 404. `set_intranet_url_initiale` supprimée.
+- **Barre de mise à jour aussi sur l'écran de connexion** : en 0.14.0 elle n'apparaissait qu'une
+  fois connecté → un poste bloqué à la connexion ne pouvait pas recevoir le correctif par l'app
+  (installation manuelle du `setup.exe` de la release nécessaire pour passer de 0.14.0 à 0.14.1
+  sur un tel poste).
 - Validation : `cargo check`, `cargo test --lib` (13), `npx tsc --noEmit`, build de test.
 
 ## Prochaines étapes

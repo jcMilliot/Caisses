@@ -217,8 +217,27 @@ export default function App() {
     return <EcranAttente texte="Ouverture de la base…" />;
   }
 
+  // Barre de mise à jour aussi sur l'écran de connexion (0.14.1) : un poste qui ne peut pas se
+  // connecter (adresse de l'intranet fausse…) doit pouvoir recevoir le correctif.
+  const barreMiseAJourFixe = update && afficherBandeau && (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 300 }}>
+      <BandeauMiseAJour
+        version={update.info.version}
+        progression={progression}
+        erreur={erreurMaj}
+        onInstaller={confirmInstall}
+        onPlusTard={dismiss}
+      />
+    </div>
+  );
+
   if (userStatus === "needs-setup") {
-    return <ConnexionIntranet message={messageConnexion} urlManquante={urlManquante} onConnecte={confirmerConnexion} />;
+    return (
+      <>
+        <ConnexionIntranet message={messageConnexion} urlManquante={urlManquante} onConnecte={confirmerConnexion} />
+        {barreMiseAJourFixe}
+      </>
+    );
   }
 
   // Jamais d'écran blanc : connexion en cours (jusqu'à 30 s si l'intranet tarde) ou erreur.
