@@ -9,7 +9,7 @@ import Admin from "./routes/Admin";
 import Documentation from "./routes/Documentation";
 import CreerAffaireDialog from "./components/CreerAffaireDialog";
 import FirstLaunchSetup from "./components/FirstLaunchSetup";
-import TrigrammeSetup from "./components/TrigrammeSetup";
+import ConnexionIntranet from "./components/ConnexionIntranet";
 import BandeauMiseAJour from "./components/BandeauMiseAJour";
 import ConfirmDialogHost from "./components/ConfirmDialogHost";
 import DemandeFermetureDialog from "./components/DemandeFermetureDialog";
@@ -38,8 +38,17 @@ const SECTIONS: { id: Section; label: string }[] = [
 ];
 
 export default function App() {
-  const { status: dbStatus, chooseFolder } = useDbSetup();
-  const { status: userStatus, trigramme, setTrigramme, confirmerTrigramme } = useUserSetup();
+  const { status: dbStatus, error: erreurBase, deplacee: baseDeplacee, utiliserDossier } = useDbSetup();
+  const {
+    status: userStatus,
+    error: erreurConnexion,
+    trigramme,
+    horsLigne,
+    message: messageConnexion,
+    urlManquante,
+    confirmerConnexion,
+    reessayer: reessayerConnexion,
+  } = useUserSetup(dbStatus === "ready");
   const { update, afficherBandeau, progression, erreur: erreurMaj, confirmInstall, dismiss } =
     useUpdateCheck(dbStatus === "ready");
   const utilisateurPret = dbStatus === "ready" && userStatus === "ready" ? trigramme : null;
@@ -198,19 +207,29 @@ export default function App() {
   }
 
   if (dbStatus === "needs-setup") {
-    return <FirstLaunchSetup onChooseFolder={chooseFolder} />;
+    return <FirstLaunchSetup onUseFolder={utiliserDossier} deplacee={baseDeplacee} />;
   }
 
+  if (dbStatus === "error") {
+    return <EcranAttente texte={`Ouverture de la base impossible : ${erreurBase ?? "erreur inconnue"}`} onReessayer={() => window.location.reload()} />;
+  }
   if (dbStatus !== "ready") {
-    return null;
+    return <EcranAttente texte="Ouverture de la base…" />;
   }
 
   if (userStatus === "needs-setup") {
-    return <TrigrammeSetup onSubmit={setTrigramme} onTermine={confirmerTrigramme} />;
+    return <ConnexionIntranet message={messageConnexion} urlManquante={urlManquante} onConnecte={confirmerConnexion} />;
   }
 
+  // Jamais d'écran blanc : connexion en cours (jusqu'à 30 s si l'intranet tarde) ou erreur.
+  if (userStatus === "checking") {
+    return <EcranAttente texte="Connexion à l'intranet…" />;
+  }
+  if (userStatus === "error") {
+    return <EcranAttente texte={`Démarrage impossible : ${erreurConnexion ?? "erreur inconnue"}`} onReessayer={reessayerConnexion} />;
+  }
   if (userStatus !== "ready" || !trigramme || role === null) {
-    return null;
+    return <EcranAttente texte="Chargement…" />;
   }
 
   return (
@@ -218,6 +237,15 @@ export default function App() {
     // dessous : la navbar et les bandeaux collants (calés sur `top: 0` / `top: 46`…) restent
     // relatifs à cette zone et ne passent jamais sous la barre.
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+      {horsLigne && (
+        // Intranet injoignable au démarrage : dernier compte connu du poste, sans Admin ni import.
+        <div
+          style={{ padding: "5px 16px", fontSize: 12.5, background: "var(--warn-bg)", color: "var(--warn-text)", borderBottom: "1px solid var(--warn-border)" }}
+        >
+          Intranet injoignable : connecté en tant que {trigramme} sans vérification — page Admin et import indisponibles jusqu'au
+          prochain démarrage avec l'intranet.
+        </div>
+      )}
       {update && afficherBandeau && (
         <BandeauMiseAJour
           version={update.info.version}
@@ -314,6 +342,20 @@ export default function App() {
 
       <ConfirmDialogHost />
       {demandeFermeture && <DemandeFermetureDialog demandeur={demandeFermeture} />}
+    </div>
+  );
+}
+
+// Écran d'attente du démarrage (connexion à l'intranet, rôle), ou d'erreur avec nouvel essai.
+function EcranAttente({ texte, onReessayer }: { texte: string; onReessayer?: () => void }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, background: "var(--bg)", color: onReessayer ? "var(--danger-text)" : "var(--text-muted)", fontSize: 14, padding: 24, textAlign: "center" }}>
+      <span>{texte}</span>
+      {onReessayer && (
+        <button className="btn btn-primary" onClick={onReessayer}>
+          Réessayer
+        </button>
+      )}
     </div>
   );
 }

@@ -1,4 +1,10 @@
 import ArticlesNonCollesBloc from "../components/ArticlesNonCollesBloc";
+import ArticlesSupprimesIntranetBloc from "../components/ArticlesSupprimesIntranetBloc";
+import AjouterDemandesDialog from "../components/AjouterDemandesDialog";
+import { optionsListeApi } from "../data/optionsListe";
+import type { OptionListe } from "../domain/types";
+import { intranetApi } from "../data/intranet";
+import { useImportIntranet } from "../hooks/useImportIntranet";
 import { articlesNonCollesApi, type ArticleNonColle } from "../data/articlesNonColles";
 import { useSessionAdmin } from "../hooks/useSessionAdmin";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -7,6 +13,7 @@ import { calculerRecapAffaire, calculerCapaciteAffaire, formaterVolumeM3, champs
 import {
   estCaisse4C,
   contrePlaqueParDefaut,
+  appliquerReglesCaisse,
   estDemandeValidee,
   estDemandeCaisseValidee,
   memeNomAffaire,
@@ -42,6 +49,8 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
   const {
     affaire,
     articles,
+    tousArticles,
+    articlesSupprimesIntranet,
     caissesCalculees,
     loading,
     ajouterArticles,
@@ -54,6 +63,13 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
   } = useAffaire(affaireId, trigramme);
 
   const conteneurArticlesRef = useRef<HTMLDivElement>(null);
+  const importIntranet = useImportIntranet(affaireId, affaire?.nom, tousArticles, trigramme, reload);
+  const [anomaliesOuvertes, setAnomaliesOuvertes] = useState(false);
+  // Bouton « Coller depuis Excel » masquable dans Admin › Paramètres (en attendant son retrait).
+  const [collageVisible, setCollageVisible] = useState(true);
+  useEffect(() => {
+    intranetApi.getCollageExcelVisible().then(setCollageVisible).catch(() => {});
+  }, []);
   // Lignes écartées au collage (AR ne commençant ni par « AR » ni par « ZR »), gardées en base.
   const [nonColles, setNonColles] = useState<ArticleNonColle[]>([]);
   const { assurerSession, dialogue: dialogueSessionAdmin } = useSessionAdmin(trigramme);
@@ -99,6 +115,12 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
   const [caissesStock, setCaissesStock] = useState<CaisseStock[]>([]);
   // Caisse dont on choisit la ligne de Gestion des caisses (« Lier… »).
   const [caisseALier, setCaisseALier] = useState<Caisse | null>(null);
+  // « Lier… » sans ligne du même nom : création de la ligne puis lien (retour du 2026-10-07).
+  const [caisseACreer, setCaisseACreer] = useState<Caisse | null>(null);
+  const [optionsListe, setOptionsListe] = useState<OptionListe[]>([]);
+  useEffect(() => {
+    optionsListeApi.list().then(setOptionsListe).catch(() => {});
+  }, []);
 
   useEffect(() => {
     caisseStockApi.list().then(setCaissesStock).catch(() => {});
@@ -292,6 +314,20 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
     await reload();
   }
 
+  // « Lier… » : choix de la ligne, ou — si l'affaire n'a encore aucune ligne dans Gestion des
+  // caisses (affaire créée directement dans Simulations) — proposition de la créer.
+  async function ouvrirLien(c: Caisse) {
+    if (affaire && !toutesDemandes.some((d) => memeNomAffaire(d.affaire, affaire.nom))) {
+      const creer = await confirmerAction(
+        `Aucune ligne « ${affaire.nom} » dans Gestion des caisses. La créer et y lier cette caisse ?`,
+        "Lier la caisse",
+      );
+      if (creer) setCaisseACreer(c);
+      return;
+    }
+    setCaisseALier(c);
+  }
+
   if (loading && !affaire) {
     return <div style={{ padding: 32 }}>Chargement…</div>;
   }
@@ -471,7 +507,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
               dragActif={!!drag}
               survolee={survolCaisseId === c.id}
               readOnly={readOnly}
-              lien={{ libelle: libelleLien(c), onLier: () => setCaisseALier(c) }}
+              lien={{ libelle: libelleLien(c), onLier: () => ouvrirLien(c) }}
               caisseStockNom={c.caisse_stock_id !== null ? caissesStock.find((cs) => cs.id === c.caisse_stock_id)?.nom ?? null : null}
               suggestion={(() => {
                 const cs = suggestionPour(c);
@@ -501,9 +537,28 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
               )}
             </>
           )}
-          <button className="btn btn-sm" onClick={() => setShowPaste(true)} disabled={readOnly}>
-            Coller depuis Excel
+          {importIntranet.anomalies.length > 0 && (
+            <button
+              className="btn btn-sm btn-pastel-orange"
+              title="Lignes de l'intranet non importées faute de numéro de besoin"
+              onClick={() => setAnomaliesOuvertes(true)}
+            >
+              ⚠ Pas de numéro de besoin ({importIntranet.anomalies.length})
+            </button>
+          )}
+          <button
+            className="btn btn-sm btn-pastel-blue"
+            onClick={importIntranet.lancer}
+            disabled={readOnly || importIntranet.enCours}
+            title="Articles de l'affaire dans l'intranet (picking)"
+          >
+            {importIntranet.enCours ? "Recherche…" : importIntranet.libelle}
           </button>
+          {collageVisible && (
+            <button className="btn btn-sm" onClick={() => setShowPaste(true)} disabled={readOnly}>
+              Coller depuis Excel
+            </button>
+          )}
         </div>
       </div>
 
@@ -518,7 +573,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
           onUpdate={modifierArticle}
           onStartDrag={startDrag}
           onCollageMultiCellules={
-            readOnly
+            readOnly || !collageVisible
               ? undefined
               : (texte) => {
                   setCollageInitial(texte);
@@ -529,6 +584,8 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
           champsManquantsParArticle={surlignerManques ? articlesAvecManque : undefined}
         />
       </div>
+
+      <ArticlesSupprimesIntranetBloc articles={articlesSupprimesIntranet} />
 
       <ArticlesNonCollesBloc
         lignes={nonColles}
@@ -624,6 +681,64 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
       )}
 
       {dialogueSessionAdmin}
+      {importIntranet.dialogues}
+
+      {anomaliesOuvertes && (
+        <div className="modal-overlay" style={{ zIndex: 300 }} onClick={() => setAnomaliesOuvertes(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="panel" style={{ padding: 22, width: 440, maxHeight: "80vh", overflow: "auto", boxShadow: "var(--shadow-lg)" }}>
+            <h3 style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 700 }}>Lignes non importées</h3>
+            <p style={{ margin: "0 0 12px", fontSize: 12.5, color: "var(--text-muted)" }}>
+              Ces lignes de l'intranet n'ont pas été importées.
+            </p>
+            <table style={{ width: "100%", fontSize: 12.5, borderCollapse: "collapse" }}>
+              <tbody>
+                {importIntranet.anomalies.map((ar, i) => (
+                  <tr key={i}>
+                    <td style={{ padding: "4px 8px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>{ar || "—"}</td>
+                    <td style={{ padding: "4px 8px", borderBottom: "1px solid var(--border)", color: "var(--danger-text)" }}>
+                      pas de numéro de besoin
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <button className="btn" onClick={() => setAnomaliesOuvertes(false)}>
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {caisseACreer && affaire && (
+        <AjouterDemandesDialog
+          caissesStock={caissesStock}
+          optionsPersonnalisees={optionsListe}
+          ligneInitiale={{
+            affaire: affaire.nom,
+            type_envoi_caisse: caisseACreer.type_envoi_caisse,
+            longueur_mm: caisseACreer.longueur_mm,
+            largeur_mm: caisseACreer.largeur_mm,
+            hauteur_mm: caisseACreer.hauteur_mm,
+            contre_plaque: contrePlaqueParDefaut(caisseACreer.type_envoi_caisse),
+            ...appliquerReglesCaisse({ type_envoi_caisse: caisseACreer.type_envoi_caisse, type_ouverture: "", traitement: "" }),
+          }}
+          onAjouter={async (nouvelles) => {
+            try {
+              const creees = await demandesApi.bulkCreate(nouvelles, trigramme);
+              setToutesDemandes((prev) => [...prev, ...creees]);
+              setDemandeParente((p) => p ?? creees[0] ?? null);
+              if (creees[0]) await lierCaisse(caisseACreer, { demandeId: creees[0].id, demandeCaisseId: null });
+              return true;
+            } catch (e) {
+              await confirmerAction(String(e), "Création impossible");
+              return false;
+            }
+          }}
+          onClose={() => setCaisseACreer(null)}
+        />
+      )}
 
       {caisseALier && affaire && (
         <LierCaisseDialog
@@ -724,7 +839,7 @@ function RecapAffaireBandeau({
         <RecapValeur label="Hauteur max" valeur={`${(recap.dim3MaxMm / 1000).toFixed(2)} m`} />
         <div style={{ width: 1, height: 24, background: "var(--border-strong)" }} />
         <RecapValeur label="Volume total" valeur={`${formaterVolumeM3(recap.volumeTotalM3)} m³`} />
-        <RecapValeur label="Poids total" valeur={`${recap.poidsTotalKg.toFixed(3)} kg`} />
+        <RecapValeur label="Poids total des articles" valeur={`${recap.poidsTotalKg.toFixed(3)} kg`} />
         {aUneCaisse4C && (
           <>
             <div style={{ width: 1, height: 24, background: "var(--border-strong)" }} />

@@ -25,6 +25,8 @@ interface Props {
   // « affaire déjà présente ») ; true / void = les lignes ont été prises en compte.
   onAjouter: (demandes: NewDemande[]) => boolean | void | Promise<boolean | void>;
   onClose: () => void;
+  // Valeurs de départ de la première ligne (ex. « Lier… » de Simulations sans ligne existante).
+  ligneInitiale?: Partial<NewDemande>;
 }
 
 function ligneVide(): NewDemande {
@@ -55,8 +57,11 @@ function ligneVide(): NewDemande {
   };
 }
 
-export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalisees, onAjouter, onClose }: Props) {
-  const [lignes, setLignes] = useState<NewDemande[]>([ligneVide()]);
+export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalisees, onAjouter, onClose, ligneInitiale }: Props) {
+  const [lignes, setLignes] = useState<NewDemande[]>([{ ...ligneVide(), ...ligneInitiale }]);
+  // Fenêtre déplaçable par son en-tête (retour du 2026-10-07).
+  const [decalage, setDecalage] = useState({ x: 0, y: 0 });
+  const glisser = useRef<{ x: number; y: number } | null>(null);
   const [erreurValidation, setErreurValidation] = useState<string | null>(null);
   // Valeur de la date demandée à S2C à l'entrée dans le champ (un seul champ a le focus à la fois).
   const dateS2cAvantSaisie = useRef("");
@@ -189,6 +194,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
+          transform: `translate(${decalage.x}px, ${decalage.y}px)`,
           background: "var(--bg-panel)",
           borderRadius: "var(--radius-lg)",
           width: 1100,
@@ -199,7 +205,21 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
           boxShadow: "var(--shadow-lg)",
         }}
       >
-        <div className="modal-header">
+        <div
+          className="modal-header"
+          title="Glisser pour déplacer la fenêtre"
+          style={{ cursor: "move", touchAction: "none", userSelect: "none" }}
+          onPointerDown={(e) => {
+            if ((e.target as HTMLElement).closest("button, input, select, textarea")) return;
+            glisser.current = { x: e.clientX - decalage.x, y: e.clientY - decalage.y };
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            if (!glisser.current) return;
+            setDecalage({ x: e.clientX - glisser.current.x, y: e.clientY - glisser.current.y });
+          }}
+          onPointerUp={() => (glisser.current = null)}
+        >
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Créer une nouvelle caisse</h2>
         </div>
 

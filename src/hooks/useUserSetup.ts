@@ -1,19 +1,31 @@
 import { useCallback, useEffect, useState } from "react";
-import { userApi } from "../data/user";
+import { connexionApi } from "../data/user";
 
 type Status = "checking" | "needs-setup" | "ready" | "error";
 
-export function useUserSetup() {
+// Identité du poste (2026-10-08) : reconnexion automatique au compte intranet au démarrage ;
+// écran de connexion si personne n'est encore connecté sur ce poste ou si les identifiants sont
+// refusés. Intranet injoignable : dernier compte connu du poste (« hors ligne », sans Admin).
+// `actif` : n'interroger qu'une fois la base ouverte — la connexion lit l'adresse de l'intranet et
+// les rôles en base ; lancée trop tôt, elle échouait (« base de données non initialisée ») et
+// l'app restait blanche jusqu'à un rafraîchissement (bug du 2026-10-08).
+export function useUserSetup(actif: boolean) {
   const [status, setStatus] = useState<Status>("checking");
-  const [trigramme, setTrigrammeState] = useState<string | null>(null);
+  const [trigramme, setTrigramme] = useState<string | null>(null);
+  const [horsLigne, setHorsLigne] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [urlManquante, setUrlManquante] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const check = useCallback(async () => {
     setStatus("checking");
     try {
-      const userStatus = await userApi.getUserStatus();
-      if (userStatus.configured && userStatus.trigramme) {
-        setTrigrammeState(userStatus.trigramme);
+      const etat = await connexionApi.auto();
+      setMessage(etat.message);
+      setUrlManquante(etat.url_manquante);
+      if (etat.trigramme && etat.statut !== "a_identifier") {
+        setTrigramme(etat.trigramme);
+        setHorsLigne(etat.statut === "hors_ligne");
         setStatus("ready");
       } else {
         setStatus("needs-setup");
@@ -25,25 +37,14 @@ export function useUserSetup() {
   }, []);
 
   useEffect(() => {
-    check();
-  }, [check]);
+    if (actif) check();
+  }, [actif, check]);
 
-  const confirmerTrigramme = useCallback((value: string) => {
-    setTrigrammeState(value.trim().toUpperCase());
+  const confirmerConnexion = useCallback((identite: string) => {
+    setTrigramme(identite);
+    setHorsLigne(false);
     setStatus("ready");
   }, []);
 
-  // Renvoie le code de secours d'un administrateur qui vient de créer son mot de passe : l'écran
-  // l'affiche, puis appelle confirmerTrigramme. Sinon, le trigramme est confirmé tout de suite.
-  const setTrigramme = useCallback(
-    async (value: string, motDePasse?: string): Promise<string | null> => {
-      const code = await userApi.setTrigramme(value, motDePasse);
-      if (code) return code;
-      confirmerTrigramme(value);
-      return null;
-    },
-    [confirmerTrigramme],
-  );
-
-  return { status, error, trigramme, setTrigramme, confirmerTrigramme };
+  return { status, error, trigramme, horsLigne, message, urlManquante, confirmerConnexion, reessayer: check };
 }

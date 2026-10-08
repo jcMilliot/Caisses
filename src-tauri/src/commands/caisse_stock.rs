@@ -36,12 +36,13 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<CaisseStock> {
         ext_longueur_mm: row.get(19)?,
         ext_largeur_mm: row.get(20)?,
         ext_hauteur_mm: row.get(21)?,
+        tare_kg: row.get(22)?,
     })
 }
 
 const SELECT_COLS: &str = "id, nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observations, affaire_id, ordre,
     validee, demandeur, demande_le, demande_statut, demande_affaire_cible_id, demande_cible_id, type_ouverture,
-    gere, seuil_alerte, matiere, ext_longueur_mm, ext_largeur_mm, ext_hauteur_mm";
+    gere, seuil_alerte, matiere, ext_longueur_mm, ext_largeur_mm, ext_hauteur_mm, tare_kg";
 
 // Matières proposées dans « Gérer les caisses » (obligatoire à la création / modification).
 const MATIERES: [&str; 2] = ["Bois", "Contreplaqué"];
@@ -91,8 +92,8 @@ pub fn create_caisse_stock(db: State<Db>, caisse: NewCaisseStock, trigramme: Str
         .map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT INTO caisse_stock (nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observations, affaire_id, ordre, type_ouverture, matiere,
-         ext_longueur_mm, ext_largeur_mm, ext_hauteur_mm)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+         ext_longueur_mm, ext_largeur_mm, ext_hauteur_mm, tare_kg)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         rusqlite::params![
             caisse.nom,
             caisse.longueur_mm,
@@ -107,6 +108,7 @@ pub fn create_caisse_stock(db: State<Db>, caisse: NewCaisseStock, trigramme: Str
             caisse.ext_longueur_mm,
             caisse.ext_largeur_mm,
             caisse.ext_hauteur_mm,
+            caisse.tare_kg,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -170,7 +172,7 @@ fn modifier_caisse_stock(conn: &mut rusqlite::Connection, id: i64, caisse: &NewC
         // le dialogue « Gérer les caisses » renverrait une valeur périmée.
         "UPDATE caisse_stock SET nom = ?1, longueur_mm = ?2, largeur_mm = ?3, hauteur_mm = ?4,
          observations = ?5, affaire_id = ?6, type_ouverture = ?7, matiere = ?8,
-         ext_longueur_mm = ?9, ext_largeur_mm = ?10, ext_hauteur_mm = ?11 WHERE id = ?12",
+         ext_longueur_mm = ?9, ext_largeur_mm = ?10, ext_hauteur_mm = ?11, tare_kg = ?13 WHERE id = ?12",
         rusqlite::params![
             caisse.nom,
             caisse.longueur_mm,
@@ -184,6 +186,7 @@ fn modifier_caisse_stock(conn: &mut rusqlite::Connection, id: i64, caisse: &NewC
             caisse.ext_largeur_mm,
             caisse.ext_hauteur_mm,
             id,
+            caisse.tare_kg,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -657,6 +660,7 @@ mod tests {
             ext_longueur_mm: c.ext_longueur_mm,
             ext_largeur_mm: c.ext_largeur_mm,
             ext_hauteur_mm: c.ext_hauteur_mm,
+            tare_kg: c.tare_kg,
         }
     }
 }

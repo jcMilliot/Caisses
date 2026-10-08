@@ -6,8 +6,12 @@ function chargerSeparationMarquee(): boolean {
   return localStorage.getItem(CLE_SEPARATION_MARQUEE) === "1";
 }
 
+// Lignes et colonnes (retour du 2026-10-07 : l'option marque aussi les séparations verticales).
 function appliquerAuDocument(marquee: boolean) {
-  document.documentElement.style.setProperty("--row-border-color", marquee ? "var(--row-border-color-marquee)" : "var(--border)");
+  const style = document.documentElement.style;
+  style.setProperty("--row-border-color", marquee ? "var(--row-border-color-marquee)" : "var(--border)");
+  style.setProperty("--col-border-color", marquee ? "var(--row-border-color-marquee)" : "rgba(32, 30, 26, 0.05)");
+  style.setProperty("--col-border-color-entete", marquee ? "var(--row-border-color-marquee)" : "var(--border)");
 }
 
 // Appliqué au chargement du module (avant tout rendu React) pour éviter un flash de bordures

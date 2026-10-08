@@ -23,6 +23,7 @@ import {
   ouverturesAutorisees,
   ouvertureImposee,
   motifOuvertureImposee,
+  ALERTE_OUVERTURE_DIFFERENTE,
   stockAutorisePourEnvoi,
   appliquerReglesCaisse,
   champsManquantsPourCommande,
@@ -32,8 +33,11 @@ import { confirmerAction } from "../data/confirm";
 import ColumnFilterMenu from "./ColumnFilterMenu";
 import TableOptionsMenu from "./TableOptionsMenu";
 import ScrollToTopButton from "./ScrollToTopButton";
+import EditableCellInput from "./EditableCellInput";
 
 interface Props {
+  // Lignes (« d:id » / « c:id ») dont la caisse en stock choisie a changé le type d'ouverture.
+  ouverturesChangees?: Set<string>;
   demandes: Demande[];
   demandeCaisses: DemandeCaisse[];
   caissesStock: CaisseStock[];
@@ -305,6 +309,7 @@ const COLONNES: { champ: Colonne; label: string; align?: "left" | "center" }[] =
 const TOUTES_LES_COLONNES = COLONNES.map((c) => c.champ);
 
 export default function DemandesTable({
+  ouverturesChangees,
   demandes,
   demandeCaisses,
   caissesStock,
@@ -671,7 +676,14 @@ export default function DemandesTable({
       ? depassementMesuresMax4C(demande.type_envoi_caisse, demande.longueur_mm, demande.largeur_mm, demande.hauteur_mm)
       : undefined;
     const ouvertureVerrouillee = champ === "type_ouverture" && ouvertureImposee(demande) !== null;
-    const avertissement = ouvertureVerrouillee ? motifOuvertureImposee(demande) : (avertissementMousse ?? avertissementMesures4C);
+    // Type d'ouverture : alerte seulement si la caisse en stock choisie a changé l'ouverture
+    // (plus d'alerte systématique, ni pour les 4C) ; l'explication reste en infobulle.
+    const avertissement =
+      champ === "type_ouverture"
+        ? demande.caisse_stock_id != null && ouverturesChangees?.has(`d:${demande.id}`)
+          ? ALERTE_OUVERTURE_DIFFERENTE
+          : undefined
+        : (avertissementMousse ?? avertissementMesures4C);
     const nonEditable = figee || ouvertureVerrouillee;
     return (
       <td
@@ -688,7 +700,7 @@ export default function DemandesTable({
           fontWeight: champ === "affaire" ? 700 : undefined,
         }}
         className={estNombre ? "mono" : undefined}
-        title={avertissement}
+        title={avertissement ?? (ouvertureVerrouillee ? motifOuvertureImposee(demande) : undefined)}
         onClick={() => !nonEditable && !enEdition && setCellEnEdition({ id: demande.id, champ })}
       >
         {enEdition && champ === "type_ouverture" ? (
@@ -1008,6 +1020,7 @@ export default function DemandesTable({
                         <SousLigneCaisse
                           key={sc.id}
                           caisse={sc}
+                          ouvertureChangee={sc.caisse_stock_id != null && (ouverturesChangees?.has(`c:${sc.id}`) ?? false)}
                           colonnesAffichees={colonnesAvecLargeur}
                           caissesStock={caissesStock}
                           optionsParChamp={optionsParChampSousLigne}
@@ -1071,6 +1084,7 @@ const CHAMPS_DATE_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["date_
 const CHAMPS_VERROUILLES_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["nom", "type_envoi_caisse", "date_picking"]);
 
 function SousLigneCaisse({
+  ouvertureChangee,
   caisse,
   colonnesAffichees,
   caissesStock,
@@ -1083,6 +1097,7 @@ function SousLigneCaisse({
   onSelectStock,
   taux,
 }: {
+  ouvertureChangee?: boolean;
   caisse: DemandeCaisse;
   colonnesAffichees: { champ: Colonne; label: string; align?: "left" | "center"; largeur: number }[];
   caissesStock: CaisseStock[];
@@ -1219,7 +1234,9 @@ function SousLigneCaisse({
           verrouille
             ? "Repris de la demande — non modifiable ici"
             : ouvertureVerrouillee
-              ? motifOuvertureImposee(caisse)
+              ? ouvertureChangee
+                ? ALERTE_OUVERTURE_DIFFERENTE
+                : motifOuvertureImposee(caisse)
               : avertissementMesures4C
         }
         onClick={() => editable && !enEdition && setChampEnEdition(champSousLigne)}
@@ -1277,6 +1294,7 @@ function SousLigneCaisse({
           <>
             {valeurAffichee || "—"}
             {avertissementMesures4C && <AvertissementBadge texte={avertissementMesures4C} rouge />}
+            {ouvertureVerrouillee && ouvertureChangee && <AvertissementBadge texte={ALERTE_OUVERTURE_DIFFERENTE} />}
           </>
         )}
       </td>
@@ -1299,67 +1317,6 @@ function SousLigneCaisse({
   );
 }
 
-function EditableCellInput({
-  type,
-  defaultValue,
-  align,
-  onCommit,
-  onCancel,
-  onTabNext,
-}: {
-  type: "text" | "number" | "date";
-  defaultValue: string;
-  align: "left" | "center";
-  onCommit: (value: string) => void;
-  onCancel: () => void;
-  onTabNext?: (backward: boolean) => void;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-  const committed = useRef(false);
-
-  useEffect(() => {
-    ref.current?.focus();
-    // select() n'est pas supporté sur <input type="date"> dans certains navigateurs.
-    if (ref.current?.type !== "date") ref.current?.select();
-  }, []);
-
-  function commitOnce() {
-    if (committed.current) return;
-    committed.current = true;
-    onCommit(ref.current?.value ?? defaultValue);
-  }
-
-  return (
-    <input
-      ref={ref}
-      type={type}
-      defaultValue={defaultValue}
-      onBlur={commitOnce}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          commitOnce();
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          committed.current = true;
-          onCancel();
-        } else if (e.key === "Tab" && onTabNext) {
-          e.preventDefault();
-          commitOnce();
-          onTabNext(e.shiftKey);
-        }
-      }}
-      style={{
-        width: "100%",
-        textAlign: align,
-        padding: "3px 6px",
-        border: "1px solid var(--accent)",
-        borderRadius: 4,
-        font: "inherit",
-      }}
-    />
-  );
-}
 
 // Édition inline d'un champ à valeurs prédéfinies : liste déroulante ouverte immédiatement,
 // avec l'option "Autre…" qui bascule vers un champ texte libre. La valeur courante est toujours
@@ -1470,7 +1427,7 @@ function AvertissementBadge({ texte, rouge }: { texte: string; rouge?: boolean }
 const thStyle: React.CSSProperties = {
   padding: "10px 8px",
   borderBottom: "1px solid var(--border-strong)",
-  borderRight: "1px solid var(--border)",
+  borderRight: "1px solid var(--col-border-color-entete)",
   fontSize: 12,
   fontWeight: 600,
   color: "var(--text-muted)",
@@ -1490,7 +1447,7 @@ const thStyle: React.CSSProperties = {
 const tdStyle: React.CSSProperties = {
   padding: "10px 10px",
   borderBottom: "1px solid var(--row-border-color)",
-  borderRight: "1px solid rgba(32, 30, 26, 0.05)",
+  borderRight: "1px solid var(--col-border-color)",
   verticalAlign: "middle",
   // Toutes les valeurs texte alignées à gauche avec une petite marge (les colonnes dates / Qté
   // passent textAlign:"center" via leur `align`).

@@ -21,6 +21,16 @@ export interface Caisse {
   demande_id: number | null;
 }
 
+// Poids de la caisse elle-même, compté dans l'alerte de charge (2026-10-08) : tare de la caisse
+// en stock si elle est connue, sinon estimation d'après les dimensions (domain/poidsCaisse.ts).
+export interface PoidsCaisseCalcule {
+  kg: number;
+  source: "tare" | "estimation";
+  matiere: "Contreplaqué" | "Bois";
+  // Détail affiché en infobulle.
+  detail: string;
+}
+
 export interface Article {
   id: number;
   affaire_id: number;
@@ -34,6 +44,11 @@ export interface Article {
   poids_unitaire_kg: number;
   quantite: number;
   ordre: number;
+  // Import intranet (migration 0036) : numéro de besoin (null = collé depuis Excel),
+  // `initial_qty` de l'intranet, ligne supprimée dans l'intranet (hors tableau).
+  normm: number | null;
+  qte_initiale: number | null;
+  supprime_intranet: boolean;
 }
 
 export interface NewArticle {
@@ -180,6 +195,8 @@ export interface CaisseStock {
   ext_longueur_mm: number;
   ext_largeur_mm: number;
   ext_hauteur_mm: number;
+  // 0038 — poids à vide (kg), 0 = non renseignée.
+  tare_kg: number;
 }
 
 // Mouvement de stock d'une caisse AR_CAISS_ gérée fait à la livraison d'une ligne : quantité
@@ -206,6 +223,7 @@ export interface NewCaisseStock {
   ext_longueur_mm: number;
   ext_largeur_mm: number;
   ext_hauteur_mm: number;
+  tare_kg: number;
 }
 
 // Listes de valeurs de la section Demandes auxquelles l'utilisateur peut ajouter ses propres
@@ -271,8 +289,10 @@ export interface CaisseCalculee extends Caisse {
   // Articles assignés dont au moins une dimension dépasse la dimension correspondante de la
   // caisse (comparaison stricte des axes : dim1↔longueur, dim2↔largeur, dim3↔hauteur).
   articlesTropGrands: ArticleTropGrand[];
-  // Poids des articles assignés rapporté à la surface du fond (L × l), en kg/m² — 0 si la caisse
-  // n'a pas encore de dimensions. Alerte dès POIDS_MAX_KG_M2 (cf. domain/calculs.ts).
+  // Poids des articles assignés + poids de la caisse, rapporté à la surface du fond intérieur
+  // (L × l), en kg/m² — 0 si la caisse n'a pas encore de dimensions. Alerte dès la limite
+  // d'Admin › Paramètres (400 kg/m² caisse comprise par défaut, cf. domain/calculs.ts).
+  poidsCaisse: PoidsCaisseCalcule | null;
   surfaceFondM2: number;
   poidsParM2: number;
   poidsTropLourd: boolean;

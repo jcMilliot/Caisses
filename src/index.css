@@ -30,6 +30,10 @@
 
   --row-border-color-marquee: #000000;
   --row-border-color: var(--border);
+  /* Séparateurs verticaux (corps / en-tête) du tableau Gestion des caisses : très légers par
+     défaut, marqués avec l'option « Séparation des lignes plus marquée » (2026-10-07). */
+  --col-border-color: rgba(32, 30, 26, 0.05);
+  --col-border-color-entete: var(--border);
 
   /* En-tête d'une colonne ayant un filtre actif (tous les tableaux). */
   --filtre-actif-bg: #eae4f4;
@@ -734,6 +738,16 @@ table {
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
+}
+
+/* Variante resserrée pour les tableaux à beaucoup de colonnes (Admin › Caisses › Poids). */
+.table-donnees.compacte th,
+.table-donnees.compacte td {
+  padding: 6px 8px;
+}
+
+.table-donnees.compacte th {
+  white-space: normal;
 }
 
 .table-donnees tbody tr:last-child td {

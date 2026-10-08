@@ -26,6 +26,7 @@ const CAISSE_VIDE: NewCaisseStock = {
   ext_longueur_mm: 0,
   ext_largeur_mm: 0,
   ext_hauteur_mm: 0,
+  tare_kg: 0,
 };
 
 function versNew(c: CaisseStock): NewCaisseStock {
@@ -42,6 +43,7 @@ function versNew(c: CaisseStock): NewCaisseStock {
     ext_longueur_mm: c.ext_longueur_mm,
     ext_largeur_mm: c.ext_largeur_mm,
     ext_hauteur_mm: c.ext_hauteur_mm,
+    tare_kg: c.tare_kg,
   };
 }
 
@@ -266,6 +268,8 @@ function FormulaireCaisse({
   const [typeOuverture, setTypeOuverture] = useState(initial.type_ouverture || OUVERTURE_PAR_DESSUS);
   const [observations, setObservations] = useState(initial.observations);
   const [matiere, setMatiere] = useState(initial.matiere);
+  // Tare (poids à vide, kg) facultative : vrai poids de la caisse dans l'alerte de charge.
+  const [tare, setTare] = useState(initial.tare_kg > 0 ? String(initial.tare_kg) : "");
   // Champs obligatoires (2026-10-06) : nom, dimensions intérieures, type d'ouverture, matière.
   // Dimensions extérieures facultatives.
   const manquants = [
@@ -290,6 +294,7 @@ function FormulaireCaisse({
       type_ouverture: typeOuverture,
       matiere,
       observations,
+      tare_kg: Math.max(0, Number(tare.replace(",", ".")) || 0),
     });
     if (ok && viderApres) {
       setNom("");
@@ -297,6 +302,7 @@ function FormulaireCaisse({
       setDimsExt(["", "", ""]);
       setTypeOuverture(OUVERTURE_PAR_DESSUS);
       setMatiere("");
+      setTare("");
       setObservations("");
     }
   }
@@ -341,6 +347,14 @@ function FormulaireCaisse({
           </option>
         ))}
       </select>
+      <input
+        value={tare}
+        inputMode="decimal"
+        onChange={(e) => setTare(e.target.value)}
+        placeholder="Tare (kg)"
+        title="Poids à vide (kg), facultatif — souvent inscrit sur la caisse par le fabricant"
+        style={{ ...champStyle, width: 90 }}
+      />
       <input
         value={observations}
         onChange={(e) => setObservations(e.target.value)}

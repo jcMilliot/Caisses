@@ -65,11 +65,13 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
   const aRapatrier = demandes ? caissesARapatrierCetteSemaine(demandes) : [];
 
   return (
-    <>
+    // Conteneur positionné : Admin est calé en haut à droite de l'écran d'accueil (et non de la
+    // fenêtre), pour ne pas passer sous la barre de mise à jour (retour du 2026-10-07).
+    <div style={{ position: "relative" }}>
     {/* Pas de bandeau sur l'accueil : Admin et Documentation y sont posés aux coins de l'écran
         (Admin en haut à droite comme dans le bandeau des autres pages). */}
     {estAdmin && (
-      <button className="nav-lien" onClick={() => onSelect("admin")} style={{ position: "fixed", top: 14, right: 20, zIndex: 50 }}>
+      <button className="nav-lien" onClick={() => onSelect("admin")} style={{ position: "absolute", top: 14, right: 20, zIndex: 50 }}>
         <IconeNav nom="admin" taille={15} />
         Admin
       </button>
@@ -108,7 +110,7 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
         <ListeAffaires titre="Caisses à rapatrier cette semaine" affaires={aRapatrier} chargement={demandes === null} />
       </div>
     </div>
-    </>
+    </div>
   );
 }
 

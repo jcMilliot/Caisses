@@ -2,12 +2,18 @@ import { useCallback, useEffect, useState } from "react";
 import { affairesApi } from "../data/affaires";
 import { articlesApi } from "../data/articles";
 import { caissesApi } from "../data/caisses";
+import { caisseStockApi } from "../data/caisseStock";
+import { poidsCaisseApi } from "../data/poidsCaisse";
+import { lireReglagesPoids, poidsDeLaCaisse, REGLAGES_POIDS_DEFAUT } from "../domain/poidsCaisse";
 import { articlesParCaisse, calculerCaisse, POIDS_MAX_KG_M2_DEFAUT } from "../domain/calculs";
-import type { Affaire, Article, Caisse, CaisseCalculee, NewArticle } from "../domain/types";
+import type { Affaire, Article, Caisse, CaisseCalculee, CaisseStock, NewArticle } from "../domain/types";
 
 export function useAffaire(affaireId: number, trigramme: string) {
   const [affaire, setAffaire] = useState<Affaire | null>(null);
-  const [articles, setArticles] = useState<Article[]>([]);
+  // Tous les articles, y compris les lignes supprimées dans l'intranet (hors tableau et calculs).
+  const [tousArticles, setTousArticles] = useState<Article[]>([]);
+  const articles = tousArticles.filter((a) => !a.supprime_intranet);
+  const articlesSupprimesIntranet = tousArticles.filter((a) => a.supprime_intranet);
   const [caisses, setCaisses] = useState<Caisse[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -20,7 +26,7 @@ export function useAffaire(affaireId: number, trigramme: string) {
         caissesApi.list(affaireId),
       ]);
       setAffaire(affaires.find((a) => a.id === affaireId) ?? null);
-      setArticles(arts);
+      setTousArticles(arts);
       setCaisses(cais);
     } finally {
       setLoading(false);
@@ -37,9 +43,17 @@ export function useAffaire(affaireId: number, trigramme: string) {
   useEffect(() => {
     affairesApi.getPoidsMaxKgM2().then(setPoidsMaxKgM2).catch(() => {});
   }, []);
+  // Poids de la caisse elle-même (alerte de charge, 2026-10-08) : réglages de l'estimation et
+  // tares des caisses en stock.
+  const [reglagesPoids, setReglagesPoids] = useState(REGLAGES_POIDS_DEFAUT);
+  const [caissesStock, setCaissesStock] = useState<CaisseStock[]>([]);
+  useEffect(() => {
+    poidsCaisseApi.getReglages().then((r) => setReglagesPoids(lireReglagesPoids(r))).catch(() => {});
+    caisseStockApi.list().then(setCaissesStock).catch(() => {});
+  }, []);
   const byCaisse = articlesParCaisse(articles);
   const caissesCalculees: CaisseCalculee[] = caisses.map((c) =>
-    calculerCaisse(c, byCaisse.get(c.id) ?? [], seuilDefaut, poidsMaxKgM2),
+    calculerCaisse(c, byCaisse.get(c.id) ?? [], seuilDefaut, poidsMaxKgM2, poidsDeLaCaisse(c, caissesStock, reglagesPoids)),
   );
   const articlesNonAssignes = articles.filter((a) => a.caisse_id === null);
 
@@ -110,6 +124,8 @@ export function useAffaire(affaireId: number, trigramme: string) {
   return {
     affaire,
     articles,
+    tousArticles,
+    articlesSupprimesIntranet,
     caisses,
     caissesCalculees,
     articlesNonAssignes,

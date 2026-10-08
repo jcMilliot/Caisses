@@ -170,8 +170,10 @@ pub fn get_seuil_general(db: State<Db>) -> Result<f64, String> {
 // Limite de poids au m² d'une caisse (alerte « Charge trop lourde » de Simulations), réglée dans
 // Admin › Paramètres (décision 2026-10-02, défaut 320 kg/m², marge du poids de la caisse
 // comprise). Lue par tous les postes, écrite par un administrateur.
-const CLE_POIDS_MAX_M2: &str = "poids_max_kg_m2";
-const POIDS_MAX_M2_DEFAUT: f64 = 320.0;
+// Depuis le 2026-10-08 : limite caisse comprise (poids estimé de la caisse ajouté), 400 kg/m² —
+// nouvelle clé, l'ancienne (`poids_max_kg_m2`, 320 hors caisse) n'est plus lue.
+const CLE_POIDS_MAX_M2: &str = "poids_max_kg_m2_total";
+const POIDS_MAX_M2_DEFAUT: f64 = 400.0;
 
 #[tauri::command]
 pub fn get_poids_max_kg_m2(db: State<Db>) -> Result<f64, String> {

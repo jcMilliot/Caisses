@@ -150,6 +150,22 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0035_add_caisse_stock_dims_exterieures",
         include_str!("../../migrations/0035_add_caisse_stock_dims_exterieures.sql"),
     ),
+    (
+        "0036_add_import_intranet",
+        include_str!("../../migrations/0036_add_import_intranet.sql"),
+    ),
+    (
+        "0037_renommer_section_documentation",
+        include_str!("../../migrations/0037_renommer_section_documentation.sql"),
+    ),
+    (
+        "0038_add_estimation_poids_caisse",
+        include_str!("../../migrations/0038_add_estimation_poids_caisse.sql"),
+    ),
+    (
+        "0039_supprimer_mots_de_passe",
+        include_str!("../../migrations/0039_supprimer_mots_de_passe.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {

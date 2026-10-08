@@ -81,11 +81,11 @@ export const SECTIONS_DOC: SectionDoc[] = [
     ],
   },
   {
-    id: "entreprise",
-    sommaire: "3. Récupérer les articles (entreprise)",
-    titre: "3. Récupérer les articles depuis l'intranet entreprise",
+    id: "recuperer-articles",
+    sommaire: "3. Récupérer les articles",
+    titre: "3. Récupérer les articles depuis l'intranet",
     blocs: [
-      li("Sur le picking de l'affaire, dans l'intranet entreprise : menu Options → « Exporter toutes les lignes » → génère un fichier Excel."),
+      li("Sur le picking de l'affaire, dans l'intranet : menu Options → « Exporter toutes les lignes » → génère un fichier Excel."),
       li(
         "Ouvrir le fichier « Aide colisage dimensions V1 » : coller les références AR dans la première colonne et les quantités dans la colonne Qté, puis cliquer sur « Récupérer les infos » pour obtenir référence, désignation, dimensions et poids de chaque article.",
       ),
@@ -93,7 +93,7 @@ export const SECTIONS_DOC: SectionDoc[] = [
         "Sélectionner et copier cette liste, puis la coller dans le bouton « Coller depuis Excel » de la section Simulations et valider l'import. L'outil met immédiatement en évidence la plus grande longueur / largeur / hauteur de l'affaire — un indice utile pour dimensionner les caisses.",
       ),
       li(
-        "Si l'AR d'une ligne ne commence ni par « AR » ni par « ZR », l'application demande s'il faut l'ajouter quand même. Les lignes non ajoutées restent listées sous le tableau d'articles (« Ces lignes n'ont pas été collées ») ; un administrateur peut les corriger, les ajouter au tableau ou les supprimer.",
+        "Si l'AR d'une ligne ne commence ni par « AR » ni par « ZR », l'application demande s'il faut l'ajouter quand même. Les lignes non ajoutées restent listées sous le tableau d'articles (« Ces lignes n'ont pas été collées ») ; un administrateur peut les corriger, les ajouter au tableau ou les supprimer. Les lignes « ZR » (pièces à assembler par un autre service) ne sont jamais collées.",
       ),
     ],
   },

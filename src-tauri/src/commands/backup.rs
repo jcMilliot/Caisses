@@ -238,23 +238,11 @@ pub async fn backup_if_due(db: State<'_, Db>, trigramme: String) -> Result<Optio
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::admin::verifier_ou_creer;
 
     fn base(nom: &str) -> Connection {
         let dir = std::env::temp_dir().join(format!("caisses-test-{nom}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         crate::db::open_at(&dir)
-    }
-
-    #[test]
-    fn mot_de_passe_admin_cree_puis_verifie() {
-        let conn = base("mdp");
-        assert!(verifier_ou_creer(&conn, "AJC", None).is_err());
-        assert!(verifier_ou_creer(&conn, "AJC", Some("court")).is_err());
-        assert!(verifier_ou_creer(&conn, "AJC", Some("secret123")).unwrap());
-        assert!(verifier_ou_creer(&conn, "AJC", Some("mauvais1")).is_err());
-        assert!(verifier_ou_creer(&conn, "AJC", Some("secret123")).unwrap());
-        assert!(!verifier_ou_creer(&conn, "XYZ", None).unwrap());
     }
 
     #[test]

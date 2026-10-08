@@ -39,6 +39,12 @@ pub struct Article {
     pub poids_unitaire_kg: f64,
     pub quantite: i64,
     pub ordre: i64,
+    /// 0036 — numéro de besoin de l'intranet (NULL = article collé depuis Excel).
+    pub normm: Option<i64>,
+    /// 0036 — `initial_qty` de l'intranet.
+    pub qte_initiale: Option<i64>,
+    /// 0036 — ligne supprimée dans l'intranet (sortie du tableau, listée en dessous).
+    pub supprime_intranet: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -193,6 +199,8 @@ pub struct CaisseStock {
     pub ext_longueur_mm: f64,
     pub ext_largeur_mm: f64,
     pub ext_hauteur_mm: f64,
+    /// 0038 — poids à vide (kg), 0 = non renseignée.
+    pub tare_kg: f64,
 }
 
 /// Mouvement de stock d'une caisse AR_CAISS_ gérée, renvoyé à l'UI après un décompte à la
@@ -218,6 +226,7 @@ pub struct NewCaisseStock {
     pub ext_longueur_mm: f64,
     pub ext_largeur_mm: f64,
     pub ext_hauteur_mm: f64,
+    pub tare_kg: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

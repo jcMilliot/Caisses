@@ -479,10 +479,23 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     return true;
   }
 
+  // Lignes (« d:id » mère, « c:id » sous-caisse) dont la caisse en stock choisie a un autre type
+  // d'ouverture que la caisse sélectionnée avant : alerte dans la cellule (retour du 2026-10-07).
+  const [ouverturesChangees, setOuverturesChangees] = useState<Set<string>>(new Set());
+  function noterOuverture(cle: string, avant: string | null, apres: string | null) {
+    setOuverturesChangees((prev) => {
+      const next = new Set(prev);
+      if (avant !== null && apres !== null && avant.trim() !== "" && avant !== apres) next.add(cle);
+      else next.delete(cle);
+      return next;
+    });
+  }
+
   async function handleSelectStock(demandeId: number, caisseStockId: number | null) {
     // Édition brouillon comme le reste du tableau — rien n'est persisté avant « Enregistrer »,
     // et « Annuler » restaure les dimensions d'origine.
     if (caisseStockId === null) {
+      noterOuverture(`d:${demandeId}`, null, null);
       handleEditLocal(demandeId, { caisse_stock_id: null });
       return;
     }
@@ -491,6 +504,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     if (!(await confirmerEtDemanderReassignment(cs, demandeId))) return;
 
     const demande = brouillonRef.current.find((d) => d.id === demandeId);
+    const ouvertureAvant = demande?.type_ouverture ?? null;
     // Cas ACHSTOCK (AR_CAISS_...) sur une demande dont l'affaire existe déjà en Simulations :
     // on demande s'il faut reprendre les mesures de la caisse en stock. Refus → on n'affecte
     // pas la caisse (retour à vide), la coche « commandé sur affaire » est laissée telle quelle.
@@ -502,9 +516,11 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
         "Mesures de la caisse en stock",
       );
       if (!reprendre) {
+        noterOuverture(`d:${demandeId}`, null, null);
         handleEditLocal(demandeId, { caisse_stock_id: null });
         return;
       }
+      noterOuverture(`d:${demandeId}`, ouvertureAvant, cs.type_ouverture);
       handleEditLocal(demandeId, {
         caisse_stock_id: caisseStockId,
         longueur_mm: cs.longueur_mm,
@@ -517,6 +533,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
       return;
     }
 
+    noterOuverture(`d:${demandeId}`, ouvertureAvant, cs.type_ouverture);
     handleEditLocal(demandeId, {
       caisse_stock_id: caisseStockId,
       longueur_mm: cs.longueur_mm,
@@ -557,6 +574,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
 
   async function handleSelectStockSousLigne(id: number, caisseStockId: number | null) {
     if (caisseStockId === null) {
+      noterOuverture(`c:${id}`, null, null);
       handleEditDemandeCaisse(id, { caisse_stock_id: null });
       return;
     }
@@ -565,6 +583,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     const sousLigne = demandeCaisses.find((c) => c.id === id);
     if (!sousLigne) return;
     if (!(await confirmerEtDemanderReassignment(cs, sousLigne.demande_id))) return;
+    noterOuverture(`c:${id}`, sousLigne.type_ouverture, cs.type_ouverture);
     handleEditDemandeCaisse(id, {
       caisse_stock_id: caisseStockId,
       longueur_mm: cs.longueur_mm,
@@ -839,6 +858,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
             onEditDemandeCaisse={handleEditDemandeCaisse}
             onDeleteDemandeCaisse={handleDeleteDemandeCaisse}
             onSelectStock={handleSelectStock}
+            ouverturesChangees={ouverturesChangees}
             onSelectStockSousLigne={handleSelectStockSousLigne}
             onEdit={handleEditLocal}
             onDelete={handleDelete}

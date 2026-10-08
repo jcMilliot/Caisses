@@ -59,8 +59,9 @@ export default function CaissesStockList({ trigramme }: Props) {
         <div>
           <h1 className="page-title">Caisses en stock</h1>
           <p className="page-subtitle">
-            Création, modification et suppression des caisses : bouton « Gérer les caisses ». L'affectation d'une caisse
-            à une affaire se fait depuis Gestion des caisses (menu « Stock » d'une ligne).
+            Création, modification et suppression des caisses.
+            <br />
+            L'affectation d'une caisse à une affaire se fait depuis Gestion des caisses (menu « Stock » d'une ligne).
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setGestionOuverte(true)} disabled={readOnly}>

@@ -275,13 +275,13 @@ export default function CaisseCard({
                 fontSize: 12,
               }}
             >
-              <div style={{ fontWeight: 700 }}>
+              <div
+                style={{ fontWeight: 700 }}
+                title={`${caisse.poidsTotalKg.toFixed(1)} kg d'articles + ${(caisse.poidsCaisse?.kg ?? 0).toFixed(1)} kg de caisse sur un fond de ${caisse.surfaceFondM2.toFixed(2)} m²`}
+              >
                 ⚠ Charge trop lourde : {Math.floor(caisse.poidsParM2)} kg/m² (max {caisse.poidsMaxKgM2} kg/m²)
               </div>
-              <div style={{ marginTop: 2 }}>
-                {caisse.poidsTotalKg.toFixed(1)} kg d'articles sur un fond de {caisse.surfaceFondM2.toFixed(2)} m² — prévoir une
-                caisse plus grande ou répartir les articles.
-              </div>
+              <div style={{ marginTop: 2 }}>prévoir une caisse plus grande ou répartir les articles.</div>
             </div>
           )}
 
@@ -323,11 +323,19 @@ export default function CaisseCard({
             {estCaisse4C(caisse.type_envoi_caisse) && (
               <Row label="Volume disponible" value={`${formaterVolumeM3(caisse.volumeDisponibleM3)} m³`} />
             )}
-            <Row label="Poids total" value={`${caisse.poidsTotalKg.toFixed(3)} kg`} />
-            {caisse.surfaceFondM2 > 0 && (
-              <Row label={`Poids au m² hors caisse (max ${caisse.poidsMaxKgM2})`} value={`${Math.floor(caisse.poidsParM2)} kg/m²`} />
+            <Row label="Poids total des articles" value={`${caisse.poidsTotalKg.toFixed(3)} kg`} />
+            {caisse.poidsCaisse && (
+              <div title={caisse.poidsCaisse.detail}>
+                <Row
+                  label={caisse.poidsCaisse.source === "tare" ? "Poids de la caisse (tare)" : "Poids de la caisse (estimé)"}
+                  value={`${caisse.poidsCaisse.kg.toFixed(1)} kg`}
+                />
+              </div>
             )}
-            <Row label="Seuil d'alerte" value={`${caisse.seuilEffectif}%`} />
+            {caisse.surfaceFondM2 > 0 && (
+              <Row label={`Poids au m² caisse comprise (max ${caisse.poidsMaxKgM2}kg)`} value={`${Math.floor(caisse.poidsParM2)} kg/m²`} />
+            )}
+
           </div>
 
           {!readOnly && (
@@ -369,3 +377,4 @@ const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "6px 9px",
 };
+

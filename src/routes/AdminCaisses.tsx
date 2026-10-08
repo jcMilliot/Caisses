@@ -3,11 +3,12 @@ import { caisseStockApi } from "../data/caisseStock";
 import { dimensionsExterieures, estArCaiss, estStockACommander } from "../domain/caisseStock";
 import type { CaisseStock } from "../domain/types";
 import StatistiquesCaisses from "../components/StatistiquesCaisses";
+import PoidsCaisses from "../components/PoidsCaisses";
 
 // Onglet « Caisses » de la page Admin (renommé de « Stock » le 2026-10-02) : deux sous-onglets,
 // « Stock » (ci-dessous) et « Statistiques » (components/StatistiquesCaisses.tsx).
 export default function AdminCaisses({ trigramme }: { trigramme: string }) {
-  const [sousOnglet, setSousOnglet] = useState<"stock" | "statistiques">("stock");
+  const [sousOnglet, setSousOnglet] = useState<"stock" | "statistiques" | "poids">("stock");
   return (
     <div>
       {/* Sous-onglets bien visibles (retour utilisateur du 2026-10-02) : grands boutons, actif plein. */}
@@ -27,6 +28,7 @@ export default function AdminCaisses({ trigramme }: { trigramme: string }) {
           [
             ["stock", "📦", "Stock"],
             ["statistiques", "📊", "Statistiques"],
+            ["poids", "⚖️", "Poids"],
           ] as const
         ).map(([o, icone, label]) => (
           <button
@@ -52,7 +54,13 @@ export default function AdminCaisses({ trigramme }: { trigramme: string }) {
           </button>
         ))}
       </div>
-      {sousOnglet === "stock" ? <StockArCaiss trigramme={trigramme} /> : <StatistiquesCaisses />}
+      {sousOnglet === "stock" ? (
+        <StockArCaiss trigramme={trigramme} />
+      ) : sousOnglet === "statistiques" ? (
+        <StatistiquesCaisses />
+      ) : (
+        <PoidsCaisses />
+      )}
     </div>
   );
 }
@@ -80,7 +88,7 @@ function StockArCaiss({ trigramme }: { trigramme: string }) {
   if (caisses === null) return erreur ? <p style={{ color: "var(--danger-text)" }}>{erreur}</p> : null;
 
   return (
-    <div style={{ maxWidth: 900 }}>
+    <div>
       <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 16px" }}>
         Espace de gestion des « AR_CAISS » en stock
       </p>

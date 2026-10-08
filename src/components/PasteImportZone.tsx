@@ -26,7 +26,13 @@ export function arValide(ar: string): boolean {
   return /^(AR|ZR)/i.test(ar.trim());
 }
 
-function parseColle(texte: string): { articles: NewArticle[]; lignesBrutes: string[]; erreurs: string[] } {
+// « ZR » = liste de pièces à assembler par un autre service, pas un article à caser : ces lignes
+// ne sont jamais collées (décision 2026-10-07).
+function estLigneZr(ar: string): boolean {
+  return /^ZR/i.test(ar.trim());
+}
+
+function parseColle(texte: string): { articles: NewArticle[]; lignesBrutes: string[]; erreurs: string[]; lignesZr: number } {
   // Pas de trim() de la ligne : il supprimait la tabulation de tête d'une ligne sans AR et
   // décalait toutes les colonnes. Chaque champ est trimé à l'usage.
   const lignes = decouperTableauTsv(texte).filter((cols) => cols.some((c) => c.trim() !== ""));
@@ -36,6 +42,7 @@ function parseColle(texte: string): { articles: NewArticle[]; lignesBrutes: stri
   const erreurs: string[] = [];
   let colonnesEnTrop = 0;
   let colonneMax = 0;
+  let lignesZr = 0;
 
   lignes.forEach((colsBrutes, i) => {
     // Colonnes au-delà des 8 attendues : on les ignore (le fichier Excel a souvent 2 colonnes
@@ -62,6 +69,11 @@ function parseColle(texte: string): { articles: NewArticle[]; lignesBrutes: stri
       return;
     }
 
+    if (estLigneZr(ar)) {
+      lignesZr++;
+      return;
+    }
+
     lignesBrutes.push(colsBrutes.join("\t"));
     articles.push({
       ar: ar.trim(),
@@ -84,7 +96,7 @@ function parseColle(texte: string): { articles: NewArticle[]; lignesBrutes: stri
     );
   }
 
-  return { articles, lignesBrutes, erreurs };
+  return { articles, lignesBrutes, erreurs, lignesZr };
 }
 
 function parseNombre(s: string): number {
@@ -98,7 +110,7 @@ export default function PasteImportZone({ onImport, onRefuses, onClose, texteIni
   // Étape de choix des lignes à AR douteux : indices (dans `articles`) cochés « ajouter ».
   const [choix, setChoix] = useState<Set<number> | null>(null);
 
-  const { articles, lignesBrutes, erreurs } = parseColle(texte);
+  const { articles, lignesBrutes, erreurs, lignesZr } = parseColle(texte);
   const indicesDouteux = articles.map((a, i) => (arValide(a.ar) ? -1 : i)).filter((i) => i >= 0);
 
   async function importer(ajoutesDouteux: Set<number>) {
@@ -175,6 +187,12 @@ export default function PasteImportZone({ onImport, onRefuses, onClose, texteIni
               <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 8 }}>
                 {articles.length} article(s) détecté(s){erreurs.length > 0 && `, ${erreurs.length} ligne(s) ignorée(s)`}
               </div>
+
+              {lignesZr > 0 && (
+                <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 8 }}>
+                  {lignesZr} ligne(s) « ZR » non collée(s)
+                </div>
+              )}
 
               {erreurs.length > 0 && (
                 <ul style={{ margin: "0 0 12px", padding: 0, listStyle: "none" }}>

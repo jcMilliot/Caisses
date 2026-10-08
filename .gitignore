@@ -37,3 +37,6 @@ src-tauri/gen
 
 # Captures d'écran (chemins de postes, nom d'entreprise) — dépôt public, ne pas commiter
 docs/captures/
+
+# Détails de l'intranet (adresse de l'API, réponses) — dépôt public, ne pas commiter
+docs/prive/

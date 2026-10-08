@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import IconeFiltre from "./IconeFiltre";
 import { volumeUnitaireM3, formaterVolumeM3, champsManquants, type ChampArticleManquant } from "../domain/calculs";
 import type { Article, Caisse, NewArticle } from "../domain/types";
 import ColumnFilterMenu from "./ColumnFilterMenu";
+import EditableCellInput from "./EditableCellInput";
 
 interface Props {
   affaireId: number;
@@ -433,7 +434,18 @@ export default function ArticlesTable({
                 <td style={tdStyle}>
                   <input type="checkbox" checked={selectedIds.has(a.id)} onChange={() => onToggleSelect(a.id)} />
                 </td>
-                {cell(a, "ar", a.ar)}
+                {cell(
+                  a,
+                  "ar",
+                  a.qte_initiale !== null && a.qte_initiale !== a.quantite ? (
+                    <>
+                      {a.ar}
+                      <div style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>Qté initiale : {a.qte_initiale}</div>
+                    </>
+                  ) : (
+                    a.ar
+                  ),
+                )}
                 {cell(a, "reference", a.reference)}
                 {cell(a, "designation", a.designation)}
                 {cell(a, "dim1_mm", a.dim1_mm, "right")}
@@ -472,72 +484,6 @@ export default function ArticlesTable({
   );
 }
 
-function EditableCellInput({
-  type,
-  defaultValue,
-  align,
-  onCommit,
-  onCancel,
-  onCollageMultiCellules,
-}: {
-  type: "text" | "number";
-  defaultValue: string;
-  align: "left" | "right";
-  onCommit: (value: string) => void;
-  onCancel: () => void;
-  onCollageMultiCellules?: (texte: string) => void;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-  const committed = useRef(false);
-
-  useEffect(() => {
-    ref.current?.focus();
-    ref.current?.select();
-  }, []);
-
-  function commitOnce() {
-    if (committed.current) return;
-    committed.current = true;
-    onCommit(ref.current?.value ?? defaultValue);
-  }
-
-  return (
-    <input
-      ref={ref}
-      type={type}
-      defaultValue={defaultValue}
-      onBlur={commitOnce}
-      onPaste={(e) => {
-        // Un collage qui contient une tabulation ou un retour à la ligne = plusieurs cellules
-        // Excel → on ne le met pas dans ce seul champ, on ouvre l'import avec ce texte.
-        const texte = e.clipboardData.getData("text");
-        if (onCollageMultiCellules && /[\t\n\r]/.test(texte)) {
-          e.preventDefault();
-          committed.current = true;
-          onCollageMultiCellules(texte);
-        }
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          commitOnce();
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          committed.current = true;
-          onCancel();
-        }
-      }}
-      style={{
-        width: "100%",
-        textAlign: align,
-        padding: "3px 6px",
-        border: "1px solid var(--accent)",
-        borderRadius: 4,
-        font: "inherit",
-      }}
-    />
-  );
-}
 
 const thStyle: React.CSSProperties = {
   padding: "10px 8px",

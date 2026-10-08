@@ -32,12 +32,20 @@ use commands::demandes::{
 };
 use commands::alerte::set_alerte_barre_taches;
 use commands::admin::{
-    admin_lock, admin_session_active, admin_unlock, ajouter_utilisateur, change_mot_de_passe, enregistrer_connexion,
-    get_compte_status, get_role, list_utilisateurs, regenerer_code_secours, reinitialiser_mot_de_passe_admin,
-    reinitialiser_mot_de_passe_par_code, set_role_utilisateur, AdminSession,
+    admin_lock, admin_session_active, ajouter_utilisateur, enregistrer_connexion, get_role, list_utilisateurs,
+    set_role_utilisateur, AdminSession,
 };
 use commands::backup::{backup_if_due, backup_now, choose_backup_folder, get_backup_config, set_backup_config};
 use commands::documentation::{get_documentation_textes, set_documentation_textes};
+use commands::poids_caisse::{
+    create_caisse_pesee, delete_caisse_pesee, get_reglages_poids_caisse, list_caisses_pesees, set_reglages_poids_caisse,
+    update_caisse_pesee,
+};
+use commands::intranet::{
+    admin_unlock_intranet, appliquer_import_intranet, connexion_auto, connexion_intranet, fetch_picking_intranet,
+    get_collage_excel_visible, get_import_intranet, get_intranet_identifiant, get_intranet_url, set_collage_excel_visible,
+    set_intranet_url, set_intranet_url_initiale, IntranetSession,
+};
 use commands::journal::list_journal;
 use commands::locks::{
     acquire_lock, claim_expired_pen, heartbeat, list_locks, release_lock, request_pen, respond_pen_request,
@@ -49,8 +57,9 @@ use commands::restauration::{
     annuler_fermeture_postes, choose_fichier_restauration, demander_fermeture_postes, list_autres_postes_actifs,
     list_sauvegardes, quitter_poste, restore_sauvegarde, signaler_presence, PosteId,
 };
-use commands::setup::{choose_db_folder, get_db_status, init_db, set_db_folder};
-use commands::user::{get_user_status, set_trigramme};
+use commands::setup::{
+    changer_dossier_base, choose_db_folder, get_db_status, get_dossier_base, init_db, set_db_folder, verifier_dossier_base,
+};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -79,6 +88,7 @@ pub fn run() {
             app.manage(db::Db::empty());
             app.manage(AdminSession::default());
             app.manage(PosteId::default());
+            app.manage(IntranetSession::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -86,6 +96,9 @@ pub fn run() {
             choose_db_folder,
             init_db,
             set_db_folder,
+            verifier_dossier_base,
+            get_dossier_base,
+            changer_dossier_base,
             list_affaires,
             create_affaire,
             update_affaire,
@@ -142,8 +155,6 @@ pub fn run() {
             respond_pen_request,
             claim_expired_pen,
             list_locks,
-            get_user_status,
-            set_trigramme,
             list_options_liste,
             create_option_liste,
             rename_option_liste,
@@ -152,19 +163,13 @@ pub fn run() {
             list_journal,
             get_documentation_textes,
             set_documentation_textes,
-            get_compte_status,
-            admin_unlock,
             admin_session_active,
             admin_lock,
-            change_mot_de_passe,
             enregistrer_connexion,
             list_utilisateurs,
             get_role,
             set_role_utilisateur,
             ajouter_utilisateur,
-            reinitialiser_mot_de_passe_par_code,
-            regenerer_code_secours,
-            reinitialiser_mot_de_passe_admin,
             get_backup_config,
             set_backup_config,
             choose_backup_folder,
@@ -179,6 +184,24 @@ pub fn run() {
             annuler_fermeture_postes,
             quitter_poste,
             set_alerte_barre_taches,
+            get_intranet_identifiant,
+            connexion_intranet,
+            connexion_auto,
+            admin_unlock_intranet,
+            set_intranet_url_initiale,
+            fetch_picking_intranet,
+            get_import_intranet,
+            appliquer_import_intranet,
+            get_intranet_url,
+            set_intranet_url,
+            get_collage_excel_visible,
+            set_collage_excel_visible,
+            list_caisses_pesees,
+            create_caisse_pesee,
+            update_caisse_pesee,
+            delete_caisse_pesee,
+            get_reglages_poids_caisse,
+            set_reglages_poids_caisse,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

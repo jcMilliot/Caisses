@@ -10,7 +10,7 @@ fn require_lock_for_article(conn: &rusqlite::Connection, article_id: i64, trigra
     require_lock(conn, &format!("affaire:{}", affaire_id), trigramme)
 }
 
-fn map_row(row: &rusqlite::Row) -> rusqlite::Result<Article> {
+pub(crate) fn map_row(row: &rusqlite::Row) -> rusqlite::Result<Article> {
     Ok(Article {
         id: row.get(0)?,
         affaire_id: row.get(1)?,
@@ -24,10 +24,13 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<Article> {
         poids_unitaire_kg: row.get(9)?,
         quantite: row.get(10)?,
         ordre: row.get(11)?,
+        normm: row.get(12)?,
+        qte_initiale: row.get(13)?,
+        supprime_intranet: row.get(14)?,
     })
 }
 
-const SELECT_COLS: &str = "id, affaire_id, caisse_id, ar, reference, designation, dim1_mm, dim2_mm, dim3_mm, poids_unitaire_kg, quantite, ordre";
+pub(crate) const SELECT_COLS: &str = "id, affaire_id, caisse_id, ar, reference, designation, dim1_mm, dim2_mm, dim3_mm, poids_unitaire_kg, quantite, ordre, normm, qte_initiale, supprime_intranet";
 
 #[tauri::command]
 pub fn list_articles(db: State<Db>, affaire_id: i64) -> Result<Vec<Article>, String> {

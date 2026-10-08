@@ -10,6 +10,22 @@ racine, le fix, et un lien vers l'entrée de journal correspondante pour le dét
 
 ---
 
+## Démarrage : application toute blanche, s'affiche après un rafraîchissement
+
+**Symptôme** : au lancement, la fenêtre reste blanche ; elle s'affiche après un rafraîchissement
+(F5 / clic droit › Actualiser).
+
+**Cause** : la connexion automatique à l'intranet (`connexion_auto`, 2026-10-08) était lancée
+**en même temps** que l'ouverture de la base (`init_db`). Elle lit l'adresse de l'intranet et les
+rôles en base → « base de données non initialisée » → état « erreur » que `App` rendait par un
+écran vide. Au rafraîchissement, la base était déjà ouverte côté Rust, d'où le bon affichage.
+
+**Fix** (2026-10-08) : `useUserSetup(actif)` n'interroge qu'une fois `dbStatus === "ready"` ;
+`App` affiche « Ouverture de la base… » / « Connexion à l'intranet… » pendant l'attente et un
+message + « Réessayer » en cas d'erreur, au lieu d'un écran vide.
+
+---
+
 ## Collage Excel : une ligne coupée en deux articles (AR = fin de la désignation)
 
 **Symptôme** : après « Coller depuis Excel » dans Simulations, un article apparaît en double :

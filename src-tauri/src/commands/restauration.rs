@@ -182,7 +182,7 @@ pub async fn choose_fichier_restauration(app: AppHandle, session: State<'_, Admi
 }
 
 /// Trigrammes des autres postes qui ont l'app ouverte (battement récent).
-fn autres_postes_actifs(conn: &Connection, poste_id: &str) -> Result<Vec<String>, String> {
+pub(crate) fn autres_postes_actifs(conn: &Connection, poste_id: &str) -> Result<Vec<String>, String> {
     let mut stmt = conn
         .prepare(&format!(
             "SELECT DISTINCT trigramme FROM poste_actif
@@ -199,7 +199,7 @@ fn autres_postes_actifs(conn: &Connection, poste_id: &str) -> Result<Vec<String>
 }
 
 /// Vérifie que le fichier est une base SQLite saine et qu'il s'agit bien d'une base Caisses.
-fn verifier_source(source: &Path) -> Result<(), String> {
+pub(crate) fn verifier_source(source: &Path) -> Result<(), String> {
     let src = Connection::open_with_flags(source, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|e| format!("Impossible d'ouvrir le fichier : {e}"))?;
     let controle: String = src
@@ -221,20 +221,6 @@ fn verifier_source(source: &Path) -> Result<(), String> {
     Ok(())
 }
 
-type Compte = (String, String, String, String, String, Option<String>);
-
-fn lire_comptes(conn: &Connection) -> Result<Vec<Compte>, String> {
-    let mut stmt = conn
-        .prepare("SELECT trigramme, mot_de_passe_hash, role, cree_le, modifie_le, code_secours_hash FROM compte")
-        .map_err(|e| e.to_string())?;
-    let lignes = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<Compte>, _>>()
-        .map_err(|e| e.to_string())?;
-    Ok(lignes)
-}
-
 fn lire_roles(conn: &Connection) -> Result<Vec<(String, String)>, String> {
     let mut stmt = conn.prepare("SELECT trigramme, role FROM utilisateur").map_err(|e| e.to_string())?;
     let lignes = stmt
@@ -247,7 +233,7 @@ fn lire_roles(conn: &Connection) -> Result<Vec<(String, String)>, String> {
 
 fn lire_parametres_sauvegarde(conn: &Connection) -> Result<Vec<(String, String)>, String> {
     let mut stmt = conn
-        .prepare("SELECT cle, valeur FROM parametre WHERE cle LIKE 'backup\\_%' ESCAPE '\\' OR cle IN ('seuil_alerte_general', 'poids_max_kg_m2')")
+        .prepare("SELECT cle, valeur FROM parametre WHERE cle LIKE 'backup\\_%' ESCAPE '\\' OR cle IN ('seuil_alerte_general', 'poids_max_kg_m2', 'intranet_api_url', 'collage_excel_visible', 'poids_max_kg_m2_total', 'estimation_poids_caisse', 'dossier_base')")
         .map_err(|e| e.to_string())?;
     let lignes = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -274,7 +260,6 @@ fn restaurer(conn: &mut Connection, poste_id: &str, chemin: &str, trigramme: &st
     }
     verifier_source(source)?;
 
-    let comptes = lire_comptes(conn)?;
     let parametres = lire_parametres_sauvegarde(conn)?;
     let roles = lire_roles(conn)?;
 
@@ -300,15 +285,6 @@ fn restaurer(conn: &mut Connection, poste_id: &str, chemin: &str, trigramme: &st
     crate::db::appliquer_migrations(conn)?;
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM compte", []).map_err(|e| e.to_string())?;
-    for (tri, hash, role, cree, modifie, code) in &comptes {
-        tx.execute(
-            "INSERT INTO compte (trigramme, mot_de_passe_hash, role, cree_le, modifie_le, code_secours_hash)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![tri, hash, role, cree, modifie, code],
-        )
-        .map_err(|e| e.to_string())?;
-    }
     for (cle, valeur) in &parametres {
         tx.execute(
             "INSERT INTO parametre (cle, valeur) VALUES (?1, ?2)
@@ -317,7 +293,7 @@ fn restaurer(conn: &mut Connection, poste_id: &str, chemin: &str, trigramme: &st
         )
         .map_err(|e| e.to_string())?;
     }
-    // Rôles actuels (cohérents avec les mots de passe conservés ci-dessus).
+    // Rôles actuels : une vieille sauvegarde ne doit pas les faire revenir en arrière.
     for (tri, role) in &roles {
         tx.execute(
             "INSERT INTO utilisateur (trigramme, role) VALUES (?1, ?2)
@@ -393,11 +369,11 @@ mod tests {
         drop(ancienne);
         let source = d_sauvegarde.join("caisses.sqlite3");
 
-        // Base courante : une autre affaire, un compte et une config de sauvegarde.
+        // Base courante : une autre affaire, un rôle et une config de sauvegarde.
         let d_base = dossier("base");
         let mut conn = crate::db::open_at(&d_base);
         conn.execute("INSERT INTO affaire (nom, seuil_defaut) VALUES ('RECENTE1', 0.7)", []).unwrap();
-        conn.execute("INSERT INTO compte (trigramme, mot_de_passe_hash) VALUES ('AJC', 'hash-actuel')", []).unwrap();
+        conn.execute("INSERT INTO utilisateur (trigramme, role) VALUES ('BCD', 'admin')", []).unwrap();
         conn.execute("INSERT INTO parametre (cle, valeur) VALUES ('backup_frequence', 'quotidienne')", []).unwrap();
 
         // Un autre poste actif bloque la restauration.
@@ -414,8 +390,8 @@ mod tests {
             .query_map([], |r| r.get(0)).unwrap()
             .collect::<Result<_, _>>().unwrap();
         assert_eq!(noms, vec!["ANCIENNE".to_string()]);
-        let hash: String = conn.query_row("SELECT mot_de_passe_hash FROM compte WHERE trigramme = 'AJC'", [], |r| r.get(0)).unwrap();
-        assert_eq!(hash, "hash-actuel");
+        let role: String = conn.query_row("SELECT role FROM utilisateur WHERE trigramme = 'BCD'", [], |r| r.get(0)).unwrap();
+        assert_eq!(role, "admin");
         let freq: String = conn.query_row("SELECT valeur FROM parametre WHERE cle = 'backup_frequence'", [], |r| r.get(0)).unwrap();
         assert_eq!(freq, "quotidienne");
         let actions: i64 = conn.query_row("SELECT COUNT(*) FROM journal WHERE action = 'restauration'", [], |r| r.get(0)).unwrap();

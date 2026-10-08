@@ -108,6 +108,10 @@ export function ouvertureImposee(etat: {
   return null;
 }
 
+// Alerte affichée (⚠) quand la caisse en stock choisie n'a pas le type d'ouverture de la caisse
+// sélectionnée avant (retour du 2026-10-07 — plus d'alerte systématique, ni pour les 4C).
+export const ALERTE_OUVERTURE_DIFFERENTE = "Le type d'ouverture est différent de la précédente caisse sélectionnée.";
+
 export function motifOuvertureImposee(etat: { caisse_stock_id: number | null }): string {
   return etat.caisse_stock_id != null
     ? "Type d'ouverture de la caisse en stock (modifiable dans Caisses en stock › Gérer les caisses)"

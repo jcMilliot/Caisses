@@ -13,6 +13,26 @@ const A_FAIRE: Point[] = [
 
 const A_VERIFIER: Point[] = [
   {
+    titre: "Dossier de la base",
+    detail:
+      "Admin › Paramètres › « Dossier de la base » : noter le chemin pour les nouveaux postes. Sur un nouveau poste, coller ce chemin au premier démarrage. Un changement de dossier se fait app fermée sur les autres postes ; ils suivent à leur prochain démarrage.",
+  },
+  {
+    titre: "Connexion avec le compte intranet",
+    detail:
+      "Au premier lancement de la nouvelle version, chaque poste demande l'identifiant et le mot de passe de l'intranet, puis se reconnecte tout seul. Vérifier le trigramme affiché, l'accès Admin des administrateurs (sans mot de passe, puis redemandé après « Verrouiller ») et le démarrage quand l'intranet est injoignable.",
+  },
+  {
+    titre: "Poids des caisses",
+    detail:
+      "Dans Admin › Caisses › Poids, saisir les caisses pesées (contreplaqué et bois) et appliquer si besoin la masse volumique conseillée. Régler les renforts et tasseaux par défaut dans Réglages. Dans Simulations, vérifier le poids estimé de la caisse et l'alerte à 400 kg/m² caisse comprise. Renseigner la tare des caisses en stock connues.",
+  },
+  {
+    titre: "Import depuis l'intranet (Simulations)",
+    detail:
+      "Régler l'adresse de l'intranet dans Admin › Paramètres. Dans une affaire, « Importer » doit demander les identifiants intranet la première fois puis ajouter les articles AR ; le bouton devient « Vérifier mise à jour ». Après une modification du picking dans l'intranet : quantités, lignes ajoutées et supprimées doivent suivre.",
+  },
+  {
     titre: "Caisses en stock : matière et dimensions extérieures",
     detail:
       "Dans « Gérer les caisses », renseigner la matière (obligatoire) et, si besoin, les dimensions extérieures de chaque caisse ; vérifier qu'elles apparaissent dans Admin › Caisses.",
@@ -53,18 +73,13 @@ const A_VERIFIER: Point[] = [
       "Vérifier qu'il s'affiche dans la liste des affaires de Simulations et dans la colonne « Taux de remplissage » de Gestion des caisses, pour les affaires qui ont des caisses avec des articles (une valeur par caisse s'il y en a plusieurs).",
   },
   {
-    titre: "Code de secours",
-    detail:
-      "AJC : cliquer sur « Créer un code de secours » en haut de la page Admin et le noter en lieu sûr. Il sert si le mot de passe est oublié.",
-  },
-  {
     titre: "Seuil d'alerte général",
     detail: "Le régler dans l'onglet Paramètres et vérifier qu'il s'applique aux affaires non livrées, pas aux affaires livrées.",
   },
   {
     titre: "Collage des lignes « AR / ZR »",
     detail:
-      "Coller une ligne dont l'AR ne commence ni par AR ni par ZR : la fenêtre de choix doit apparaître, et les lignes non cochées doivent être listées sous le tableau.",
+      "Coller une ligne dont l'AR ne commence ni par AR ni par ZR : la fenêtre de choix doit apparaître, et les lignes non cochées doivent être listées sous le tableau. Les lignes ZR ne doivent pas être collées.",
   },
   {
     titre: "Documentation modifiable",
@@ -85,7 +100,7 @@ const A_DECIDER: Point[] = [
   {
     titre: "Cartons standards (outil de colisage)",
     detail:
-      "Idée : retirer d'une simulation les articles déjà rangés dans des cartons standards, et les remplacer par ces cartons. Il faut d'abord un exemple du fichier produit par l'outil de colisage.",
+      "Idée : repérer dans le picking de l'intranet les pièces déjà colisées, afficher une vue avec leurs colis et les pièces restantes, et ranger colis et pièces dans les caisses pour un volume plus juste. Alerte si les pièces d'un colis dépassent son volume. Une liste des colis (références et dimensions) sera intégrée à l'application.",
   },
   {
     titre: "Base de données partagée sur le réseau",

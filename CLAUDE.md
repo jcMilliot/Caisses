@@ -111,18 +111,18 @@ src-tauri/src/
     alerte.rs         → set_alerte_barre_taches : pastille rouge (overlay icon Windows) sur
                         l'icône de la barre des tâches, dessinée en Rust
     admin.rs          → rôles (`utilisateur.role`, role_de / refuser_lecteur / changer_role,
-                        AJC admin permanent) + mots de passe des admins (Argon2) + session admin
-                        en mémoire (AdminSession, require_admin) : get_compte_status /
-                        admin_unlock / admin_session_active / admin_lock / change_mot_de_passe /
-                        enregistrer_connexion / list_utilisateurs / get_role /
-                        set_role_utilisateur / ajouter_utilisateur + mot de passe oublié
-                        (reinitialiser_mot_de_passe_par_code, regenerer_code_secours,
-                        reinitialiser_mot_de_passe_admin)
+                        AJC admin permanent) + session admin en mémoire (AdminSession,
+                        require_admin, ouvrir_session_si_admin) : admin_session_active / admin_lock /
+                        enregistrer_connexion / list_utilisateurs / get_role / set_role_utilisateur /
+                        ajouter_utilisateur. Plus de mot de passe propre à Caisses depuis 0039.
     backup.rs         → sauvegarde de caisses.sqlite3 (VACUUM INTO) : get/set_backup_config,
                         choose_backup_folder, backup_now (admin), backup_if_due (tout poste)
     restauration.rs   → présence des postes (PosteId, signaler_presence) + restauration d'une
                         sauvegarde (admin) : list_sauvegardes, choose_fichier_restauration,
                         restore_sauvegarde
+    poids_caisse.rs   → estimation du poids des caisses : caisses pesées (list/create/update/
+                        delete_caisse_pesee, écriture admin) + réglages (get/set_reglages_poids_caisse,
+                        JSON en `parametre`) ; le calcul est dans domain/poidsCaisse.ts
     journal.rs        → journal d'audit : journaliser() appelé par les commandes concernées +
                         list_journal (session admin requise, onglet de la page Admin)
     locks.rs          → verrouillage applicatif multi-poste (acquire/release/heartbeat/
@@ -131,9 +131,15 @@ src-tauri/src/
                         module_lineaire / terminaux) — list/create/rename/count_usage/delete ;
                         rename_option_liste répercute la nouvelle valeur sur demande /
                         demande_caisse (transaction)
-    setup.rs          → get_db_status / choose_db_folder / set_db_folder / init_db
-    user.rs           → get_user_status / set_trigramme (mot de passe exigé pour un trigramme
-                        protégé — AJC)
+    setup.rs          → get_db_status / choose_db_folder / set_db_folder / init_db (suivent le
+                        dossier réglé par un admin) / verifier_dossier_base / get_dossier_base /
+                        changer_dossier_base (admin)
+    user.rs           → identité du poste (user-identity.json), écrite par la connexion intranet
+    intranet.rs       → compte intranet : connexion_auto (démarrage) / connexion_intranet /
+                        admin_unlock_intranet / set_intranet_url_initiale, identifiants dans le
+                        gestionnaire d'identifiants Windows (keyring) ; import du picking
+                        (fetch_picking_intranet, get/appliquer_import_intranet) ; réglages
+                        intranet_api_url / collage_excel_visible
 ```
 
 **Système de migrations versionnées** (`db.rs`) : chaque fichier `migrations/000N_*.sql` est
@@ -146,8 +152,8 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-10-06 : migrations `0001` à `0035` (dernière :
-`0035_add_caisse_stock_dims_exterieures.sql` ; pas de `0019_reorder` — supprimé avant
+État au 2026-10-08 : migrations `0001` à `0039` (dernière :
+`0039_supprimer_mots_de_passe.sql` ; pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes).
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
 triées côté frontend par `demandeOptions.ts::comparerOption` (quantité de tête puis n° de
@@ -176,6 +182,8 @@ caisse (id, affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm,
         demande_id        INTEGER NULL,  -- 0020, lien vers la ligne de demande dont la caisse
                                           --   MÈRE est issue (synchro dims fiable même renommée)
         caisse_stock_id   INTEGER NULL,  -- 0011, lien vers une caisse en stock
+        nb_renforts_longueur, nb_renforts_largeur INTEGER DEFAULT 0,  -- 0038, choisis à la main
+        nb_tasseaux INTEGER DEFAULT 3,  -- 0038, sous le fond, caisses en bois (4C) seulement
         ordre)
 
 article (id, affaire_id, caisse_id NULL,  -- NULL = non assigné, ON DELETE SET NULL
@@ -183,7 +191,13 @@ article (id, affaire_id, caisse_id NULL,  -- NULL = non assigné, ON DELETE SET 
          reference,   -- référence fournisseur
          designation,
          dim1_mm, dim2_mm, dim3_mm, poids_unitaire_kg, quantite,
+         normm INTEGER NULL,       -- 0036, numéro de besoin intranet (NULL = collé depuis Excel)
+         qte_initiale INTEGER NULL, -- 0036, initial_qty de l'intranet
+         supprime_intranet BOOL,   -- 0036, supprimée dans l'intranet : hors tableau et calculs
          ordre)
+
+affaire_import_intranet (affaire_id PK REFERENCES affaire ON DELETE CASCADE,  -- 0036
+         importe_le, anomalies TEXT)  -- JSON : AR des lignes sans numéro de besoin
 
 demande (id,  -- table indépendante, pas de FK — section "Demandes" du menu principal
          ok_pour_passer_cde BOOL, affaire TEXT,  -- "affaire" ici = texte libre, pas de lien vers `affaire.id`
@@ -219,6 +233,7 @@ caisse_stock (id, nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observatio
                                                     --   ligne de demande qui sélectionne la caisse
          matiere TEXT,                     -- 0033, 'Bois' | 'Contreplaqué' ('' = caisse antérieure)
          ext_longueur_mm, ext_largeur_mm, ext_hauteur_mm REAL,  -- 0035, dims extérieures, 0 = non saisie
+         tare_kg REAL,                     -- 0038, poids à vide, 0 = non saisie
          gere BOOL, seuil_alerte INTEGER,  -- 0031 : gere = on la recommande → alerte « à commander »
                                            --   si quantite <= seuil_alerte. Toutes les AR_CAISS_
                                            --   sont décomptées, gérées ou non (2026-10-02)
@@ -248,16 +263,14 @@ option_liste (id, liste TEXT, valeur TEXT, ordre, UNIQUE(liste, valeur))  -- 001
          -- informatives entre parenthèses). Migration séparée car 0017 était déjà appliquée
          -- sur les bases de dev sans ces valeurs.
 
-compte (trigramme PK, mot_de_passe_hash, role DEFAULT 'admin', cree_le, modifie_le,  -- 0022
-        code_secours_hash NULL)  -- 0030, code de secours (hash Argon2), NULL = aucun
-         -- mots de passe des administrateurs (hash Argon2, format PHC), créés à leur première
-         -- saisie, supprimés quand l'admin est rétrogradé. `compte.role` n'est plus lu : le rôle
-         -- vit dans `utilisateur.role` depuis 0028.
+compte (…)  -- 0022, mots de passe des administrateurs (Argon2) + code de secours (0030) —
+         -- **supprimée par 0039** (connexion par le compte intranet, 2026-10-08).
 
 utilisateur (trigramme PK, premiere_connexion, derniere_connexion,  -- 0022
              role DEFAULT 'utilisateur')  -- 0028 : 'utilisateur' | 'lecteur' | 'admin'
-         -- trigrammes saisis sur les postes (déclaratifs, ou ajoutés à l'avance par un admin),
-         -- rafraîchi à chaque démarrage ; seedé à 0022 depuis `journal` et `section_lock`.
+         -- identités des postes : trigramme repris du compte intranet (à défaut son identifiant,
+         -- ex. « X12345 »), ou ajoutées à l'avance par un admin ; rafraîchi à chaque connexion ;
+         -- seedé à 0022 depuis `journal` et `section_lock`.
          -- AJC = admin permanent (non modifiable) ; au moins un admin toujours.
 
 article_non_colle (id, affaire_id REFERENCES affaire ON DELETE CASCADE, ar, reference,  -- 0029
@@ -269,8 +282,17 @@ parametre (cle PK, valeur)  -- 0022, paramètres partagés clé/valeur
          -- backup_dossier, backup_frequence ('desactivee'|'quotidienne'|'hebdomadaire'),
          -- backup_conservation (nb de fichiers), backup_derniere (UTC), backup_dernier_poste,
          -- backup_derniere_erreur ; seuil_alerte_general (défaut 70) ;
-         -- poids_max_kg_m2 (défaut 320, alerte « Charge trop lourde » de Simulations) ;
-         -- documentation_textes (JSON { clé: texte } des textes modifiés de la Documentation).
+         -- poids_max_kg_m2_total (défaut 400, caisse comprise, alerte « Charge trop lourde » de
+         -- Simulations ; l'ancienne clé poids_max_kg_m2, 320 hors caisse, n'est plus lue) ;
+         -- estimation_poids_caisse (JSON des réglages de l'estimation, cf. domain/poidsCaisse.ts) ;
+         -- documentation_textes (JSON { clé: texte } des textes modifiés de la Documentation) ;
+         -- dossier_base (dossier de la base réglé par un admin, suivi par les postes au démarrage,
+         -- jamais écrit automatiquement).
+
+caisse_pesee (id, affaire TEXT, longueur_mm, largeur_mm, hauteur_mm,  -- 0038, dims intérieures
+         tare_kg, nb_pieds, matiere ('Contreplaqué'|'Bois'), mousse_bache BOOL,
+         nb_renforts_longueur, nb_renforts_largeur, nb_tasseaux, cree_le)
+         -- caisses réellement pesées (Admin › Caisses › Poids), pour caler l'estimation.
 
 poste_actif (poste_id PK, trigramme, dernier_battement)  -- 0023
          -- postes qui ont l'app ouverte : identifiant tiré au hasard au lancement (PosteId),
@@ -1401,9 +1423,303 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   texte) — ce qu'on voit = ce qu'on filtre. L'app n'écrit plus jamais `stock` (texte hérité).
 - Validation : `cargo test --lib` (10, migrations appliquées sur base neuve), `npx tsc --noEmit`,
   `parMois` vérifié sur un petit jeu (fichier jetable). **Non testé en conditions réelles**.
+- **2026-10-07 — Collage Excel (Simulations) : lignes `ZR` écartées** (`PasteImportZone::
+  estLigneZr`) : `ZR` = liste de pièces à assembler par un autre service, pas un article à
+  caser. Ces lignes ne sont ni collées ni gardées dans « Ces lignes n'ont pas été collées » ;
+  l'aperçu indique « N ligne(s) « ZR » non collée(s) ». Les lignes ni `AR` ni `ZR` gardent la fenêtre de choix.
+  Documentation par défaut complétée. Validation : `npx tsc --noEmit`. **Pas encore publié**.
 - **Release 0.13.0** (2026-10-06) : retours des 2026-10-05 / 06 ci-dessus + migrations `0032` à
   `0035` (appliquées sur la base partagée au premier lancement). Commit du travail `dff5231`,
   puis bump de version. Soumission Microsoft Defender à faire dès publication.
+
+### 2026-10-07 — Simulations : import des articles depuis l'intranet
+
+- **Schéma revu avec l'utilisateur** (détail des données et décisions : fichier local non
+  versionné `docs/prive/intranet-api.md`) : dans une affaire, bouton **« Importer »** → picking de l'intranet
+  par nom d'affaire → articles ajoutés ; ensuite le bouton devient **« Vérifier mise à jour »**
+  et compare le picking à l'affaire. **En deux temps** (décision du même jour) : l'import d'abord,
+  avec des identifiants intranet demandés au premier import et gardés sur le poste ; la
+  connexion à Caisses par le compte intranet viendra ensuite (trigramme et mots de passe
+  Caisses inchangés pour l'instant).
+- **Backend** (`commands/intranet.rs`) : `reqwest` (TLS natif Windows → certificats du poste ;
+  proxy système lu par reqwest) et `keyring` (gestionnaire d'identifiants Windows, entrée
+  `Caisses-intranet`). `fetch_picking_intranet` (async — ne fige pas l'interface) : jeton en
+  mémoire, renouvelé une fois sur un 401 ; 400 « Affaire introuvable » → message clair ;
+  erreurs `IDENTIFIANTS_REQUIS` / `IDENTIFIANTS_REFUSES` → le frontend redemande les
+  identifiants. Adresse de l'API = paramètre `intranet_api_url` (Admin › Paramètres), conservé
+  à la restauration comme `collage_excel_visible`.
+- **Comparaison** (`domain/importIntranet.ts::comparerPicking`, pure) : lignes **AR** seulement
+  (ZR et autres ignorées) ; clé = **numéro de besoin** `normm` (doublons d'AR distincts) ; sans
+  `normm` → pas importée, listée en anomalie ; premier import → articles collés (sans `normm`)
+  **remplacés** ; `QTARF` null ou ligne disparue → `supprime_intranet` (sort du tableau, des
+  calculs et de sa caisse, bloc « Lignes supprimées dans l'intranet » sous le tableau) ; revient
+  si la ligne réapparaît (sans caisse) ; articles collés après l'import non touchés ; une saisie
+  manuelle différente de l'intranet est écrasée par la mise à jour (cas qui ne doit pas arriver,
+  cf. décisions). `appliquer_import_intranet` exécute le plan en une transaction et enregistre la
+  date + les anomalies (`affaire_import_intranet`).
+- **UI** (`AffaireDetail`, `hooks/useImportIntranet.tsx`) : résumé avant application
+  (`ImportIntranetDialog` : ajoutées / modifiées avec « Qté 2 → 1 » / supprimées / revenues,
+  avertissement si des articles collés sont remplacés) ; « Aucune mise à jour » si rien ne
+  change ; `IdentifiantsIntranetDialog` ; bouton **« ⚠ Pas de numéro de besoin (N) »** visible
+  seulement s'il y a des anomalies (fenêtre : AR + « pas de numéro de besoin ») ;
+  **« Qté initiale : N »** en petit sous l'AR quand `qte_initiale` ≠ quantité ; `useAffaire`
+  expose `articles` (sans les supprimées) et `tousArticles`.
+- **Admin › Paramètres** : adresse de l'intranet + interrupteur **« Coller depuis Excel »**
+  (masque aussi le collage multi-cellules du tableau) — décision du 2026-10-06.
+- **Référence fournisseur mise en forme à l'import** (`formaterReferenceFournisseur`, demande
+  du même jour) : préfixe « XXX/ » retiré, puis une référence « PL… » découpée en
+  PL - 8 - 4 - 3 - reste (`PLAKORM01M1GMP084A` → `PL-AKORM01M-1GMP-084-A`) ; laissée telle quelle
+  si déjà découpée ou de moins de 17 caractères. Import seulement, pas le collage Excel
+  (confirmé par l'utilisateur : le fichier Excel copié est déjà mis en forme).
+- **Données de l'intranet hors dépôt** (dépôt public, décision du même jour) : adresse de l'API,
+  identifiants d'exemple, forme des réponses déplacés dans `docs/prive/intranet-api.md`
+  (`docs/prive/` ignoré par git). Chemin OneDrive anonymisé dans ce fichier.
+- Documentation utilisateur pas encore complétée pour l'import : **point sur la documentation à
+  faire avec l'utilisateur plus tard** (ajouter un point décale les clés des textes modifiés,
+  cf. Lot D du 2026-09-30).
+- **Nom de l'entreprise retiré du dépôt public — fait le 2026-10-07** : section de la
+  Documentation renommée `recuperer-articles` (migration `0037` pour les clés des textes
+  modifiés, à commiter) ; historique réécrit (`git filter-repo --replace-text`, nom → «
+  entreprise ») et envoyé de force sur GitHub (`main` + 20 tags) par l'utilisateur. Sauvegarde
+  de l'ancien historique : `G:\Projets\Code\caisses-historique-avant-reecriture.bundle` (hors
+  dépôt, contient le nom). **Reste éventuel** : demander au support GitHub de purger les anciens
+  commits encore accessibles par leur identifiant. Détail des étapes ci-dessous, pour mémoire : (décision de
+  l'utilisateur : ces informations ne doivent pas apparaître) :
+  1. fichiers actuels : `src/domain/documentation.ts` (section 3 « Récupérer les articles » : `id`, sommaire,
+     titre, texte — l'`id` de section sert de clé aux textes modifiés en base,
+     le renommer demande de migrer ces clés) et le nom dans la section
+     « Documentation utilisateur » de ce fichier ;
+  2. **historique git** : 4 commits contiennent le nom (dont `dff5231`, chemin OneDrive) →
+     réécriture (`git filter-repo --replace-text`) puis `push --force` de `main` **et des
+     tags** ; prévenir que les clones existants deviennent incompatibles. Les releases GitHub
+     déjà publiées restent liées à leurs tags (à vérifier : notes de release, `latest.json`).
+     Les caches GitHub (anciens commits accessibles par leur hash) peuvent subsister : demander
+     un nettoyage au support GitHub si nécessaire.
+  3. vérifier ensuite que `git log -i -S <nom>` ne renvoie plus rien et `docs/prive/` toujours ignoré.
+
+- Validation : `cargo test --lib` (12, dont lecture d'une ligne de picking et application d'un
+  plan : remplacement des collés, suppression qui sort de la caisse), `cargo check`,
+  `npx tsc --noEmit`, `comparerPicking` vérifié sur 9 cas (fichier jetable). **Non testé contre
+  le vrai intranet** (pas d'accès depuis la machine de dev).
+
+### 2026-10-08 — Estimation du poids des caisses, alerte de charge caisse comprise
+
+- **Demande de l'utilisateur** (fichier Excel « Suivi dim et poids des caisses », 5 caisses en
+  contreplaqué pesées + une caisse en bois et un tasseau pesés le 2026-10-08) : estimer le poids
+  d'une caisse d'après ses dimensions, pour que l'alerte de charge compte la caisse elle-même.
+  Décisions, réponses et calculs de calage :
+
+- d'après le fichier
+  Excel « Suivi dim et poids des caisses » de l'utilisateur : tableau dans l'Admin des caisses
+  réelles (affaire, dims intérieures, tare, nb de pieds, matière Contreplaqué/Bois, mousse +
+  bâche), dims extérieures = intérieures + 0,036 m (2 × 18 mm), hauteur + 0,036 + 0,11 (pied) ;
+  poids estimé = volume de contreplaqué × 560 kg/m³ + pieds (0,10 × 0,11 × largeur × nb, 750) +
+  mousse (2 cm, 22,5) + bâche (1 mm, 342) ; écart à la tare pour caler les masses volumiques.
+  Sert ensuite à l'alerte de Simulations : **400 kg/m² caisse comprise** (remplace 320 hors
+  caisse), donc un seuil propre à chaque caisse. **Réponses de l'utilisateur (2026-10-07)** :
+  - corrections des formules du fichier : largeur extérieure = intérieure + 0,036 (le fichier
+    ne l'ajoutait pas) ; panneaux : couvercle + fond = L ext × l ext, grands côtés = L ext × H
+    int, bouts = l int × H int (le fichier faisait l × l, erreur masquée car toutes ses
+    caisses ont l = H) ; **bâche ajoutée** au poids ; mousse sur fond + 4 côtés (pas de mousse
+    sur le dessus), bâche sur les 6 faces (elle dépasse pour être soudée) — voulu ;
+  - **la tare du fabricant est à vide** (sans mousse ni bâche) → l'écart se calcule sur
+    bois + pieds ; des **renforts** existent parfois (non comptés par la formule) ;
+  - **bois** : pas encore d'exemple ni de masse volumique — à ajouter quand il y en aura un ;
+  - Simulations : **pieds = 3 au-delà de 2,20 m de longueur, sinon 2, seuil réglable** ;
+    matière **contreplaqué pour STANDARD et 4B** ; **mousse + bâche pour les 4C** ;
+  - surface : **fond intérieur** (inchangé) ;
+  - masses volumiques et épaisseurs **réglables dans l'Admin**, écart par caisse + moyen ;
+  - **tare sur les caisses en stock** : bonne idée (vrai poids si une caisse de stock est
+    choisie).
+  Avec les formules corrigées, écarts tare − estimation à 560 kg/m³ : −2,7 / −1,8 / −1,5 /
+  +2,1 / −0,3 kg (fichier : −0,2 / +0,7 / +0,2 / +5,1 / +1,7, mousse retirée).
+  - **Masse volumique conseillée** (accord du 2026-10-07) : calculée par l'app à partir des
+    caisses pesées (≈ 549 kg/m³ pour le contreplaqué avec les 5 caisses), appliquée d'un clic ;
+  - **4C = bois** (selon l'utilisateur). **Caisse en bois pesée (2026-10-08)** : tare 140 kg,
+    **dimensions extérieures** 2280 × 725 × 915 mm sans renforts, panneau de bois reconstitué
+    (colle hydrofuge) **12 mm**, **3 pieds 776 × 100 × 100 mm**, renforts **9 × 2280 × 100 × 25**
+    et **6 × 700 × 100 × 25** mm (≈ 0,062 m³ au total) ;
+  - **tasseau pesé** : 1110 × 90 × 72 mm pour 2,918 kg → **≈ 406 kg/m³** (bois massif, pour
+    renforts et pieds) ;
+  - renforts comptés avec la masse volumique du bois massif ; nombre saisi sur les caisses
+    pesées, valeur par défaut des réglages pour Simulations (revu le même jour, voir plus bas) ;
+  - précisions (2026-10-08) : grille d'aération + clous < 1 kg ; panneau 12 mm partout ;
+    **3 tasseaux sous le fond, 2200 × 55 × 75 mm**, les pieds sont fixés dessus ; hauteur 915
+    comprise sans les pieds (lecture de l'assistant) ; **pieds des caisses en contreplaqué = 4
+    couches de bois reconstitué + 2 de contreplaqué** (d'où les 750 kg/m³ du fichier) ;
+  - calcul (tasseaux et renforts à 406) : si les pieds de la caisse en bois sont faits comme
+    ceux des caisses en contreplaqué (bois reconstitué), **bois reconstitué ≈ 812 kg/m³** —
+    cohérent avec un pied mixte 4 + 2 couches ≈ 724 kg/m³ (fichier : 750) ; s'ils sont en bois
+    massif, le panneau ressortirait à ≈ 903 kg/m³. **Réponse : pieds en bois massif** →
+    bois reconstitué ≈ 903 kg/m³ (élevé, mais valeur de calage sur une seule caisse, à affiner
+    avec d'autres pesées) ; pieds des caisses en bois à 406 kg/m³, longueur 776 pour 725 de
+    large ;
+  - **tasseaux sous le fond** : sur toute la longueur, **caisses en bois seulement** (pas sur
+    le contreplaqué), **3 par défaut**, modifiables par caisse (pas de règle) ;
+  - **renforts** : nombre sur la longueur et sur la largeur — d'abord prévu par caisse dans
+    Simulations, puis **réglé seulement dans l'Admin** (retour du même jour).
+
+- **Modèle** (`domain/poidsCaisse.ts::estimerPoidsCaisse`, pur ; m et kg/m³) : panneaux
+  (couvercle + fond L ext × l ext, grands côtés L ext × H int, bouts l int × H int, × 2 × e) ;
+  pieds (nb × section × l ext) ; tasseaux (nb × section × L int) ; renforts ((nb long. × L ext +
+  nb larg. × l int) × section) ; mousse (fond + 4 côtés) et bâche (6 faces). Caisse vide =
+  panneaux + pieds + tasseaux + renforts (comparable à la tare). Contreplaqué : 18 mm, pieds
+  100 × 110 à 750 ; bois : 12 mm, panneau **916 kg/m³** (calage de la caisse pesée), pieds
+  100 × 100 et renforts 100 × 25 et tasseaux 55 × 75 en bois massif **406 kg/m³** ; 3 pieds
+  au-delà de **2 200 mm de longueur extérieure** (une caisse de 2,20 m intérieurs en a 3 dans le
+  fichier). Tout est réglable (Admin › Caisses › Poids, paramètre `estimation_poids_caisse`).
+- **Simulations** (`poidsDeLaCaisse`, `useAffaire`, `calculerCaisse`) : 4C = bois + mousse +
+  bâche, STANDARD / 4B = contreplaqué ; caisse liée à une caisse en stock **avec tare** → la
+  tare (+ mousse et bâche pour une 4C). Poids au m² = (articles + caisse) / fond intérieur ;
+  alerte dès **400 kg/m²** (paramètre `poids_max_kg_m2_total`, Admin › Paramètres).
+  `CaisseCard` : « Poids total hors caisse », « Poids de la caisse (estimé | tare) » (détail en
+  infobulle), « Poids au m² caisse comprise (max 400kg) » ; bandeau « ⚠ Charge trop lourde : N kg/m² (max 400 kg/m²) » puis
+  « prévoir une caisse plus grande ou répartir les articles. » (demande du 2026-10-07).
+- **Admin › Caisses › Poids** (`components/PoidsCaisses.tsx`) : tableau des caisses pesées
+  (saisie en ligne, admin), dims extérieures, estimation à vide, écart (rouge > 10 % de la tare),
+  avec mousse + bâche ; par matière : écart moyen et **masse volumique conseillée** (moindres
+  carrés, `masseVolumiqueConseillee` — 545 pour les 5 caisses en contreplaqué) + bouton
+  « Utiliser cette valeur » ; réglages groupés, « Valeurs par défaut ». La valeur par défaut du
+  contreplaqué reste **560** (celle du fichier) tant que l'utilisateur n'applique pas le conseil.
+- **Caisses en stock** : champ **« Tare (kg) »** facultatif dans « Gérer les caisses ».
+- **Retours du même jour** :
+  - renforts et tasseaux **plus saisissables dans Simulations** (« ne laisser la possibilité de
+    modifier que dans l'admin ») : valeurs par défaut dans les réglages (`sim_renforts_longueur`
+    / `sim_renforts_largeur` = 0, `sim_tasseaux` = 3) ; les colonnes `caisse.nb_renforts_*` /
+    `nb_tasseaux` et la commande `set_caisse_renforts` ont été **retirées de la migration 0038**
+    (pas encore publiée — une base de dev qui l'a déjà appliquée garde ces colonnes, inutilisées) ;
+  - sous-onglet Poids en deux vues **« Caisses pesées » / « Réglages »** ; réglages regroupés
+    sans ambiguïté (bois massif = une masse volumique ; groupes « Renforts » largeur / épaisseur
+    et « Tasseaux sous le fond » largeur / hauteur séparés) ;
+  - « Poids total » → **« Poids total des articles »** (carte et bandeau récap) ;
+  - mise en page : page Admin à 1440 px pour l'onglet Caisses, tableau Stock sans limite de
+    900 px, tableau Poids resserré (`.table-donnees.compacte`), plus de débordement à droite ;
+  - 2e passe sur les caisses pesées (le tableau débordait encore) : **saisie sortie du tableau**
+    (`FormulairePesee`, champs libellés qui passent à la ligne, sert aussi à « Modifier ») ;
+    tableau en 8 colonnes (dimensions intérieures + extérieures dans la même cellule, matière +
+    pieds / renforts / tasseaux / mousse dans « Composition ») ; réglages « Dans Simulations : … »
+    renommés « Caisses simulées : … » ;
+  - 3e passe : colonne « Avec mousse + bâche » à « — » pour une caisse sans mousse ni bâche ;
+    **réglages de renforts par défaut retirés** (`sim_renforts_*`) — les renforts ne se saisissent
+    que sur les caisses pesées, les caisses simulées n'en comptent pas ; groupe « Pieds dans
+    Simulations » renommé « Pieds » ;
+  - 4e passe : « Caisses simulées : nombre de tasseaux » → « Nombre de tasseaux » ; aide du groupe
+    bois → « Pieds en bois massif ».
+- **Même jour, autres retours** : ligne « Seuil d'alerte » retirée de la `CaisseCard` (le seuil
+  reste affiché en haut, à côté du nom de l'affaire) ; sous-titre de Caisses en stock remplacé par
+  « Création, modification et suppression des caisses. » / « L'affectation d'une caisse à une
+  affaire se fait depuis Gestion des caisses (menu « Stock » d'une ligne). » (deux lignes).
+- Les caisses pesées ne sont **pas pré-remplies** (noms d'affaires réels, dépôt public) : à saisir
+  dans l'app.
+- Validation : `cargo test --lib` (12), `npx tsc --noEmit`, `npx vite build`, estimation vérifiée
+  sur les 6 caisses pesées et l'alerte sur 4 cas (fichiers jetables). **Non testé en conditions
+  réelles**.
+
+### 2026-10-08 — Connexion à Caisses avec le compte intranet
+
+- **Décisions** (2026-10-06 → 2026-10-08, détail dans `docs/prive/intranet-api.md`) : plus de
+  trigramme saisi ni de mot de passe propre à Caisses ; **identité = `trigram` de l'intranet**,
+  à défaut son **`global_id`** (comptes sans trigramme, ex. « X12345 »), puis `username` ;
+  identifiants gardés dans le gestionnaire d'identifiants Windows (`keyring`) ; rôles toujours
+  gérés dans Caisses ; AJC admin permanent ; premier lancement d'un poste avec l'intranet
+  injoignable → « Connexion à l'intranet impossible » + nouvel essai ; plus tard → **dernier compte
+  connu du poste, sans Admin** (impossible de vérifier le mot de passe hors ligne) ; pas de bouton
+  « Se déconnecter ».
+- **Backend** (`intranet.rs`) : `connexion_auto` au démarrage (statut `connecte` / `hors_ligne`
+  / `a_identifier`, `url_manquante`), `connexion_intranet` (écran de connexion, et reconnexion
+  demandée par l'import), `admin_unlock_intranet` (après « Verrouiller »),
+  `set_intranet_url_initiale` (adresse saisie sur l'écran de connexion **tant qu'aucune n'est
+  réglée** — premier poste lancé avec cette version). Une connexion réussie écrit
+  `user-identity.json`, note la connexion dans `utilisateur` et ouvre la session admin si le rôle
+  est admin (`admin::ouvrir_session_si_admin`). `admin.rs` réduit aux rôles + session ;
+  `user.rs` réduit à l'identité du poste ; **migration `0039` : `DROP TABLE compte`** (empreintes
+  des mots de passe et codes de secours) ; la restauration ne recopie plus de comptes ;
+  dépendance `argon2` retirée. Identités acceptées : 2 à 10 lettres / chiffres
+  (`admin::identite_valide`, aussi pour « Ajouter un utilisateur »).
+- **Frontend** : `components/ConnexionIntranet.tsx` remplace `TrigrammeSetup` ; `useUserSetup`
+  appelle `connexion_auto` ; bandeau orange « Intranet injoignable : connecté en tant que … » en
+  hors ligne ; `MotDePasseAdminDialog` et le déverrouillage de l'Admin demandent le mot de passe
+  intranet ; supprimés : `CodeSecoursDialog`, `MotDePasseOublie`, « Changer le mot de passe »,
+  « Nouveau code de secours », « Réinitialiser le mot de passe » (Admin › Utilisateurs).
+- **Mise en service** : après la mise à jour, **chaque poste demande une fois l'identifiant et le
+  mot de passe intranet**. La base partagée n'a pas encore d'adresse d'intranet (le réglage est
+  nouveau) : **le premier poste lancé doit la saisir** sur l'écran de connexion → lancer d'abord
+  la nouvelle version sur le poste de l'utilisateur.
+- **Bug corrigé le même jour** : app blanche au lancement (connexion lancée avant l'ouverture de
+  la base) — cf. [Bugs.md](Bugs.md). Écrans « Ouverture de la base… » / « Connexion à
+  l'intranet… » et message + « Réessayer » au lieu d'un écran vide.
+- Validation : `cargo test --lib` (12, dont identité d'un compte intranet, rôles / session
+  admin, restauration sans comptes), `cargo check`, `npx tsc --noEmit`. **Non testé contre le vrai
+  intranet** (pas d'accès depuis la machine de dev) : à tester au bureau avant toute release.
+
+### 2026-10-08 — Points restants du « À faire » (retours du 2026-10-07)
+
+- **Alerte du type d'ouverture** (Gestion des caisses) : la pastille ⚠ sur « Type ouverture »
+  n'apparaît plus systématiquement (caisse en stock ou 4C) ; seulement quand la caisse en stock
+  choisie a **un autre type d'ouverture que la valeur d'avant** — « Le type d'ouverture est
+  différent de la précédente caisse sélectionnée. » (`ALERTE_OUVERTURE_DIFFERENTE`) ; ligne mère
+  et sous-caisse, suivi dans `DemandesList::ouverturesChangees` (« d:id » / « c:id », session
+  seulement, effacé quand la caisse en stock est retirée). L'explication du verrouillage reste en
+  infobulle. Plus rien pour les 4C.
+- **« Séparation des lignes plus marquée »** : marque aussi les séparations verticales du tableau
+  Gestion des caisses (variables `--col-border-color` / `--col-border-color-entete`, posées par
+  `useSettings`).
+- **« Lier… » sans ligne** (affaire créée dans Simulations) : confirmation puis
+  `AjouterDemandesDialog` pré-rempli (nom, type d'envoi, dimensions de la caisse, règles
+  appliquées — prop `ligneInitiale`), création directe (`bulkCreate`) puis lien de la caisse.
+  La fenêtre « Créer une nouvelle caisse » est **déplaçable** par son en-tête (aussi dans
+  Gestion des caisses).
+- **Barre de mise à jour** : le lien « Admin » de l'accueil était en `position: fixed` (coin de
+  la fenêtre) et passait sous la barre ; il est maintenant positionné dans l'écran d'accueil.
+- **`EditableCellInput`** : un seul composant partagé (les copies locales d'`ArticlesTable` et
+  `DemandesTable` sont supprimées).
+- Validation : `npx tsc --noEmit`, `npx vite build`, `cargo test --lib` (12). **Non testé en
+  conditions réelles**.
+
+### 2026-10-08 — Dossier de la base : chemin saisi au premier démarrage, réglable dans l'Admin
+
+- **Décision de l'utilisateur** (option « 1 + a ») : pas de chemin intégré à l'app (dépôt et
+  installeur publics) ; au premier démarrage, **champ « Chemin du dossier »** (chemin communiqué par
+  un admin) + « Parcourir… » ; **Admin › Paramètres › « Dossier de la base »** pour le changer pour
+  tous les postes.
+- **Premier démarrage** (`FirstLaunchSetup`) : le chemin saisi est vérifié
+  (`verifier_dossier_base`) — dossier introuvable → message ; dossier sans `caisses.sqlite3` →
+  avertissement + bouton « Créer une nouvelle base ici » (évite de créer par erreur une base vide à
+  côté de la base partagée). `set_db_folder` refuse un dossier inexistant (avant : `open_at`
+  paniquait ou créait le dossier).
+- **Changer de dossier** (`changer_dossier_base`, admin) : base déjà présente dans le nouveau
+  dossier → reprise telle quelle (vérifiée comme une base Caisses) ; sinon copie de la base actuelle
+  (`VACUUM INTO`), **refusée si un autre poste a l'app ouverte**. Le paramètre `dossier_base` est
+  écrit dans l'ancienne **et** la nouvelle base (pas de retour en arrière), ce poste bascule et
+  recharge l'interface. L'ancienne base reste en place.
+- **Les autres postes** (`init_db` / `set_db_folder` → `ouvrir_en_suivant`) : au démarrage, si
+  `dossier_base` diffère de leur dossier (comparaison sans casse ni séparateur final) et qu'une base
+  s'y trouve, ils basculent (`db-location.json` réécrit) ; si le dossier est inaccessible depuis le
+  poste, **ils ne continuent pas sur l'ancienne base** : écran de choix du dossier avec ce chemin et
+  un message (`BASE_DEPLACEE:`). `dossier_base` n'est jamais écrit automatiquement (des postes
+  peuvent atteindre le même partage par des chemins différents) et la restauration d'une
+  sauvegarde le conserve.
+- Validation : `cargo test --lib` (13, + comparaison des chemins), `npx tsc --noEmit`,
+  `npx vite build`. **Non testé en conditions réelles** (en particulier le changement de dossier
+  avec plusieurs postes).
+
+### 2026-10-08 — Release 0.14.0
+
+- Contenu : import des articles depuis l'intranet (« Importer » / « Vérifier mise à jour »),
+  connexion par le compte intranet (plus de mot de passe Caisses), estimation du poids des
+  caisses + alerte 400 kg/m² caisse comprise (Admin › Caisses › Poids, tare des caisses en
+  stock), dossier de la base saisi au premier démarrage / réglable dans l'Admin, lignes ZR
+  ignorées au collage, retours du 2026-10-07 (alerte de type d'ouverture, séparation des
+  colonnes, « Lier… » avec création de ligne, lien Admin sous la barre de mise à jour), nom de
+  l'entreprise retiré du dépôt. Migrations `0036` à `0039`.
+- **Mise en service** : lancer la nouvelle version **d'abord sur le poste de l'utilisateur** — la
+  base partagée n'a pas encore d'adresse d'intranet, le premier poste la saisit sur l'écran de
+  connexion ; ensuite chaque poste demande une fois l'identifiant / mot de passe intranet. Les
+  mots de passe Admin Caisses sont supprimés (0039). Soumission Microsoft Defender à faire dès
+  publication si l'installeur est bloqué.
+- Validation avant tag : `cargo check`, `cargo test --lib` (13), `npx tsc --noEmit`,
+  `npm run tauri build -- --debug` (MSI + NSIS). Matricule de l'utilisateur remplacé par un
+  exemple fictif dans le code et ce fichier avant le commit (jamais commité).
 
 ## Prochaines étapes
 
@@ -1969,7 +2285,7 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   2026-10-06.** **Dossier partagé avec le second admin (FBA) — résolu le 2026-10-06**, sans
   code : le chemin de sauvegarde est unique en base pour tous les postes, alors que le dossier
   OneDrive a un chemin par profil Windows. Solution : une **jonction** au même chemin sur chaque
-  poste, `mklink /J C:\CaissesSauvegardes "C:\Users\<profil>\OneDrive - entreprise\Backups DB Caisses"` (dossier OneDrive partagé avec FBA + « Ajouter un raccourci à
+  poste, `mklink /J C:\CaissesSauvegardes "C:\Users\<profil>\OneDrive - <entreprise>\Backups DB Caisses"` (dossier OneDrive partagé avec FBA + « Ajouter un raccourci à
   Mon OneDrive » chez lui), et `C:\CaissesSauvegardes` choisi une fois dans Admin › Sauvegarde.
   **Nouveau poste admin** : refaire la jonction (copier le chemin exact depuis l'explorateur ;
   « Location is not available » = jonction vers un chemin inexistant → `rmdir` puis recréer).
@@ -2026,23 +2342,25 @@ bien celui souhaité, aucun changement de code nécessaire.
     table viennent d'une liste figée, `options_liste.rs::colonnes_pour_liste`), `require_lock`
     sur toutes les commandes de mutation (sauf `create_affaire`, cohérent : ressource neuve),
     garde AJC du journal côté serveur, `foreign_keys=ON`.
-  - **Reste ouvert (sans urgence)** : trois copies d'`EditableCellInput` (composant partagé
-    `components/EditableCellInput.tsx` + copies locales dans `ArticlesTable` et
-    `DemandesTable`) à regrouper. Gardés volontairement : `PasteImportZoneDemandes.tsx`
+  - Copies d'`EditableCellInput` **regroupées le 2026-10-08** (composant partagé seul, options
+    `onTabNext` / `onCollageMultiCellules`). Gardés volontairement : `PasteImportZoneDemandes.tsx`
     orphelin, `useAffaire.supprimerArticle`. La CSP reste `null` — à réactiver un jour si
     l'app charge du contenu externe, inutile tant que tout est local et échappé.
 
 ### À réfléchir plus tard
 
-- **API de l'intranet (en attente du développeur de l'entreprise, 2026-10-06)** — récupérer la
-  liste des articles d'une affaire (à la place du collage Excel) et des identifiants de
-  connexion. Rien de codé. Attendu du développeur : collection Postman (ou doc OpenAPI), adresse
-  de base et accès réseau depuis les postes, mode d'authentification (clé, jeton, SSO…), un
-  exemple de réponse réelle (champs, unités, AR/ZR), environnement de test. À clarifier avec
-  l'utilisateur : « identifiants de connexion » = remplacer trigramme + mot de passe admin par
-  le compte intranet (changement structurant) ou seulement importer la liste des utilisateurs ?
-  Appels à faire côté Rust ; aucun secret dans le dépôt (public).
-
+- **API de l'intranet** — **import des articles codé le 2026-10-07**, **connexion à Caisses par
+  le compte intranet codée le 2026-10-08** (cf. journal). **Détails (adresse,
+  champs, réponses, décisions) dans `docs/prive/intranet-api.md`, fichier local non versionné**
+  (dépôt public) — à lire avant de toucher à l'import ou à la connexion. Si ce fichier manque
+  (autre machine), redemander les détails à l'utilisateur. Rappel des décisions structurantes :
+  connexion à Caisses avec le compte intranet (trigramme repris de l'intranet, rôles gérés dans
+  Caisses, plus de mot de passe propre à Caisses, mot de passe intranet gardé sur le poste dans
+  le gestionnaire d'identifiants Windows, Admin redemandé seulement après « Verrouiller », pas de
+  bouton « Se déconnecter » pour l'instant) ; adresse de l'API en réglage, jamais dans le code.
+- **Lier une caisse de Simulations à une caisse pesée** (idée du 2026-10-08, à trancher plus tard,
+  l'utilisateur penche pour oui) : la caisse simulée reprendrait la tare et les renforts de la
+  caisse pesée au lieu de l'estimation et des valeurs par défaut des réglages.
 - **Droits par tâche** — les rôles Utilisateur / Lecteur / Administrateur existent depuis le
   2026-09-30 (`utilisateur.role`, cf. journal). Si des droits plus fins deviennent utiles
   (par section ou par action), les porter par ce même rôle ou une table dédiée ; seuls les
@@ -2081,12 +2399,43 @@ bien celui souhaité, aucun changement de code nécessaire.
   côté import (référence de carton ? liste des AR qu'il contient ?), et si le rapprochement se
   fait par simple correspondance de référence ou nécessite une étape de vérification manuelle
   avant application.
+  - **Précisions du 2026-10-07 — le colisage passera par le picking de l'intranet** (plus par
+    un fichier) : deux champs de chaque ligne du picking indiquent si la référence a été colisée
+    et le nom de son colis (noms des champs dans `docs/prive/intranet-api.md`). Une **liste des
+    colis** (nom, références contenues, dimensions) sera intégrée à l'app. Objectif :
+    1. détecter les pièces colisées d'une affaire ;
+    2. **une autre vue** dans Simulations : les colis qui contiennent ces pièces, et les
+       références qui ne rentrent dans aucun colis ;
+    3. ranger colis + références restantes dans la ou les caisses, comme aujourd'hui, pour un
+       volume plus juste ;
+    4. **alerte** si le volume des pièces mises dans un colis dépasse le volume du colis.
+    **Réponses de l'utilisateur (2026-10-07)** :
+    - liste des cartons **saisie par l'utilisateur** dans un **nouvel onglet Admin
+      « Consommables »** (références, dimensions, et sans doute le poids de chaque carton) ;
+    - nom de colis dans le picking : **une lettre = une caisse**, **un chiffre = un colis** ;
+    - poids : celui du colis (poids du carton noté aussi dans la liste, « au cas où ») ;
+    - champ « colisé » : **0 = non colisé, 1 = colisé** ;
+    - articulation de la nouvelle vue avec le tableau d'articles : **en réflexion**.
+    - colis du picking ↔ carton de la liste : **choisi dans l'app** (rien ne permet de le
+      déduire pour l'instant) ;
+    - lettres : **A = première caisse de l'affaire**, B, C… les suivantes ; plusieurs pièces
+      peuvent porter la même lettre ; **un colis (chiffre) finit toujours dans une caisse
+      (lettre)** ;
+    - poids : garder la somme des pièces **et** le poids du carton, l'usage sera décidé plus
+      tard — **le volume prime sur la masse**.
+    - **pas de rangement automatique** par lettre : les pièces sont rangées à la main dans les
+      caisses de Simulations (la simulation sert à commander la caisse, donc les références
+      portent rarement déjà une lettre au moment de simuler) ;
+    - caisse dans laquelle finit un colis : **décidée à la main dans l'app**.
 
 ### Documentation utilisateur
 
+- **À faire plus tard avec l'utilisateur (2026-10-07)** : un point sur la documentation —
+  y ajouter l'import depuis l'intranet (« Importer » / « Vérifier mise à jour », lignes
+  supprimées, numéro de besoin), et revoir la section « Récupérer les articles » (export Excel).
 - Page **Documentation** (`src/routes/Documentation.tsx`, bouton de la navbar et en bas à gauche de
   l'accueil). Texte **réécrit le 2026-09-28 d'après celui fourni par l'utilisateur** : Gestion des
-  caisses (création / gestion), Simuler, entreprise, Assigner, Passer la commande, Caisses en
+  caisses (création / gestion), Simuler, Récupérer les articles, Assigner, Passer la commande, Caisses en
   stock (+ Gérer les caisses), Gérer les références, Verrouillage et demande d'écriture, Base de
   données et sauvegarde. **Consigne** : n'y mentionner ni le journal ni la page Admin pour
   l'instant. À tenir à jour quand un comportement décrit change.
