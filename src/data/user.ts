@@ -16,9 +16,12 @@ export const connexionApi = {
   // Au démarrage : reconnexion avec les identifiants gardés sur le poste.
   auto: () => call<EtatConnexion>("connexion_auto"),
   // Renvoie l'identité du poste.
-  connexion: (username: string, password: string) => call<string>("connexion_intranet", { username, password }),
+  // `url` : adresse de l'intranet saisie sur l'écran de connexion (première configuration ou
+  // correction), enregistrée seulement si la connexion réussit avec elle.
+  connexion: (username: string, password: string, url?: string) =>
+    call<string>("connexion_intranet", { username, password, url: url ?? null }),
   // Identifiant intranet gardé sur le poste (pré-rempli à la reconnexion).
   identifiant: () => call<string | null>("get_intranet_identifiant"),
-  // Première configuration (aucune adresse réglée).
-  urlInitiale: (url: string) => call<void>("set_intranet_url_initiale", { url }),
+  // Adresse de l'intranet enregistrée (pré-remplie pour la corriger).
+  urlActuelle: () => call<string>("get_intranet_url"),
 };

@@ -136,7 +136,7 @@ src-tauri/src/
                         changer_dossier_base (admin)
     user.rs           → identité du poste (user-identity.json), écrite par la connexion intranet
     intranet.rs       → compte intranet : connexion_auto (démarrage) / connexion_intranet /
-                        admin_unlock_intranet / set_intranet_url_initiale, identifiants dans le
+                        admin_unlock_intranet (adresse saisie à la connexion), identifiants dans le
                         gestionnaire d'identifiants Windows (keyring) ; import du picking
                         (fetch_picking_intranet, get/appliquer_import_intranet) ; réglages
                         intranet_api_url / collage_excel_visible
@@ -1720,6 +1720,15 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 - Validation avant tag : `cargo check`, `cargo test --lib` (13), `npx tsc --noEmit`,
   `npm run tauri build -- --debug` (MSI + NSIS). Matricule de l'utilisateur remplacé par un
   exemple fictif dans le code et ce fichier avant le commit (jamais commité).
+
+### 2026-10-08 — Release 0.14.1 : adresse de l'intranet corrigeable à la connexion
+
+- Retour de l'utilisateur après publication de la 0.14.0 : **erreur 404** à la connexion sur le
+  poste du bureau, sans moyen de corriger l'adresse (cf. [Bugs.md](Bugs.md)). L'écran de connexion
+  propose maintenant « Modifier l'adresse de l'intranet » ; l'adresse saisie n'est enregistrée
+  qu'après une connexion réussie (`connexion_intranet` prend `url` facultative) ; message
+  explicite sur un 404. `set_intranet_url_initiale` supprimée.
+- Validation : `cargo check`, `cargo test --lib` (13), `npx tsc --noEmit`, build de test.
 
 ## Prochaines étapes
 

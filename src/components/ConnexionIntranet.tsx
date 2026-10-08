@@ -19,23 +19,28 @@ export default function ConnexionIntranet({ message, urlManquante, onConnecte }:
   const [motDePasse, setMotDePasse] = useState("");
   const [erreur, setErreur] = useState<string | null>(message);
   const [busy, setBusy] = useState(false);
+  // Champ d'adresse : affiché d'office si aucune n'est réglée, sinon sur demande (correction d'une
+  // adresse fausse — l'Admin, où elle se règle aussi, demande d'être connecté).
+  const [afficherUrl, setAfficherUrl] = useState(urlManquante);
 
   useEffect(() => {
     connexionApi.identifiant().then((id) => id && setIdentifiant(id)).catch(() => {});
+    connexionApi.urlActuelle().then(setUrl).catch(() => {});
   }, []);
 
-  const peutValider = identifiant.trim() !== "" && motDePasse !== "" && (!urlManquante || url.trim() !== "");
+  const peutValider = identifiant.trim() !== "" && motDePasse !== "" && (!afficherUrl || url.trim() !== "");
 
   async function valider() {
     if (!peutValider || busy) return;
     setBusy(true);
     setErreur(null);
     try {
-      if (urlManquante) await connexionApi.urlInitiale(url);
-      onConnecte(await connexionApi.connexion(identifiant, motDePasse));
+      onConnecte(await connexionApi.connexion(identifiant, motDePasse, afficherUrl ? url : undefined));
     } catch (e) {
       const texte = String(e);
       setErreur(texte === ERR_IDENTIFIANTS_REFUSES ? "Identifiant ou mot de passe refusé par l'intranet." : texte);
+      // Adresse fausse (404) : on montre le champ pour la corriger.
+      if (texte.includes("Adresse de l'intranet")) setAfficherUrl(true);
     } finally {
       setBusy(false);
     }
@@ -66,13 +71,13 @@ export default function ConnexionIntranet({ message, urlManquante, onConnecte }:
           Connectez-vous avec votre compte de l'intranet. Vos identifiants sont gardés sur ce poste : vous n'aurez pas à les
           ressaisir.
         </p>
-        {urlManquante && (
+        {afficherUrl && (
           <input
             className="input"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="Adresse de l'intranet (https://…/api/)"
-            title="Première configuration : adresse de l'API de l'intranet, réglable ensuite dans Admin › Paramètres"
+            title="Adresse de l'API de l'intranet (terminée par /api/), enregistrée si la connexion réussit — réglable aussi dans Admin › Paramètres"
           />
         )}
         <input
@@ -91,7 +96,18 @@ export default function ConnexionIntranet({ message, urlManquante, onConnecte }:
           placeholder="Mot de passe"
         />
         {erreur && <p style={{ margin: 0, fontSize: 13, color: "var(--danger-text)" }}>{erreur}</p>}
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+          {afficherUrl ? (
+            <span />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAfficherUrl(true)}
+              style={{ background: "none", border: "none", padding: 0, color: "var(--accent)", fontSize: 12.5, cursor: "pointer" }}
+            >
+              Modifier l'adresse de l'intranet
+            </button>
+          )}
           <button type="submit" className="btn btn-primary" disabled={busy || !peutValider} style={{ minWidth: 130 }}>
             {busy ? "Connexion…" : "Se connecter"}
           </button>

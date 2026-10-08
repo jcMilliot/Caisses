@@ -117,6 +117,11 @@ async fn signin(url: &str, id: &Identifiants) -> Result<Connexion, String> {
     if statut == reqwest::StatusCode::UNAUTHORIZED || statut == reqwest::StatusCode::BAD_REQUEST || statut == reqwest::StatusCode::FORBIDDEN {
         return Err(ERR_IDENTIFIANTS_REFUSES.to_string());
     }
+    if statut == reqwest::StatusCode::NOT_FOUND {
+        return Err(format!(
+            "Adresse de l'intranet incorrecte (erreur 404) : {url} — elle doit être la base de l'API, terminée par « /api/ »."
+        ));
+    }
     if !statut.is_success() {
         return Err(format!("Connexion à l'intranet impossible (erreur {statut})"));
     }
@@ -168,10 +173,28 @@ pub async fn connexion_intranet(
     admin_session: State<'_, AdminSession>,
     username: String,
     password: String,
+    url: Option<String>,
 ) -> Result<String, String> {
-    let url = url_api(&db)?;
+    // Adresse saisie sur l'écran de connexion (première configuration, ou correction d'une adresse
+    // fausse — sinon on restait bloqué : l'Admin, où elle se règle, demande d'être connecté). Elle
+    // n'est enregistrée qu'après une connexion réussie avec elle.
+    let saisie = url.map(|u| u.trim().to_string()).filter(|u| !u.is_empty());
+    let url = match &saisie {
+        Some(u) => {
+            if !u.starts_with("https://") && !u.starts_with("http://") {
+                return Err("Adresse invalide (elle doit commencer par https://)".to_string());
+            }
+            if u.ends_with('/') { u.clone() } else { format!("{u}/") }
+        }
+        None => url_api(&db)?,
+    };
     let id = Identifiants { username: username.trim().to_string(), password };
     let c = signin(&url, &id).await?;
+    if let Some(u) = &saisie {
+        let guard = db.0.lock().map_err(|e| e.to_string())?;
+        let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+        ecrire(conn, CLE_URL, u)?;
+    }
     let identite = c
         .identite
         .ok_or("Ce compte intranet n'a ni trigramme ni identifiant utilisable")?;
@@ -269,22 +292,6 @@ pub async fn admin_unlock_intranet(
         return Err(format!("{identite} n'a pas d'accès administrateur"));
     }
     Ok(())
-}
-
-/// Première configuration : adresse de l'intranet saisie sur l'écran de connexion, seulement
-/// tant qu'aucune n'est réglée (ensuite : Admin › Paramètres).
-#[tauri::command]
-pub fn set_intranet_url_initiale(db: State<Db>, url: String) -> Result<(), String> {
-    let guard = db.0.lock().map_err(|e| e.to_string())?;
-    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
-    if !lire(conn, CLE_URL)?.unwrap_or_default().trim().is_empty() {
-        return Err("L'adresse de l'intranet est déjà réglée (modifiable dans Admin › Paramètres).".to_string());
-    }
-    let url = url.trim();
-    if !url.starts_with("https://") && !url.starts_with("http://") {
-        return Err("Adresse invalide (elle doit commencer par https://)".to_string());
-    }
-    ecrire(conn, CLE_URL, url)
 }
 
 #[derive(Debug, Serialize)]

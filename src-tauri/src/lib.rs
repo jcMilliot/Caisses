@@ -44,7 +44,7 @@ use commands::poids_caisse::{
 use commands::intranet::{
     admin_unlock_intranet, appliquer_import_intranet, connexion_auto, connexion_intranet, fetch_picking_intranet,
     get_collage_excel_visible, get_import_intranet, get_intranet_identifiant, get_intranet_url, set_collage_excel_visible,
-    set_intranet_url, set_intranet_url_initiale, IntranetSession,
+    set_intranet_url, IntranetSession,
 };
 use commands::journal::list_journal;
 use commands::locks::{
@@ -188,7 +188,6 @@ pub fn run() {
             connexion_intranet,
             connexion_auto,
             admin_unlock_intranet,
-            set_intranet_url_initiale,
             fetch_picking_intranet,
             get_import_intranet,
             appliquer_import_intranet,

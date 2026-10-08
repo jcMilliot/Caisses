@@ -10,6 +10,23 @@ racine, le fix, et un lien vers l'entrée de journal correspondante pour le dét
 
 ---
 
+## Connexion : erreur 404, impossible de corriger l'adresse de l'intranet
+
+**Symptôme** (0.14.0, poste du bureau) : l'écran de connexion renvoie « erreur 404 » et il n'y a
+aucun moyen de corriger l'adresse de l'intranet.
+
+**Cause** : adresse de l'intranet saisie au premier démarrage puis enregistrée en base **avant**
+de vérifier qu'elle marche (`set_intranet_url_initiale`) ; une adresse sans `/api/` (ou avec
+`/auth/signin` en trop) donne un 404 sur `auth/signin`. Ensuite l'écran ne la redemandait plus,
+et l'Admin, où elle se règle, exige d'être connecté → blocage.
+
+**Fix** (0.14.1) : l'écran de connexion propose « Modifier l'adresse de l'intranet » (pré-remplie,
+affichée d'office après un 404) ; `connexion_intranet(…, url)` n'enregistre l'adresse **qu'après une
+connexion réussie** avec elle ; un 404 donne « Adresse de l'intranet incorrecte… terminée par
+« /api/ » ». `set_intranet_url_initiale` supprimée.
+
+---
+
 ## Démarrage : application toute blanche, s'affiche après un rafraîchissement
 
 **Symptôme** : au lancement, la fenêtre reste blanche ; elle s'affiche après un rafraîchissement
