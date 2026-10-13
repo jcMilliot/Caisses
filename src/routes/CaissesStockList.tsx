@@ -78,6 +78,8 @@ export default function CaissesStockList({ trigramme }: Props) {
           onRequestPen={lock.requestPen}
           onApprove={lock.approveRequest}
           onDeny={lock.denyRequest}
+          verrouLibre={lock.verrouLibre}
+          onPrendreLaMain={async () => { if (await lock.prendreLaMain()) await reload(); }}
         />
       )}
 

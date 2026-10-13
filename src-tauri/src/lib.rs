@@ -91,6 +91,11 @@ pub fn run() {
             app.manage(IntranetSession::default());
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                liberer_verrous_du_poste(window.app_handle());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_db_status,
             choose_db_folder,
@@ -204,4 +209,19 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Fermeture de l'app : libère les verrous du poste et le retire de `poste_actif`, pour que les
+/// autres postes n'attendent pas l'expiration (5 min pour les verrous, 2 min pour la présence).
+/// Best-effort : une erreur (base pas encore ouverte, réseau) ne bloque jamais la fermeture.
+fn liberer_verrous_du_poste(app: &tauri::AppHandle) {
+    let Some(db) = app.try_state::<db::Db>() else { return };
+    let Ok(guard) = db.0.lock() else { return };
+    let Some(conn) = guard.as_ref() else { return };
+    if let Some(cfg) = app.path().app_config_dir().ok().and_then(|dir| user_config::read(&dir)) {
+        let _ = commands::locks::liberer_verrous(conn, &cfg.trigramme);
+    }
+    if let Some(poste) = app.try_state::<PosteId>() {
+        let _ = conn.execute("DELETE FROM poste_actif WHERE poste_id = ?1", [&poste.0]);
+    }
 }

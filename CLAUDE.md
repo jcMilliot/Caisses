@@ -1734,6 +1734,65 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   sur un tel poste).
 - Validation : `cargo check`, `cargo test --lib` (13), `npx tsc --noEmit`, build de test.
 
+### 2026-10-13 — Verrous libérés à la fermeture de l'app, bouton « Prendre la main »
+
+- Retour de l'utilisateur : Gestion des caisses restée verrouillée au nom d'un collègue qui
+  avait fermé l'app et éteint son PC. Le nettoyage React de `useSectionLock` (qui libère le
+  verrou en quittant l'écran) ne s'exécute pas à la fermeture de la fenêtre → les autres postes
+  attendaient les 5 min d'expiration.
+- `lib.rs::on_window_event` (`CloseRequested`) → `liberer_verrous_du_poste` : supprime les
+  verrous du trigramme du poste (`locks.rs::liberer_verrous`, trigramme relu dans
+  `user-identity.json`) et sa ligne `poste_actif`. Best-effort, ne bloque jamais la fermeture.
+  Deux postes avec le même trigramme : fermer l'un libère aussi le verrou de l'autre (même
+  personne, accepté). Non couverts (expiration 5 min) : PC éteint ou app plantée sans fermer la
+  fenêtre, relance après mise à jour / restauration.
+- **Bouton « Prendre la main »** (décision de l'utilisateur : pas de reprise automatique) : un
+  écran déjà ouvert en lecture seule ne reprenait jamais un verrou libéré ou expiré (il fallait
+  quitter puis rouvrir l'écran). `useSectionLock` expose `verrouLibre` (pas de ligne, verrou
+  `expire` d'un autre, ou échec de l'`acquire` initial) et `prendreLaMain()` (`acquire_lock`,
+  vrai si obtenu) ; `LockBanner` affiche alors « Lecture seule — personne n'a la main en
+  écriture » + « Prendre la main ». Chaque écran **recharge ses données** après la prise (l'autre
+  poste a pu enregistrer entre-temps) ; Gestion des caisses demande confirmation si des
+  modifications non enregistrées vont être perdues. Au passage, `applyLock(null)` ne laisse plus
+  le statut sur « acquiring » (bandeau « Verrouillé par null »).
+- Validation : `cargo check`, `npx tsc --noEmit`. **Non testé en conditions réelles**.
+
+### 2026-10-13 — Accueil, colonne Affaire, Cde affaire / stock, cases de sélection retirées
+
+- **Accueil** (`caissesACommander.ts::estCaisseEnStock`) : une ligne est « en stock » si elle a
+  une caisse choisie dans le menu Stock (`caisse_stock_id`) **ou** l'ancien texte `stock` — avant,
+  seul le texte était lu (que l'app n'écrit plus), donc une caisse passée sur une caisse en stock
+  restait dans « à commander ». Vaut pour « à commander », « à rapatrier » et l'alerte. Niveau
+  ligne mère seulement (l'accueil ne charge pas les sous-caisses).
+- **Colonne Affaire** (`DemandesTable::morceauxAffaire`) : la largeur minimale suivait le nom le
+  plus long de toute la base — un seul nom groupé (`ADHLK310/320/330/340/350`, 24 caractères,
+  vu sur la base de test) élargissait toute la colonne. Retour à la ligne permis après chaque
+  « / » (`<wbr>`) et aux espaces, minimum = morceau le plus long ; un nom normal (8 caractères)
+  reste insécable.
+- **Cde passée sur affaire / sur achat stock** (`demandeOptions.ts::synchroCdeSelonStock`) :
+  caisse en stock sélectionnée → « sur achat stock » cochée, « sur affaire » décochée ; retirée
+  (« — Choisir — », dimension modifiée, passage en 4B / 4C, y compris en cascade sur les
+  sous-caisses) → l'inverse. Appliquée partout où `caisse_stock_id` change : ligne mère
+  (`handleEditLocal`) et sous-ligne (`handleEditDemandeCaisse`) de Gestion des caisses,
+  « Utiliser » et modification des dimensions dans Simulations (`AffaireDetail`), dialogue de
+  création (remplace `synchroCdeAchatStock`, qui ne recochait pas « sur affaire » au retrait).
+  Aussi la ligne qui **perd** sa caisse de récup quand on la donne à une autre ligne
+  (`confirmerEtDemanderReassignment`, décision de l'utilisateur : « sur affaire » recochée) — dans
+  le brouillon seulement, le transfert lui-même étant déjà enregistré côté serveur.
+- **Cases de sélection retirées** de Gestion des caisses (demande de l'utilisateur) : colonne,
+  « tout sélectionner », barre « Valider la sélection » / « Non livré (sélection) ». Restent les
+  boutons de ligne. Documentation par défaut mise à jour (textes des points, pas de structure
+  changée → clés des textes modifiés inchangées).
+- **Affichage compact = largeur de l'écran** (Options, décision du même jour) : en compact, les
+  colonnes de Gestion des caisses sont agrandies / réduites au prorata de leur largeur réglée pour
+  que le tableau occupe exactement la largeur visible (`DemandesTable::ajusterLargeurs`, largeur
+  de la zone suivie par `ResizeObserver`), sans passer sous leur minimum (si les minimums ne
+  tiennent pas, le tableau dépasse). Hors compact, inchangé : largeurs réglées, le tableau peut
+  dépasser et défiler. Les largeurs réglées (`localStorage`) restent communes aux deux modes ;
+  redimensionner une colonne en compact change sa part, les autres s'ajustent.
+- Validation : `npx tsc --noEmit`, découpage des noms vérifié (node). **Non testé en conditions
+  réelles**.
+
 ## Prochaines étapes
 
 ### Fait
@@ -2274,6 +2333,9 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 > **sans termes techniques**. Texte statique : **le mettre à jour en même temps que cette section
 > et « À réfléchir plus tard »** (ajout d'un point, point terminé → le retirer).
 
+*Retours utilisateur 2026-10-09 / 12 / 13* — **tous traités le 2026-10-13**, voir le journal du
+même jour (verrous, accueil, colonne Affaire, Cde affaire / stock, cases de sélection).
+
 *Refonte visuelle (fusionnée dans `main` et publiée en 0.12.0, 2026-10-03)*
 
 - **Points laissés ouverts — tous tranchés par l'utilisateur le 2026-10-06, rien ne change** :
@@ -2307,10 +2369,9 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 - **Vérifié en conditions réelles par l'utilisateur le 2026-10-06** : alerte de poids,
   suggestion de caisse en stock, statistiques, pastille de la barre des tâches, rôles,
   restauration avec d'autres postes ouverts, sauvegarde automatique, dates JJ/MM/AAAA.
-- **Tester manuellement en conditions réelles** la section Demandes (édition inline, cases à
-  cocher, tri) et la navigation par menu — pas d'outil d'automation UI dans l'environnement de
-  dev assisté. Le collage Excel 19 colonnes n'est plus à tester : il ne servait qu'à la reprise
-  initiale des affaires, l'utilisateur ne collera plus de lignes dans Demandes (2026-09-28).
+- **Vérifications en conditions réelles des versions 0.13 / 0.14** (connexion et import intranet,
+  poids des caisses, matière / dimensions extérieures, graphique, filtre Stock, « Lier… », édition
+  du tableau Gestion des caisses) : **validées par l'utilisateur le 2026-10-13**.
 
 *Retours utilisateur 2026-10-01* — suivi des `AR_CAISS_` renseigné dans Admin › Caisses
 (confirmé par l'utilisateur le 2026-10-06).
@@ -2378,14 +2439,6 @@ bien celui souhaité, aucun changement de code nécessaire.
   2026-09-30 (`utilisateur.role`, cf. journal). Si des droits plus fins deviennent utiles
   (par section ou par action), les porter par ce même rôle ou une table dédiée ; seuls les
   administrateurs ont un mot de passe, les autres trigrammes restent déclaratifs.
-- **Alias de caisse affiché dans le tableau Demandes** — quand on renomme une caisse dans
-  Simulations (souvent pour la rendre explicite, ex. « caisse moteurs »), afficher ce nom sous
-  le nom de l'affaire dans la colonne Affaire de la ligne de demande correspondante (caisse
-  mère via `caisse.demande_id`, sous-caisse via `caisse.demande_caisse_id`). Rendu discret :
-  police plus fine, gris (`--text-muted`), ~11px — purement informatif, non éditable côté
-  Demandes. Nécessite de charger les `caisse` liées dans `DemandesList` (via un nouvel endpoint
-  « caisses liées à des demandes » ou en filtrant `caissesApi` par affaire), et de n'afficher
-  l'alias que s'il diffère du nom de l'affaire.
 - **« Aide de dimensions » / dimensions conseillées** (idée notée le 2026-09-03, **jamais
   implémentée**) — un bouton (sur la `CaisseCard` en édition, et/ou dans le dialogue « Créer une
   nouvelle caisse » côté Demandes) qui pré-remplit L/l/H à partir des plus grandes dimensions
@@ -2458,6 +2511,8 @@ bien celui souhaité, aucun changement de code nécessaire.
 
 ### Annulé pour le moment
 
+- **Alias de caisse affiché dans le tableau Gestion des caisses** (nom donné à une caisse dans
+  Simulations, affiché sous le nom de l'affaire) — abandonné pour l'instant (2026-10-13).
 - **Export/impression d'un récapitulatif d'affaire** — abandonné (2026-09-02). Aucun besoin
   concret ; la copie d'affiche (Demandes d'achats) couvre le seul cas de sortie utile.
 - **Signature Authenticode de l'installeur (contre le faux positif Windows Defender)** —

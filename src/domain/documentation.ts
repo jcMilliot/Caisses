@@ -48,7 +48,7 @@ export const SECTIONS_DOC: SectionDoc[] = [
         "Les informations se modifient directement dans le tableau, et certaines modifications en déclenchent d'autres : changer le type d'envoi agit sur le type d'ouverture et le traitement, sélectionner une caisse de stock agit sur les dimensions et le type d'ouverture, etc. Les modifications ne sont enregistrées qu'au clic sur « Enregistrer » (« Annuler » revient à l'état enregistré).",
       ),
       li(
-        "La première colonne contient des cases à cocher : dès qu'une ligne est cochée, des boutons permettent de marquer toute la sélection comme livrée ou non livrée.",
+        "La dernière colonne, « Actions », regroupe les boutons de chaque ligne : « Livré » / « Non livré », « Simuler », « + Caisse » (caisse détaillée) et « Suppr. ».",
       ),
       li(
         "La deuxième colonne, « OK pour être commandée », génère l'affiche à copier dans le mail de demande d'achat, à condition que les informations nécessaires soient remplies (voir « Passer la commande »).",
@@ -126,7 +126,7 @@ export const SECTIONS_DOC: SectionDoc[] = [
         "Dans la section « Demandes d'achats » : copier une affiche individuellement, ou en sélectionner plusieurs (voire toutes) et utiliser « Copier la sélection » pour coller directement dans le mail à envoyer. La mise en forme et les mentions de prestation (soudure/fermeture pour les caisses 4C, etc.) sont détectées automatiquement si la demande est correctement remplie.",
       ),
       li(
-        "Lorsque la ou les caisses ont été livrées : sélectionner une ou plusieurs affaires et cliquer sur le bouton « Valider la sélection », ou cliquer sur le bouton « Livré » de la dernière colonne du tableau, validant ainsi l'affaire.",
+        "Lorsque la ou les caisses ont été livrées : cliquer sur le bouton « Livré » de la ligne (dernière colonne du tableau), validant ainsi l'affaire.",
       ),
     ],
   },

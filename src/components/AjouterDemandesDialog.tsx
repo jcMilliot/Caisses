@@ -11,6 +11,7 @@ import {
   ouverturesAutorisees,
   appliquerReglesCaisse,
   detacherStockSiDimsModifiees,
+  synchroCdeSelonStock,
   ouvertureImposee,
   motifOuvertureImposee,
   stockAutorisePourEnvoi,
@@ -71,21 +72,9 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
 
   function majLigne(index: number, patch: Partial<NewDemande>) {
     setLignes((prev) =>
-      prev.map((l, i) => (i === index ? synchroCdeAchatStock(l, { ...l, ...detacherStockSiDimsModifiees(l, patch) }) : l)),
+      prev.map((l, i) => (i === index ? { ...l, ...synchroCdeSelonStock(l, detacherStockSiDimsModifiees(l, patch)) } : l)),
     );
     setErreurValidation(null);
-  }
-
-  // Une caisse en stock sélectionnée → commande passée sur achat stock (ACHSTOCK) cochée ; retirée
-  // (quelle qu'en soit la raison) → décochée.
-  function synchroCdeAchatStock(avant: NewDemande, apres: NewDemande): NewDemande {
-    if (avant.caisse_stock_id == null && apres.caisse_stock_id != null) {
-      return { ...apres, cde_passee_achat_stock: true, cde_passee_affaire: false };
-    }
-    if (avant.caisse_stock_id != null && apres.caisse_stock_id == null) {
-      return { ...apres, cde_passee_achat_stock: false };
-    }
-    return apres;
   }
 
   // Avertissement (pas de blocage strict) si la date demandée à S2C est dans le passé — saisie
@@ -124,7 +113,7 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
           traitement: l.traitement,
           caisse_stock_id: l.caisse_stock_id,
         });
-        return synchroCdeAchatStock(l, { ...l, type_envoi_caisse: valeur, ...regles });
+        return { ...l, type_envoi_caisse: valeur, ...synchroCdeSelonStock(l, regles) };
       }),
     );
   }

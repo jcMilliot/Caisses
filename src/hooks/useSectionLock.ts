@@ -24,6 +24,9 @@ export function useSectionLock(sectionKey: string, trigramme: string) {
   const [holderTrigramme, setHolderTrigramme] = useState<string | null>(null);
   const [incomingRequest, setIncomingRequest] = useState<string | null>(null);
   const [outgoingRequestStatus, setOutgoingRequestStatus] = useState<OutgoingRequestStatus>("none");
+  // Verrou libre (libéré ou expiré) alors que l'écran est en lecture seule : l'écran ne le
+  // reprend pas de lui-même (ses données peuvent être périmées) — bouton « Prendre la main ».
+  const [verrouLibre, setVerrouLibre] = useState(false);
 
   const isHolderRef = useRef(false);
   const lastActivityRef = useRef(Date.now());
@@ -33,15 +36,17 @@ export function useSectionLock(sectionKey: string, trigramme: string) {
     (lock: SectionLock | null) => {
       if (!lock) {
         isHolderRef.current = false;
-        setStatus("acquiring");
+        setStatus("readonly");
         setHolderTrigramme(null);
         setIncomingRequest(null);
+        setVerrouLibre(true);
         return;
       }
       const isHolder = lock.titulaire === trigramme;
       isHolderRef.current = isHolder;
       setStatus(isHolder ? "held" : "readonly");
       setHolderTrigramme(lock.titulaire);
+      setVerrouLibre(!isHolder && lock.expire);
 
       if (isHolder && lock.demandeur && lock.demande_statut === "en_attente") {
         setIncomingRequest(lock.demandeur);
@@ -72,7 +77,10 @@ export function useSectionLock(sectionKey: string, trigramme: string) {
         const lock = await locksApi.acquire(sectionKey, trigramme);
         if (!cancelled) applyLock(lock);
       } catch {
-        if (!cancelled) setStatus("error");
+        if (!cancelled) {
+          setStatus("error");
+          setVerrouLibre(true);
+        }
       }
     }
     acquire();
@@ -124,6 +132,17 @@ export function useSectionLock(sectionKey: string, trigramme: string) {
     setOutgoingRequestStatus(ok ? "pending" : "none");
   }, [sectionKey, trigramme]);
 
+  // Renvoie vrai si le verrou a été pris (sinon un autre poste l'a pris entre-temps, affiché).
+  const prendreLaMain = useCallback(async () => {
+    try {
+      const lock = await locksApi.acquire(sectionKey, trigramme);
+      applyLock(lock);
+      return lock.titulaire === trigramme;
+    } catch {
+      return false;
+    }
+  }, [sectionKey, trigramme, applyLock]);
+
   const approveRequest = useCallback(async () => {
     await locksApi.respondPenRequest(sectionKey, trigramme, true);
     setIncomingRequest(null);
@@ -143,5 +162,7 @@ export function useSectionLock(sectionKey: string, trigramme: string) {
     denyRequest,
     outgoingRequestStatus,
     requestPen,
+    verrouLibre,
+    prendreLaMain,
   };
 }

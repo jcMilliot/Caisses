@@ -170,6 +170,25 @@ export function detacherStockSiDimsModifiees<P extends Partial<EtatDimsStock>>(a
   return dimsModifiees ? { ...patch, caisse_stock_id: null } : patch;
 }
 
+export interface EtatCdeStock {
+  caisse_stock_id: number | null;
+  cde_passee_affaire: boolean;
+  cde_passee_achat_stock: boolean;
+}
+
+// Caisse en stock sélectionnée (menu Stock, suggestion de Simulations) → « Cde passée sur achat
+// stock » cochée, « sur affaire » décochée ; caisse en stock retirée (« — Choisir — », dimension
+// modifiée, passage en 4B / 4C) → l'inverse. À appliquer APRÈS detacherStockSiDimsModifiees /
+// appliquerReglesCaisse, qui peuvent retirer la caisse en stock du patch.
+export function synchroCdeSelonStock<P extends object>(actuel: Pick<EtatCdeStock, "caisse_stock_id">, patch: P): P {
+  if (!("caisse_stock_id" in patch)) return patch;
+  const avant = actuel.caisse_stock_id != null;
+  const apres = (patch as Partial<EtatCdeStock>).caisse_stock_id != null;
+  if (!avant && apres) return { ...patch, cde_passee_achat_stock: true, cde_passee_affaire: false };
+  if (avant && !apres) return { ...patch, cde_passee_achat_stock: false, cde_passee_affaire: true };
+  return patch;
+}
+
 export const AVERTISSEMENT_MOUSSE_4C =
   "Attention, mousse présente, prévoir 5cm de plus sur les côtés et sur la hauteur.";
 

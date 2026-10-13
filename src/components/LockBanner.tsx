@@ -7,6 +7,9 @@ interface Props {
   onRequestPen: () => void;
   onApprove: () => void;
   onDeny: () => void;
+  // Verrou libéré ou expiré : propose de prendre la main (l'écran recharge ses données).
+  verrouLibre?: boolean;
+  onPrendreLaMain?: () => void;
 }
 
 export default function LockBanner({
@@ -17,6 +20,8 @@ export default function LockBanner({
   onRequestPen,
   onApprove,
   onDeny,
+  verrouLibre,
+  onPrendreLaMain,
 }: Props) {
   if (lectureSeule) {
     return (
@@ -40,6 +45,20 @@ export default function LockBanner({
             Refuser
           </button>
         </div>
+      </div>
+    );
+  }
+
+  if (verrouLibre && onPrendreLaMain) {
+    return (
+      <div style={bannerStyle("var(--accent)")}>
+        <span>
+          Lecture seule — personne n'a la main en écriture
+          {holderTrigramme ? <> (<strong>{holderTrigramme}</strong> a quitté ou est inactif)</> : null}.
+        </span>
+        <button className="btn btn-sm btn-primary" onClick={onPrendreLaMain}>
+          Prendre la main
+        </button>
       </div>
     );
   }

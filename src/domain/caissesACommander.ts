@@ -41,12 +41,18 @@ function estAchstock(demande: Demande): boolean {
   return demande.affaire.trim().toUpperCase().includes("ACHSTOCK");
 }
 
+// Caisse en stock choisie dans le menu Stock (`caisse_stock_id`), ou nom écrit dans l'ancienne
+// colonne texte `stock` (lignes reprises de l'Excel, que l'app n'écrit plus).
+function estCaisseEnStock(demande: Demande): boolean {
+  return demande.caisse_stock_id != null || demande.stock.trim() !== "";
+}
+
 // "À commander" : semaine avant la semaine du picking (on ferme le week-end, donc la commande
 // doit partir la semaine calendaire précédant celle du picking). Les affaires en alerte
 // « à Commander » y sont ajoutées (si besoin) et placées en tête.
 export function caissesACommanderCetteSemaine(demandes: Demande[], aujourdHui: Date = new Date()): AffaireACommander[] {
   const cetteSemaine = demandes
-    .filter((d) => !estAchstock(d) && !d.stock.trim() && !estDemandeValidee(d))
+    .filter((d) => !estAchstock(d) && !estCaisseEnStock(d) && !estDemandeValidee(d))
     .filter((d) => {
       const picking = parseIso(d.date_picking);
       if (!picking) return false;
@@ -68,7 +74,7 @@ export function caissesACommanderCetteSemaine(demandes: Demande[], aujourdHui: D
 // du picking elle-même suffit.
 export function caissesARapatrierCetteSemaine(demandes: Demande[], aujourdHui: Date = new Date()): AffaireACommander[] {
   return demandes
-    .filter((d) => !estAchstock(d) && d.stock.trim() && !estDemandeValidee(d))
+    .filter((d) => !estAchstock(d) && estCaisseEnStock(d) && !estDemandeValidee(d))
     .filter((d) => {
       const picking = parseIso(d.date_picking);
       if (!picking) return false;
@@ -91,7 +97,7 @@ export const MESSAGE_ALERTE_COMMANDE = "Picking dans 7 jours ou moins et pas enc
 
 export function estACommanderUrgent(d: Demande, aujourdHui: Date = new Date()): boolean {
   if (d.ok_pour_passer_cde || estDemandeValidee(d) || estAchstock(d)) return false;
-  if (d.caisse_stock_id != null || d.stock.trim()) return false;
+  if (estCaisseEnStock(d)) return false;
   const picking = parseIso(d.date_picking);
   if (!picking) return false;
   const jour = new Date(aujourdHui);

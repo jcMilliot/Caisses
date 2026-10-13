@@ -18,6 +18,7 @@ import {
   estDemandeCaisseValidee,
   memeNomAffaire,
   detacherStockSiDimsModifiees,
+  synchroCdeSelonStock,
 } from "../domain/demandeOptions";
 import { suggererCaisseStock } from "../domain/suggestionCaisse";
 import type { Article, Caisse, CaisseCalculee, CaisseStock, Demande, DemandeCaisse, NewDemandeCaisse } from "../domain/types";
@@ -280,13 +281,15 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
     try {
       if ("sous" in ligneModifiable) {
         const { id, ordre: _ordre, ...base } = ligneModifiable.sous;
-        await demandeCaisseApi.update(id, { ...base, ...patch }, trigramme);
-        setDemandeCaissesLiees((prev) => prev.map((sl) => (sl.id === id ? { ...sl, ...patch } : sl)));
+        const patchLigne = synchroCdeSelonStock(ligneModifiable.sous, patch);
+        await demandeCaisseApi.update(id, { ...base, ...patchLigne }, trigramme);
+        setDemandeCaissesLiees((prev) => prev.map((sl) => (sl.id === id ? { ...sl, ...patchLigne } : sl)));
       } else {
         const { id, ordre: _ordre, validee: _v, ...base } = ligneModifiable.mere;
-        await demandesApi.update(id, { ...base, ...patch }, trigramme);
-        setToutesDemandes((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
-        setDemandeParente((prev) => (prev && prev.id === id ? { ...prev, ...patch } : prev));
+        const patchLigne = synchroCdeSelonStock(ligneModifiable.mere, patch);
+        await demandesApi.update(id, { ...base, ...patchLigne }, trigramme);
+        setToutesDemandes((prev) => prev.map((d) => (d.id === id ? { ...d, ...patchLigne } : d)));
+        setDemandeParente((prev) => (prev && prev.id === id ? { ...prev, ...patchLigne } : prev));
       }
     } catch (e) {
       await confirmerAction(
@@ -473,7 +476,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
                       const { id: _id, ordre: _ordre, ...base } = lien.sous;
                       // Même règle que dans Gestion des caisses : dimensions modifiées → caisse en
                       // stock désélectionnée sur la ligne.
-                      const patch = detacherStockSiDimsModifiees(lien.sous, dims);
+                      const patch = synchroCdeSelonStock(lien.sous, detacherStockSiDimsModifiees(lien.sous, dims));
                       await demandeCaisseApi.update(lien.sous.id, { ...base, ...patch }, trigramme);
                       setDemandeCaissesLiees((prev) => prev.map((sl) => (sl.id === lien.sous.id ? { ...sl, ...patch } : sl)));
                     }
@@ -484,7 +487,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
                     );
                     if (confirme) {
                       const { id: _id, ordre: _ordre, validee: _v, ...base } = lien.mere;
-                      const patch = detacherStockSiDimsModifiees(lien.mere, dims);
+                      const patch = synchroCdeSelonStock(lien.mere, detacherStockSiDimsModifiees(lien.mere, dims));
                       await demandesApi.update(lien.mere.id, { ...base, ...patch }, trigramme);
                       setToutesDemandes((prev) => prev.map((d) => (d.id === lien.mere.id ? { ...d, ...patch } : d)));
                     }
@@ -648,6 +651,8 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
           onRequestPen={lock.requestPen}
           onApprove={lock.approveRequest}
           onDeny={lock.denyRequest}
+          verrouLibre={lock.verrouLibre}
+          onPrendreLaMain={async () => { if (await lock.prendreLaMain()) await reload(); }}
         />
       )}
 

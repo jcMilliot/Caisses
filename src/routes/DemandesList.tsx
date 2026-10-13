@@ -19,6 +19,7 @@ import {
   memeNomAffaire,
   appliquerReglesCaisse,
   detacherStockSiDimsModifiees,
+  synchroCdeSelonStock,
   stockAutorisePourEnvoi,
   champsManquantsPourCommande,
   estDemandeValidee,
@@ -231,7 +232,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
 
   async function handleEditLocal(id: number, patch: Partial<Demande>) {
     const demandeActuelle = brouillonRef.current.find((d) => d.id === id);
-    if (demandeActuelle) patch = detacherStockSiDimsModifiees(demandeActuelle, patch);
+    if (demandeActuelle) patch = synchroCdeSelonStock(demandeActuelle, detacherStockSiDimsModifiees(demandeActuelle, patch));
     // Passage en 4B / 4C : les caisses en stock de la ligne et de ses sous-caisses seront retirées
     // (appliquerReglesCaisse) — on prévient avant.
     if (patch.type_envoi_caisse !== undefined && !stockAutorisePourEnvoi(patch.type_envoi_caisse)) {
@@ -287,7 +288,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
                 caisse_stock_id: c.caisse_stock_id,
               })
             : {};
-        return { ...c, ...cascade, ...regles };
+        return { ...c, ...cascade, ...synchroCdeSelonStock(c, regles) };
       }),
     );
   }
@@ -439,7 +440,9 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   // Édition d'une sous-caisse : purement locale (brouillon) — persistée dans handleEnregistrer,
   // comme les lignes mères. « Annuler » restaure l'état serveur.
   function handleEditDemandeCaisse(id: number, patch: Partial<DemandeCaisse>) {
-    setDemandeCaisses((prev) => prev.map((c) => (c.id === id ? { ...c, ...detacherStockSiDimsModifiees(c, patch) } : c)));
+    setDemandeCaisses((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, ...synchroCdeSelonStock(c, detacherStockSiDimsModifiees(c, patch)) } : c)),
+    );
   }
 
   async function handleDeleteDemandeCaisse(id: number) {
@@ -472,10 +475,20 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     );
     if (!confirme) return false;
     await caisseStockApi.transfer(cs.id, demandeId, trigramme);
-    // Retire le lien côté état local, en miroir du UPDATE fait côté serveur.
+    // Retire le lien côté état local, en miroir du UPDATE fait côté serveur. La ligne qui perd la
+    // caisse repasse en « Cde passée sur affaire » (synchroCdeSelonStock) : modification du
+    // brouillon seulement, enregistrée avec le reste au clic sur « Enregistrer ».
     setDemandes((prev) => prev.map((d) => (d.id !== demandeId && d.caisse_stock_id === cs.id ? { ...d, caisse_stock_id: null } : d)));
-    setBrouillon((prev) => prev.map((d) => (d.id !== demandeId && d.caisse_stock_id === cs.id ? { ...d, caisse_stock_id: null } : d)));
-    setDemandeCaisses((prev) => prev.map((c) => (c.demande_id !== demandeId && c.caisse_stock_id === cs.id ? { ...c, caisse_stock_id: null } : c)));
+    setBrouillon((prev) =>
+      prev.map((d) =>
+        d.id !== demandeId && d.caisse_stock_id === cs.id ? { ...d, ...synchroCdeSelonStock(d, { caisse_stock_id: null }) } : d,
+      ),
+    );
+    setDemandeCaisses((prev) =>
+      prev.map((c) =>
+        c.demande_id !== demandeId && c.caisse_stock_id === cs.id ? { ...c, ...synchroCdeSelonStock(c, { caisse_stock_id: null }) } : c,
+      ),
+    );
     return true;
   }
 
@@ -789,6 +802,22 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     setSousCaissesSupprimees([]);
   }
 
+  // Verrou libéré : on reprend la main puis on recharge (l'autre poste a pu enregistrer entre-temps).
+  async function handlePrendreLaMain() {
+    if (
+      modifieRef.current &&
+      !(await confirmerAction(
+        "Les modifications non enregistrées seront perdues : le tableau va être rechargé. Continuer ?",
+        "Prendre la main",
+      ))
+    ) {
+      return;
+    }
+    if (!(await lock.prendreLaMain())) return;
+    setSousCaissesSupprimees([]);
+    await reload();
+  }
+
   async function handleAjouterOption(liste: ListeOption, valeur: string) {
     const creee = await optionsListeApi.create(liste, valeur, trigramme);
     setOptionsPersonnalisees((prev) => (prev.some((o) => o.id === creee.id) ? prev : [...prev, creee]));
@@ -841,6 +870,8 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
           onRequestPen={lock.requestPen}
           onApprove={lock.approveRequest}
           onDeny={lock.denyRequest}
+          verrouLibre={lock.verrouLibre}
+          onPrendreLaMain={handlePrendreLaMain}
         />
       )}
 

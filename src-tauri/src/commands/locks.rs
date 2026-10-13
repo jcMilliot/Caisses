@@ -66,6 +66,14 @@ pub fn acquire_lock(db: State<Db>, section_key: String, trigramme: String) -> Re
     conn.query_row(&sql, [&section_key], map_row).map_err(|e| e.to_string())
 }
 
+/// Libère tous les verrous tenus par `trigramme` — appelé à la fermeture de la fenêtre
+/// (`lib.rs`), où le nettoyage React (`useSectionLock`) ne s'exécute pas : sans ça, les autres
+/// postes attendaient les 5 min d'expiration. Un poste éteint ou planté sans fermer l'app reste
+/// couvert par cette expiration.
+pub fn liberer_verrous(conn: &rusqlite::Connection, trigramme: &str) -> rusqlite::Result<usize> {
+    conn.execute("DELETE FROM section_lock WHERE titulaire = ?1", [trigramme])
+}
+
 #[tauri::command]
 pub fn release_lock(db: State<Db>, section_key: String, trigramme: String) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;

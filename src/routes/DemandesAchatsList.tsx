@@ -228,6 +228,8 @@ export default function DemandesAchatsList({ trigramme }: Props) {
           onRequestPen={lock.requestPen}
           onApprove={lock.approveRequest}
           onDeny={lock.denyRequest}
+          verrouLibre={lock.verrouLibre}
+          onPrendreLaMain={async () => { if (await lock.prendreLaMain()) await reload(); }}
         />
       )}
 

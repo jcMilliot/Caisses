@@ -9,6 +9,11 @@ interface Point {
 }
 
 const A_FAIRE: Point[] = [
+  {
+    titre: "Documentation",
+    detail:
+      "Faire le point ensemble : ajouter l'import depuis l'intranet (« Importer » / « Vérifier mise à jour », lignes supprimées, numéro de besoin) et revoir la section « Récupérer les articles ».",
+  },
 ];
 
 const A_VERIFIER: Point[] = [
@@ -18,72 +23,29 @@ const A_VERIFIER: Point[] = [
       "Admin › Paramètres › « Dossier de la base » : noter le chemin pour les nouveaux postes. Sur un nouveau poste, coller ce chemin au premier démarrage. Un changement de dossier se fait app fermée sur les autres postes ; ils suivent à leur prochain démarrage.",
   },
   {
-    titre: "Connexion avec le compte intranet",
+    titre: "Verrouillage à la fermeture",
     detail:
-      "Au premier lancement de la nouvelle version, chaque poste demande l'identifiant et le mot de passe de l'intranet, puis se reconnecte tout seul. Vérifier le trigramme affiché, l'accès Admin des administrateurs (sans mot de passe, puis redemandé après « Verrouiller ») et le démarrage quand l'intranet est injoignable.",
+      "Fermer l'application sur un poste qui a la main : l'autre poste doit pouvoir écrire tout de suite. Sur un écran resté ouvert en lecture seule, « Prendre la main » doit apparaître dans le bandeau quand le verrou se libère, et recharger l'écran.",
   },
   {
-    titre: "Poids des caisses",
+    titre: "Commande sur affaire / sur stock",
     detail:
-      "Dans Admin › Caisses › Poids, saisir les caisses pesées (contreplaqué et bois) et appliquer si besoin la masse volumique conseillée. Régler les renforts et tasseaux par défaut dans Réglages. Dans Simulations, vérifier le poids estimé de la caisse et l'alerte à 400 kg/m² caisse comprise. Renseigner la tare des caisses en stock connues.",
+      "Choisir une caisse en stock sur une ligne existante (menu « Stock » ou suggestion de Simulations) coche « Cde passée sur achat stock » ; la retirer recoche « Cde passée sur affaire ».",
   },
   {
-    titre: "Import depuis l'intranet (Simulations)",
+    titre: "Accueil : caisses à rapatrier",
     detail:
-      "Régler l'adresse de l'intranet dans Admin › Paramètres. Dans une affaire, « Importer » doit demander les identifiants intranet la première fois puis ajouter les articles AR ; le bouton devient « Vérifier mise à jour ». Après une modification du picking dans l'intranet : quantités, lignes ajoutées et supprimées doivent suivre.",
+      "Une caisse passée sur une caisse en stock dans Gestion des caisses passe du bloc « à commander » au bloc « à rapatrier » de l'accueil.",
   },
   {
-    titre: "Caisses en stock : matière et dimensions extérieures",
+    titre: "Gestion des caisses : colonne Affaire",
     detail:
-      "Dans « Gérer les caisses », renseigner la matière (obligatoire) et, si besoin, les dimensions extérieures de chaque caisse ; vérifier qu'elles apparaissent dans Admin › Caisses.",
+      "La colonne se réduit jusqu'à la largeur d'un nom normal ; un nom d'affaire groupé (« XXX/YYY ») passe à la ligne après les « / ». Plus de cases de sélection en début de ligne.",
   },
   {
-    titre: "Graphique stock / sur mesure",
+    titre: "Affichage compact",
     detail:
-      "Dans Admin › Caisses › Statistiques, vérifier le graphique en tête de page : un onglet par année (détail des 12 mois) et « Tout » (une barre par année), les caisses de stock et sur mesure, et les quantités au survol.",
-  },
-  {
-    titre: "Filtre de la colonne Stock",
-    detail:
-      "Dans Gestion des caisses, les anciennes lignes affichent maintenant le nom de caisse écrit dans l'Excel au lieu de « — » ; filtrer sur une caisse ne doit montrer que des lignes qui affichent ce nom.",
-  },
-  {
-    titre: "Caisses liées (Simulations)",
-    detail:
-      "Ouvrir une affaire créée depuis Gestion des caisses : la carte de la caisse ne doit plus afficher « Lier… » ni la ligne « Gestion des caisses ».",
-  },
-  {
-    titre: "Mise à jour dans l'application",
-    detail:
-      "À la prochaine version publiée après celle-ci : une barre doit apparaître en haut de l'app avec « Installer » / « Plus tard », puis montrer le téléchargement et redémarrer l'app toute seule, sans la fenêtre de l'installeur Windows.",
-  },
-  {
-    titre: "Nouvel aspect de l'application",
-    detail:
-      "Parcourir les écrans sur chaque poste (navigation en onglets, Admin, Gestion des caisses, fenêtres) et signaler tout texte coupé, bouton mal placé ou écran moins lisible qu'avant.",
-  },
-  {
-    titre: "Lier une caisse (Simulations)",
-    detail:
-      "Sur une caisse non liée, « Lier… » doit permettre de choisir la ligne de Gestion des caisses ; le taux de remplissage doit ensuite s'afficher sur cette ligne, et le bouton disparaître.",
-  },
-  {
-    titre: "Taux de remplissage",
-    detail:
-      "Vérifier qu'il s'affiche dans la liste des affaires de Simulations et dans la colonne « Taux de remplissage » de Gestion des caisses, pour les affaires qui ont des caisses avec des articles (une valeur par caisse s'il y en a plusieurs).",
-  },
-  {
-    titre: "Seuil d'alerte général",
-    detail: "Le régler dans l'onglet Paramètres et vérifier qu'il s'applique aux affaires non livrées, pas aux affaires livrées.",
-  },
-  {
-    titre: "Collage des lignes « AR / ZR »",
-    detail:
-      "Coller une ligne dont l'AR ne commence ni par AR ni par ZR : la fenêtre de choix doit apparaître, et les lignes non cochées doivent être listées sous le tableau. Les lignes ZR ne doivent pas être collées.",
-  },
-  {
-    titre: "Documentation modifiable",
-    detail: "Modifier un texte de la documentation, enregistrer, puis vérifier qu'il apparaît sur un autre poste.",
+      "Options › « Affichage compact » : le tableau Gestion des caisses occupe exactement la largeur de l'écran, sans défilement horizontal. Hors compact, il peut dépasser.",
   },
 ];
 

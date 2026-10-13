@@ -224,6 +224,36 @@ function sauvegarderInverse(inverse: boolean) {
 const CLE_LARGEURS = "caisses:largeursColonnes:demandes";
 const LARGEUR_MIN = 40;
 const LARGEUR_ACTIONS = 210;
+// 1re colonne : pastille « À commander » + chevron des caisses détaillées.
+const LARGEUR_CHEVRON = 44;
+
+// Répartit `dispo` entre les colonnes au prorata de leur largeur, sans descendre sous leur
+// minimum : les colonnes bloquées à leur minimum sont mises de côté et le reste est réparti
+// entre les autres, jusqu'à stabilité.
+function ajusterLargeurs(colonnes: { champ: Colonne; largeur: number; min: number }[], dispo: number): Map<Colonne, number> {
+  const resultat = new Map<Colonne, number>();
+  const sommeMin = colonnes.reduce((s, c) => s + c.min, 0);
+  if (dispo <= sommeMin) {
+    for (const c of colonnes) resultat.set(c.champ, c.min);
+    return resultat;
+  }
+  let libres = colonnes;
+  let restant = dispo;
+  for (;;) {
+    const sommeLibres = libres.reduce((s, c) => s + c.largeur, 0);
+    const facteur = restant / sommeLibres;
+    const bloquees = libres.filter((c) => c.largeur * facteur < c.min);
+    if (bloquees.length === 0) {
+      for (const c of libres) resultat.set(c.champ, c.largeur * facteur);
+      return resultat;
+    }
+    for (const c of bloquees) {
+      resultat.set(c.champ, c.min);
+      restant -= c.min;
+    }
+    libres = libres.filter((c) => !bloquees.includes(c));
+  }
+}
 
 function chargerLargeurs(): Partial<Record<Colonne, number>> {
   try {
@@ -265,6 +295,14 @@ function buildOptions(perso: OptionListe[]): {
       traitement: TRAITEMENTS,
     },
   };
+}
+
+// Morceaux d'un nom d'affaire entre lesquels un retour à la ligne est permis : après chaque « / »
+// (affaires groupées, « UMCKJ050/UMCKJ060 ») et aux espaces. Un nom normal (8 caractères) reste
+// d'un seul morceau, insécable. La largeur minimale de la colonne Affaire suit le morceau le plus
+// long, pas le nom entier (retour du 2026-10-12 : un seul nom groupé élargissait toute la colonne).
+function morceauxAffaire(nom: string): string[] {
+  return nom.split(/(?<=\/)|\s+/).filter(Boolean);
 }
 
 const CHAMPS_BOOL: ReadonlySet<Champ> = new Set(["ok_pour_passer_cde", "cde_passee_affaire", "cde_passee_achat_stock"]);
@@ -343,7 +381,6 @@ export default function DemandesTable({
   const [masquerValidees, setMasquerValidees] = useState(() => chargerMasquerValidees());
   const [inverse, setInverse] = useState(() => chargerInverse());
   const [largeurs, setLargeurs] = useState<Partial<Record<Colonne, number>>>(() => chargerLargeurs());
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const boutonsFiltreRef = useRef<Partial<Record<Champ, HTMLButtonElement>>>({});
   const redimensionnement = useRef<{ champ: Colonne; xDepart: number; largeurDepart: number } | null>(null);
   const conteneurScrollRef = useRef<HTMLDivElement>(null);
@@ -377,7 +414,7 @@ export default function DemandesTable({
     }
     const taillePoliceTd = compact ? 12 : 13;
     const nomsAffaire = [
-      ...demandes.map((d) => largeurTexte(d.affaire, taillePoliceTd, 700)),
+      ...demandes.map((d) => Math.max(0, ...morceauxAffaire(d.affaire).map((m) => largeurTexte(m, taillePoliceTd, 700)))),
       ...demandeCaisses.map((c) => largeurPlusLongMot(c.nom, taillePoliceTd, 400)),
     ];
     min.affaire = Math.max(min.affaire ?? 0, Math.ceil(Math.max(0, ...nomsAffaire) + paddingTd + 1 + 4));
@@ -414,21 +451,28 @@ export default function DemandesTable({
     document.addEventListener("pointerup", onUp);
   }
 
-  function largeurColonne(champ: Colonne): number {
+  // Largeur réglée par l'utilisateur (redimensionnement), jamais sous le minimum de la colonne.
+  function largeurDeBase(champ: Colonne): number {
     return Math.max(largeurs[champ] ?? (compact ? 90 : 130), largeursMin[champ] ?? LARGEUR_MIN);
   }
 
-  // Une ligne sélectionnée peut disparaître du brouillon (suppression de l'affaire avant
-  // enregistrement) sans passer par toggleSelect/validerSelection — purger la sélection pour
-  // qu'elle ne référence jamais un id qui n'existe plus, sinon la barre d'actions groupées
-  // (« Valider la sélection ») reste affichée à tort.
+  // Largeur affichée : en compact, ajustée pour que le tableau occupe exactement la largeur
+  // disponible (cf. largeursAjustees) ; sinon la largeur réglée (le tableau peut alors dépasser
+  // et défiler horizontalement).
+  function largeurColonne(champ: Colonne): number {
+    return largeursAjustees?.get(champ) ?? largeurDeBase(champ);
+  }
+
+  // Largeur visible de la zone du tableau, suivie pour le mode compact.
+  const [largeurConteneur, setLargeurConteneur] = useState(0);
   useEffect(() => {
-    setSelectedIds((prev) => {
-      const ids = new Set(demandes.map((d) => d.id));
-      const next = new Set([...prev].filter((id) => ids.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
-  }, [demandes]);
+    const el = conteneurScrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setLargeurConteneur(el.clientWidth));
+    observer.observe(el);
+    setLargeurConteneur(el.clientWidth);
+    return () => observer.disconnect();
+  }, []);
 
   function changerColonnesVisibles(visibles: Set<Colonne>) {
     setColonnesVisibles(visibles);
@@ -463,27 +507,21 @@ export default function DemandesTable({
     }
   }
 
-  function toggleSelect(id: number) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function toggleSelectAll() {
-    setSelectedIds((prev) => (prev.size === demandesTriees.length ? new Set() : new Set(demandesTriees.map((d) => d.id))));
-  }
-
-  function validerSelection(validee: boolean) {
-    for (const id of selectedIds) onValider(id, validee);
-    setSelectedIds(new Set());
-  }
-
   const colonnesAffichees = ordreColonnes
     .map((id) => COLONNES.find((c) => c.champ === id)!)
     .filter((c) => c && colonnesVisibles.has(c.champ));
+
+  // Mode compact (retour du 2026-10-13) : le tableau prend exactement la largeur disponible —
+  // les colonnes sont agrandies ou réduites proportionnellement à leur largeur réglée, sans
+  // passer sous leur minimum. Si les minimums ne tiennent pas, le tableau dépasse quand même.
+  const largeursAjustees =
+    compact && largeurConteneur > 0
+      ? ajusterLargeurs(
+          colonnesAffichees.map((c) => ({ champ: c.champ, largeur: largeurDeBase(c.champ), min: largeursMin[c.champ] ?? LARGEUR_MIN })),
+          // − 1 px : les arrondis de sous-pixels ne doivent pas faire apparaître de défilement horizontal.
+          largeurConteneur - LARGEUR_CHEVRON - LARGEUR_ACTIONS - 1,
+        )
+      : null;
 
   // Colonnes qui passent par EditableCellInput (texte/nombre/date) — les booléens et "stock"
   // ont leur propre widget (case à cocher / <select>) et ne font pas partie du parcours Tab.
@@ -694,8 +732,8 @@ export default function DemandesTable({
           padding: enEdition ? 2 : td.padding,
           width: largeur,
           maxWidth: largeur,
-          // Nom d'affaire insécable (jamais coupé ni renvoyé à la ligne).
-          whiteSpace: champ === "affaire" ? "nowrap" : "normal",
+          // Nom d'affaire jamais coupé au milieu ; un nom groupé (« ADHLK310/320/330 ») passe à la
+          // ligne après ses « / » ou aux espaces (cf. morceauxAffaire).
           wordBreak: champ === "affaire" ? "keep-all" : "break-word",
           fontWeight: champ === "affaire" ? 700 : undefined,
         }}
@@ -731,7 +769,14 @@ export default function DemandesTable({
           />
         ) : (
           <>
-            {valeurAffichee}
+            {champ === "affaire"
+              ? morceauxAffaire(String(valeurAffichee)).map((m, i) => (
+                  <Fragment key={i}>
+                    {i > 0 && <wbr />}
+                    {m}
+                  </Fragment>
+                ))
+              : valeurAffichee}
             {avertissement && <AvertissementBadge texte={avertissement} rouge={!avertissementMousse && Boolean(avertissementMesures4C)} />}
           </>
         )}
@@ -851,31 +896,18 @@ export default function DemandesTable({
   return (
     <div>
       {slotOptions ? createPortal(optionsMenu, slotOptions) : null}
-      {(selectedIds.size > 0 && !readOnly) || !slotOptions ? (
+      {!slotOptions ? (
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent: "flex-end",
             alignItems: "center",
             gap: 8,
             padding: "8px 12px",
-            background: selectedIds.size > 0 && !readOnly ? "var(--accent-soft)" : undefined,
             borderBottom: "1px solid var(--border)",
           }}
         >
-          <div>
-            {selectedIds.size > 0 && !readOnly && (
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <button className="btn btn-sm btn-primary" onClick={() => validerSelection(true)}>
-                  Valider la sélection ({selectedIds.size})
-                </button>
-                <button className="btn btn-sm" onClick={() => validerSelection(false)}>
-                  Non livré (sélection)
-                </button>
-              </div>
-            )}
-          </div>
-          {!slotOptions && optionsMenu}
+          {optionsMenu}
         </div>
       ) : null}
       <div ref={conteneurScrollRef} style={{ overflow: "auto", maxHeight: "calc(100vh - 220px)", paddingBottom: 80 }}>
@@ -888,19 +920,12 @@ export default function DemandesTable({
             // Largeur explicite : sans elle, la mise en page « fixed » n'est pas appliquée et le
             // navigateur tasse les colonnes sur petit écran (texte des boutons Actions qui
             // débordait, titres coupés).
-            width: 44 + 32 + colonnesAvecLargeur.reduce((somme, c) => somme + c.largeur, 0) + LARGEUR_ACTIONS,
+            width: LARGEUR_CHEVRON + colonnesAvecLargeur.reduce((somme, c) => somme + c.largeur, 0) + LARGEUR_ACTIONS,
           }}
         >
           <thead>
             <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
-              <th style={{ ...th, width: 44 }}></th>
-              <th style={{ ...th, width: 32 }}>
-                <input
-                  type="checkbox"
-                  checked={demandesTriees.length > 0 && selectedIds.size === demandesTriees.length}
-                  onChange={toggleSelectAll}
-                />
-              </th>
+              <th style={{ ...th, width: LARGEUR_CHEVRON }}></th>
               {colonnesAffichees.map((c) =>
                 c.champ === "taux_remplissage" ? (
                   <th
@@ -923,13 +948,13 @@ export default function DemandesTable({
           <tbody>
             {demandes.length === 0 ? (
               <tr>
-                <td colSpan={colonnesAffichees.length + 3} style={{ ...td, textAlign: "center", color: "var(--text-muted)", padding: "20px 8px" }}>
+                <td colSpan={colonnesAffichees.length + 2} style={{ ...td, textAlign: "center", color: "var(--text-muted)", padding: "20px 8px" }}>
                   Aucune demande. Ajoutez-en une avec « + Créer une nouvelle caisse ».
                 </td>
               </tr>
             ) : demandesTriees.length === 0 ? (
               <tr>
-                <td colSpan={colonnesAffichees.length + 3} style={{ ...td, textAlign: "center", color: "var(--text-muted)", padding: "20px 8px" }}>
+                <td colSpan={colonnesAffichees.length + 2} style={{ ...td, textAlign: "center", color: "var(--text-muted)", padding: "20px 8px" }}>
                   {yATrouFiltre
                     ? "Aucune demande ne correspond aux filtres actifs."
                     : masquerValidees
@@ -947,13 +972,11 @@ export default function DemandesTable({
                     <tr
                       className="article-row"
                       style={{
-                        background: selectedIds.has(d.id)
-                          ? "var(--accent-soft-strong)"
-                          : estValidee
-                            ? "var(--success-bg, #d4f4dd)"
-                            : d.ok_pour_passer_cde
-                              ? "#f5eee0"
-                              : undefined,
+                        background: estValidee
+                          ? "var(--success-bg, #d4f4dd)"
+                          : d.ok_pour_passer_cde
+                            ? "#f5eee0"
+                            : undefined,
                       }}
                     >
                       <td style={{ ...td, textAlign: "center", whiteSpace: "nowrap" }}>
@@ -975,9 +998,6 @@ export default function DemandesTable({
                             {etendue ? "▾" : "▸"}
                           </button>
                         )}
-                      </td>
-                      <td style={td}>
-                        <input type="checkbox" checked={selectedIds.has(d.id)} onChange={() => toggleSelect(d.id)} />
                       </td>
                       {colonnesAffichees.map((c) =>
                         c.champ === "taux_remplissage" ? (
@@ -1303,7 +1323,6 @@ function SousLigneCaisse({
 
   return (
     <tr style={{ background: coloredBackground ?? "var(--bg-panel-alt)" }}>
-      <td style={td} />
       <td style={td} />
       {colonnesAffichees.map((c) => (
         <Fragment key={c.champ}>{cellulePourColonne(c)}</Fragment>
