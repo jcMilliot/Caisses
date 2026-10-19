@@ -17,8 +17,11 @@ L'application s'organise autour d'un **menu principal à 4 sections** (`App.tsx`
   - calculer automatiquement pour chaque caisse : volume occupé, volume interne, taux de
     remplissage, poids total — avec alerte visuelle (vert/jaune/rouge) selon un seuil
     paramétrable par affaire et surchargeable par caisse
-- **Caisses en stock** : CRUD des caisses en stock et caisses de récup, affectables à une
-  demande (`CaissesStockList.tsx`).
+- **Consommable** (ex-« Caisses en stock » puis « Conso en stock », renommée le 2026-10-16,
+  `ConsoStockList.tsx`) — onglet **Poids** : caisses pesées (cf. journal 2026-10-16) ;
+  onglet **Caisses en stock** — CRUD des caisses en stock et caisses de récup, affectables à une
+  demande (`CaissesStockList.tsx`) ; onglet **Cartons conso** — cartons consommables sans
+  affectation (`CartonsConsoList.tsx`), pour la future simulation avec colis.
 - **Demandes d'achats** : génération des "affiches" des demandes « OK pour être commandées », à
   copier dans un mail pour S2C (`DemandesAchatsList.tsx`, `AfficheCaisseCard.tsx`).
 
@@ -103,6 +106,13 @@ src-tauri/src/
     demandes.rs       → CRUD demande + bulk_create_demandes (collage Excel) + set_demande_validee,
                         table indépendante (pas de FK vers affaire — `affaire` = texte libre)
     demande_caisse.rs → CRUD sous-caisses d'une demande (multi-caisses par demande)
+    carton_conso.rs   → CRUD cartons conso (list/create/update/delete, verrou « stock »,
+                        nom AR_RAJA__XXXXX unique, dims int. + ext. obligatoires) +
+                        list_colis_affaire / set_colis_carton / set_colis_carton_libre (carton
+                        d'un colis, conso ou libre, verrou affaire)
+    colisage.rs       → caisses colisage (list / copier depuis les caisses de l'affaire / create /
+                        update / delete) + rangement des colis et lettres (list/set_colis_rangement)
+                        + pièces acceptées (list_pieces_acceptees / set_piece_acceptee)
     caisse_stock.rs   → CRUD caisses en stock + transfer + set_caisse_stock_validee ;
                         suivi du stock AR_CAISS_ : set_caisse_stock_suivi (admin),
                         decompter_stock_livraison / stock_decompte_ligne / remettre_stock_ligne ;
@@ -121,7 +131,7 @@ src-tauri/src/
                         sauvegarde (admin) : list_sauvegardes, choose_fichier_restauration,
                         restore_sauvegarde
     poids_caisse.rs   → estimation du poids des caisses : caisses pesées (list/create/update/
-                        delete_caisse_pesee, écriture admin) + réglages (get/set_reglages_poids_caisse,
+                        delete_caisse_pesee, verrou « stock » depuis le 2026-10-16) + réglages (get/set_reglages_poids_caisse,
                         JSON en `parametre`) ; le calcul est dans domain/poidsCaisse.ts
     journal.rs        → journal d'audit : journaliser() appelé par les commandes concernées +
                         list_journal (session admin requise, onglet de la page Admin)
@@ -152,8 +162,8 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-10-08 : migrations `0001` à `0039` (dernière :
-`0039_supprimer_mots_de_passe.sql` ; pas de `0019_reorder` — supprimé avant
+État au 2026-10-15 : migrations `0001` à `0045` (dernière :
+`0045_add_piece_acceptee.sql` ; pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes).
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
 triées côté frontend par `demandeOptions.ts::comparerOption` (quantité de tête puis n° de
@@ -194,6 +204,7 @@ article (id, affaire_id, caisse_id NULL,  -- NULL = non assigné, ON DELETE SET 
          normm INTEGER NULL,       -- 0036, numéro de besoin intranet (NULL = collé depuis Excel)
          qte_initiale INTEGER NULL, -- 0036, initial_qty de l'intranet
          supprime_intranet BOOL,   -- 0036, supprimée dans l'intranet : hors tableau et calculs
+         colis TEXT,               -- 0041, `pack_tag` de l'intranet si `pack_ctrl` = 1, '' sinon
          ordre)
 
 affaire_import_intranet (affaire_id PK REFERENCES affaire ON DELETE CASCADE,  -- 0036
@@ -238,6 +249,34 @@ caisse_stock (id, nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observatio
                                            --   si quantite <= seuil_alerte. Toutes les AR_CAISS_
                                            --   sont décomptées, gérées ou non (2026-10-02)
          ordre, date_creation)
+
+carton_conso (id, nom TEXT UNIQUE COLLATE NOCASE,  -- 0040, format « AR_RAJA__XXXXX »
+         longueur_mm, largeur_mm, hauteur_mm,              -- dims intérieures, obligatoires
+         ext_longueur_mm, ext_largeur_mm, ext_hauteur_mm,  -- dims extérieures, obligatoires
+         poids_kg REAL,                                    -- 0 = non saisi
+         ordre, date_creation)
+         -- cartons consommables (Consommable › Cartons conso), aucune affectation.
+
+colis_affaire (affaire_id REFERENCES affaire ON DELETE CASCADE, tag,  -- 0042, PK (affaire_id, tag)
+         carton_conso_id NULL REFERENCES carton_conso ON DELETE CASCADE,  -- NULL depuis 0044
+         libre_longueur_mm, libre_largeur_mm, libre_hauteur_mm,  -- 0044, carton libre : dims ext.
+         libre_poids_kg)                                         --   (0 si carton conso)
+         -- carton choisi pour un colis (pack_tag chiffré) dans l'onglet Colisage de Simulations :
+         -- carton conso, ou carton libre (récup) ; CHECK : l'un ou l'autre.
+
+caisse_colisage (id, affaire_id REFERENCES affaire ON DELETE CASCADE, nom,  -- 0043
+         longueur_mm, largeur_mm, hauteur_mm, couleur,
+         source_caisse_id NULL REFERENCES caisse ON DELETE SET NULL, ordre)
+         -- caisses de l'onglet Colisage : copies indépendantes des caisses de l'affaire.
+
+colis_rangement (affaire_id, tag, caisse_colisage_id NULL  -- 0043, PK (affaire_id, tag)
+         REFERENCES caisse_colisage ON DELETE CASCADE)
+         -- rangement choisi à la main ; pas de ligne = proposé (lettre A → 1re caisse…,
+         -- colis non rangé) ; caisse_colisage_id NULL = « non rangé » choisi.
+
+piece_acceptee (article_id PK REFERENCES article ON DELETE CASCADE, carton TEXT)  -- 0045
+         -- pièce acceptée malgré « ne rentre pas dans le carton » (en diagonale), pour le carton
+         -- `carton` (« conso:<id> » / « libre:<L>x<l>x<H> ») ; autre carton → alerte revient.
 
 section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" | "affaire:{id}"
               titulaire, acquis_le, dernier_battement,  -- trigramme + horodatages
@@ -1535,6 +1574,16 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   +2,1 / −0,3 kg (fichier : −0,2 / +0,7 / +0,2 / +5,1 / +1,7, mousse retirée).
   - **Masse volumique conseillée** (accord du 2026-10-07) : calculée par l'app à partir des
     caisses pesées (≈ 549 kg/m³ pour le contreplaqué avec les 5 caisses), appliquée d'un clic ;
+  - **⚠ Correction du 2026-10-16** : la caisse en bois pesée (UDEEM01D) mesure **2,20 × 0,70 ×
+    0,70 m intérieur** (confirmé par l'utilisateur), 9 / 6 renforts, tare 140 kg. Les « 2280 × 725 ×
+    915 » ci-dessous sont son **encombrement hors tout** (2200 + 2 × 12 + 2 × 25 de renforts en
+    bout ≈ 2274 ; 700 + 24 = 724 ; 700 + 24 + 75 de tasseaux + 100 de pieds = 899), lus à tort
+    comme l'extérieur du caisson : **le calage à 916 kg/m³ est faux**. Avec les vraies dimensions,
+    il faudrait ≈ 1089 kg/m³ de panneau pour 140 kg — trop pour du bois reconstitué (600-750, < 1000
+    pour un panneau de fibres dense). Pistes : tare du fabricant imprécise (à peser), épaisseur
+    réelle des panneaux (15 mm → ≈ 870), bois massif plus lourd que les 406 du tasseau sec,
+    éléments non comptés. Conseillé à l'utilisateur : pesée sur balance + épaisseur au pied à
+    coulisse + pesée d'une chute de panneau. Réglage laissé tel quel en attendant.
   - **4C = bois** (selon l'utilisateur). **Caisse en bois pesée (2026-10-08)** : tare 140 kg,
     **dimensions extérieures** 2280 × 725 × 915 mm sans renforts, panneau de bois reconstitué
     (colle hydrofuge) **12 mm**, **3 pieds 776 × 100 × 100 mm**, renforts **9 × 2280 × 100 × 25**
@@ -1792,6 +1841,207 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   redimensionner une colonne en compact change sa part, les autres s'ajustent.
 - Validation : `npx tsc --noEmit`, découpage des noms vérifié (node). **Non testé en conditions
   réelles**.
+
+### 2026-10-14 — « Caisses en stock » devient « Conso en stock », onglet Cartons conso
+
+- **Décisions de l'utilisateur** : la section prend le nom **« Conso en stock »** (menu, accueil,
+  documentation, infobulles) avec deux onglets, **Caisses en stock** (contenu inchangé) et
+  **Cartons conso**. Un carton : **nom au format `AR_RAJA__XXXXX`** (5 lettres / chiffres, mis en
+  majuscules, unique — choix de l'assistant pour l'unicité), **dimensions intérieures et
+  extérieures obligatoires**, **poids (kg) facultatif** ; pas de matière, type d'ouverture,
+  observations ni tare, **aucune affectation** (les cartons serviront à la simulation avec
+  colis, cf. « À réfléchir plus tard » — remplace l'onglet Admin « Consommables » envisagé le
+  2026-10-07). Édition comme les caisses : tableau en lecture seule + « Gérer les cartons »
+  (`GererCartonsConsoDialog`).
+- `ConsoStockList` porte l'en-tête, les onglets (mémorisés par poste,
+  `caisses:onglet:conso`) et **le verrou « stock », commun aux deux onglets** ;
+  `CaissesStockList` / `CartonsConsoList` reçoivent `readOnly` et `rechargement` (incrémenté
+  après « Prendre la main »). Migration `0040`, `commands/carton_conso.rs` (refus d'un nom mal
+  formé, d'un doublon, de dimensions manquantes aussi côté Rust). `GroupeDimensions`,
+  `texteDim`, `mmDepuisTexte` exportés de `GererCaissesStockDialog` pour être partagés.
+  Dimensions des cartons **saisies et affichées en cm** (demande du même jour ; stockées en mm
+  comme partout, `domain/cartonConso.ts::cm` / `mmDepuisCm`, `GroupeDimensions` prop `unite`). Documentation par défaut : point
+  « Cartons conso » ajouté **en fin** de section (pas de décalage des clés).
+- Validation : `cargo test --lib` (14, + création / format / doublon / dims d'un carton),
+  `cargo check`, `npx tsc --noEmit`, `npx vite build`. **Non testé en conditions réelles**.
+
+### 2026-10-14 — Collage Excel réservé à AJC, colonne « Colis » dans Simulations
+
+- **Collage Excel réservé à AJC** (demande de l'utilisateur) : bouton « Coller depuis Excel » et
+  collage multi-cellules du tableau d'articles affichés seulement pour AJC (et si le réglage
+  l'autorise) ; réglage « Bouton Coller depuis Excel » d'Admin › Paramètres visible pour AJC
+  seulement. Côté Rust : `bulk_create_articles` refuse un autre trigramme,
+  `set_collage_excel_visible` exige la session admin d'AJC (`admin::require_admin_permanent`).
+- **Colonne « Colis »** (tableau d'articles de Simulations, entre Vol. u. et Caisse, triable /
+  filtrable) : à l'import intranet, une ligne du picking avec **`pack_ctrl` = 1** prend son
+  **`pack_tag`** (lettre = caisse, chiffre = colis) dans `article.colis` (migration `0041`) ;
+  sinon vide, affiché « — ». Comparée comme les autres champs par « Vérifier mise à jour »
+  (« Colis — → A ») : **une affaire déjà importée reçoit ses colis au prochain « Vérifier mise à
+  jour »**. Format confirmé par l'utilisateur : `"pack_ctrl": 1` (nombre), `"pack_tag": "2"` (texte). Pas de
+  rangement automatique (décision du 2026-10-07), affichage seulement.
+- Validation : `cargo test --lib` (14, lecture de `pack_ctrl` / `pack_tag`, écriture de
+  `colis`), `npx tsc --noEmit`. **Non testé contre le vrai intranet**.
+
+### 2026-10-14 — Simulations : onglet Colisage
+
+- **Décisions de l'utilisateur** : la zone Articles d'une affaire a deux onglets,
+  **« Informations générales »** (tableau actuel) et **« Colisage »**, cliquable seulement si au
+  moins un article a un colis (sinon grisé, infobulle « Vérifier mise à jour »). Colisage = un
+  bloc **replié par défaut** par `pack_tag` : **lettres d'abord** (A, B… = pièces directement en
+  caisse, sans carton ni alerte), puis **colis numérotés** (1, 2, 10…). Déplié : AR, Réf. fourn.,
+  Désignation, Dim1-3, Poids u., Qté (sans Colis / Caisse / Vol. u.). Un colis reçoit un
+  **carton de Conso en stock › Cartons conso** (menu dans l'en-tête du bloc, enregistré
+  immédiatement, table `colis_affaire`, verrou de l'affaire). En-tête : volume des pièces
+  (volume unitaire × quantité), poids, volume du carton et taux. **Pas de seuil** pour l'instant.
+- **Alertes** (bloc bordé de rouge + détail) : volume des pièces > **volume extérieur** du
+  carton (choix de l'utilisateur) ; pièce qui ne rentre pas dans le carton, **toutes
+  orientations** (dimensions triées, tolérance 0,5 mm) — comparée à l'**intérieur** du carton
+  (choix de l'assistant : une pièce doit tenir dedans ; à confirmer). Ligne de la pièce en rouge.
+- Code : `domain/colisage.ts` (`grouperColis`, `pieceRentre`, `controlerColis`, purs),
+  `components/ColisageVue.tsx`, `components/PastilleColis.tsx` (pastille partagée avec la colonne
+  Colis), `data/colisAffaire.ts`, migration `0042`. Onglet non mémorisé (repart sur Informations
+  générales), revient à Informations générales s'il n'y a plus de colis.
+- **Suite** : caisses colisage et comparatif, faits le même jour (bloc suivant).
+- Validation : `cargo test --lib` (14, + choix / remplacement / retrait du carton d'un colis,
+  carton supprimé), `npx tsc --noEmit`, `npx vite build`. **Non testé en conditions réelles**.
+
+### 2026-10-14 — Colisage : caisses colisage et comparatif avec les Informations générales
+
+- **Décisions de l'utilisateur** : dans l'onglet Colisage, le panneau des caisses (à droite ou en
+  haut, comme d'habitude) montre des **caisses colisage**, **copies indépendantes** des caisses
+  de l'affaire (bouton « Copier les caisses des Informations générales » quand il n'y en a pas,
+  « + Nouvelle caisse », modifier nom / dimensions, supprimer — sans toucher aux originales). On
+  y range **chaque colis et chaque lettre entière** : lettre **proposée** dans la caisse de même
+  rang (A → 1re, B → 2e…, pastille un peu estompée), modifiable ; colis **à ranger à la main**
+  (menu « Caisse : » dans l'en-tête du bloc). Comparatif : **volume et taux** (seuil de
+  l'affaire), **poids**, et **total de l'affaire**.
+- Volume compté dans une caisse colisage : **volume extérieur du carton** pour un colis qui en a
+  un, sinon volume des pièces (lettre, colis sans carton) ; poids = pièces + poids du carton
+  (s'il est saisi). Carte de caisse : volume occupé / remplissage / poids, colonne « Colisage »
+  vs « Infos générales » (caisse copiée, `source_caisse_id`), écart de volume, alerte si le
+  contenu dépasse la caisse. Récap en tête de l'onglet : total colisage (tous les colis et
+  lettres, rangés ou non) vs volume / poids de **tous** les articles des Informations
+  générales, écart (m³ et %), et remarques (articles non colisés, colis sans carton, non rangés).
+- Code : `domain/colisage.ts::calculerColisage` / `rangPropose` (purs), `hooks/useColisage.ts`
+  (état partagé, chargé quand l'onglet est ouvert), `components/PanneauCaissesColisage.tsx`,
+  `ColisageVue` (récap + choix de la caisse), `commands/colisage.rs`, migration `0043`.
+  `caisses.rs::PALETTE` partagée (couleur d'une caisse colisage créée à la main).
+- Choix de l'assistant, à confirmer : pas d'alerte de dimensions (carton / pièce plus grand que la
+  caisse colisage) ni de charge au m² (non demandées) ; caisse colisage sans type d'envoi (pas de
+  mousse 4C déduite, comme le taux des Informations générales).
+- Validation : `cargo test --lib` (15, + copie indépendante / rangement / suppressions),
+  `npx tsc --noEmit`, `npx vite build`, `calculerColisage` vérifié sur un petit jeu (ordre des
+  groupes, proposition par rang, rangement choisi, non rangé, carton, totaux ; fichier jetable).
+  **Non testé en conditions réelles**.
+
+### 2026-10-15 — Colisage : carton libre (récup)
+
+- **Demande de l'utilisateur** : pouvoir donner à un colis un **carton éphémère** (carton de
+  récup), non géré dans Conso en stock. Menu du carton d'un colis : « Carton libre (récup)… » →
+  **dimensions extérieures** en cm (obligatoires) + **poids facultatif** ; **intérieur = extérieur
+  − 2 mm sur chaque axe** (décision de l'utilisateur), utilisé pour le contrôle « la pièce
+  rentre ». Affiché « L × l × H cm · poids » + « Modifier ». Choisir un carton conso remplace le
+  carton libre et inversement ; supprimer un carton conso ne touche pas aux cartons libres.
+- Migration `0044` (table `colis_affaire` reconstruite : `carton_conso_id` facultatif + colonnes
+  `libre_*`, CHECK l'un ou l'autre). Frontend : `domain/colisage.ts::cartonLibre` (CartonConso
+  d'id 0, `estCartonLibre`) pour réutiliser les calculs ; `ColisageVue::FormulaireCartonLibre`.
+- Validation : `cargo test --lib` (15, + carton libre : dims obligatoires, remplacement,
+  suppression d'un carton conso), `npx tsc --noEmit`, `npx vite build`. **Non testé en
+  conditions réelles**.
+
+### 2026-10-16 — Simulations : onglets « Colisage détaillé » / « Colisage réel »
+
+- **Demande de l'utilisateur** : les onglets d'une affaire s'appellent **« Colisage détaillé »**
+  (ex-« Informations générales », tableau des articles) et **« Colisage réel »** (ex-« Colisage »).
+  Même vocabulaire dans la carte d'une caisse colisage (colonnes « Colisage détaillé » / «
+  Colisage réel », **dans l'ordre des onglets** : détaillé d'abord) et dans le récap en tête de
+  Colisage réel (détaillé, réel, écart). Textes « Informations générales » du colisage remplacés.
+  Noms internes du code inchangés (`ongletVue` "infos" / "colisage", `volumeInfosM3`…) ; les
+  entrées plus anciennes de ce journal gardent les anciens noms.
+
+### 2026-10-16 — « Conso en stock » devient « Consommable », caisses pesées dans l'onglet Poids
+
+- **Demande de l'utilisateur** : la section s'appelle **« Consommable »** (menu, accueil,
+  documentation, infobulles). Le tableau des **caisses pesées** (ex-Admin › Caisses › Poids › «
+  Caisses pesées ») passe dans un nouvel onglet **« Poids »** de Consommable, à l'identique ;
+  **les réglages de l'estimation restent dans l'Admin** (Admin › Caisses › Poids).
+- **Décisions** : caisses pesées modifiables **comme le reste de Consommable** (verrou « stock »,
+  pas les Lecteurs) — `create/update/delete_caisse_pesee` passent de `require_admin` à
+  `require_lock("stock")` + paramètre `trigramme` ; la **masse volumique conseillée** est affichée
+  aux deux endroits, le bouton **« Utiliser cette valeur »** (réglage) **seulement dans l'Admin**.
+- `components/PoidsCaisses.tsx` : `CaissesPesees` (export nommé, Consommable) et
+  `ReglagesPoidsCaisses` (défaut, Admin) partagent `useDonneesPoids` ; `Conseil` prend
+  `onUtiliser` facultatif. Libellés « Conso en stock » remplacés partout dans `src/` (dont la
+  documentation technique et la feuille de route).
+- **Retour du même jour** (capture : le bloc en haut d'Admin › Caisses › Poids « semblait là par
+  hasard ») : dans l'Admin, la masse volumique conseillée s'affiche **sous le champ concerné**
+  (« Masse volumique des panneaux » du contreplaqué / du bois) : « Conseillé : N kg/m³ d'après N
+  caisses pesées · Appliquer », seulement si elle diffère de la saisie ; « Appliquer » remplit le
+  champ, l'enregistrement passe par « Enregistrer » (avant : « Utiliser cette valeur » enregistrait
+  directement). Le bloc complet (écart moyen…) reste dans Consommable › Poids, sans bouton.
+- Validation : `cargo check`, `npx tsc --noEmit`. **Non vu à l'écran**.
+
+### 2026-10-15 — Colisage : lettre des caisses colisage, caisse imposée aux lettres
+
+- **Retour de l'utilisateur** : une **lettre est rangée d'office** dans la caisse colisage de même
+  rang (A → 1re…), **sans choix possible** — l'en-tête du bloc affiche « Caisse : A » (lettre
+  seule, le nom étant toujours celui de l'affaire ; nom en infobulle) (ou
+  « pas de caisse C » s'il manque des caisses). Seuls les **colis** se rangent à la main. Un
+  rangement enregistré auparavant pour une lettre (`colis_rangement`) est ignoré. Sur la carte
+  d'une caisse colisage, la lettre n'est plus répétée sous les dimensions (seuls les colis rangés).
+
+- **Demande de l'utilisateur** : en multi-caisses, les caisses portent souvent le même nom → la
+  **lettre de la caisse** (rang dans les caisses colisage : 1re = A, 2e = B…, au-delà de Z un
+  numéro) apparaît devant son nom dans le menu « Caisse : » d'un colis / d'une lettre
+  (« A — ADHLK310 », proposée comprise) et en pastille verte sur la carte de la caisse colisage
+  (`domain/colisage.ts::lettreCaisse` / `libelleCaisseColisage`). Même rang que la proposition
+  des lettres (A → 1re caisse). Pas de changement en base.
+
+### 2026-10-15 — Colisage : « Accepter » une pièce qui ne rentre pas sur les 3 axes
+
+- **Demande de l'utilisateur** : sur l'alerte « ne rentre pas dans le carton » d'une pièce, bouton
+  **« Accepter »** (une pièce qui dépasse sur les 3 axes peut passer en diagonale). La pièce ne
+  compte plus dans l'alerte du colis ; elle est listée « ✓ … accepté (en diagonale) » avec
+  « Annuler », et sa ligne (bloc déplié) passe en orange pâle au lieu du rouge.
+- Choix de l'assistant : l'acceptation est **par pièce et pour le carton choisi au moment du clic**
+  (`domain/colisage.ts::cleCarton` — carton conso par id, carton libre par ses dimensions) :
+  changer de carton fait revenir l'alerte. Ne concerne que l'alerte de dimensions, pas celle de
+  volume. Table `piece_acceptee` (migration `0045`), verrou de l'affaire de l'article.
+- Validation : `cargo test --lib` (15, + acceptation enregistrée / remplacée / annulée),
+  `npx tsc --noEmit`, `npx vite build`. **Non testé en conditions réelles**.
+
+### 2026-10-15 — Documentation technique
+
+- **Demande de l'utilisateur** : la page Documentation a deux onglets, **« Documentation
+  utilisateur »** (contenu existant, modifiable par les admins) et **« Documentation
+  technique »** (explication technique du projet), visible **seulement avec le droit
+  correspondant** — à développer avec l'affinement des droits ; **en attendant : administrateurs**
+  (`Documentation.tsx::docTechniqueVisible`). Pour un non-admin, la page est inchangée (pas
+  d'onglets).
+- Contenu **fixe** (`domain/documentationTechnique.ts`, non modifiable dans l'app) : vue
+  d'ensemble, technologies, organisation du code, base de données, calculs, plusieurs postes,
+  comptes et droits, intranet, sauvegarde, versions et mises à jour. **Dépôt public** : ni
+  adresse d'API, ni nom d'entreprise, ni identifiant. **À tenir à jour** quand l'architecture
+  change. Rendu `**gras**` et `` `code` `` (`components/texteDoc.tsx::rendreTexte`, partagé avec la
+  documentation utilisateur).
+- Feuille de route de l'Admin mise à jour (vue 3D, droits plus fins, points à vérifier du
+  colisage et des cartons).
+- Validation : `npx tsc --noEmit`, `npx vite build`. **Non vu à l'écran**.
+
+### 2026-10-19 — Release 0.16.0
+
+- **Colisage réel** : bouton « + Nouvelle caisse » retiré du panneau des caisses colisage
+  (demande de l'utilisateur) ; on n'y a plus que « Copier les caisses du colisage détaillé » (si
+  aucune caisse colisage), puis Modifier / Supprimer par caisse. La commande
+  `create_caisse_colisage` et `useColisage.creerCaisse` restent en place, inutilisées par l'UI.
+- Contenu de la release : Consommable (onglets Poids / Caisses en stock / Cartons conso),
+  colonne Colis, onglets Colisage détaillé / Colisage réel (caisses colisage, carton libre,
+  pièce acceptée en diagonale, lettres rangées d'office), collage Excel réservé à AJC,
+  documentation technique (admins), masse volumique conseillée sous le champ dans l'Admin.
+  Migrations `0040` à `0045` (appliquées sur la base partagée au premier lancement).
+- Validation avant tag : `npx tsc --noEmit`, `cargo test --lib` (15),
+  `npm run tauri build -- --debug`. Soumission Microsoft Defender à faire dès publication si
+  l'installeur est bloqué.
 
 ## Prochaines étapes
 
@@ -2435,7 +2685,41 @@ bien celui souhaité, aucun changement de code nécessaire.
 - **Lier une caisse de Simulations à une caisse pesée** (idée du 2026-10-08, à trancher plus tard,
   l'utilisateur penche pour oui) : la caisse simulée reprendrait la tare et les renforts de la
   caisse pesée au lieu de l'estimation et des valeurs par défaut des réglages.
-- **Droits par tâche** — les rôles Utilisateur / Lecteur / Administrateur existent depuis le
+- **Vue 3D d'une caisse** (idée de l'utilisateur du 2026-10-15, **rien de développé** — à garder
+  ici tant que ce n'est pas lancé). Après le colisage : une vue 3D d'une caisse où l'on place des
+  blocs aux dimensions connues, qu'on déplace et tourne à la main, pour pousser la simulation
+  (hors automatisme) et affiner les dimensions des caisses.
+  - **Réponses de l'utilisateur (2026-10-15)** :
+    - on place **les colis et les pièces des lettres** : en travaillant sur la caisse A, on a les
+      pièces de la lettre A (et les colis rangés dans cette caisse) ;
+    - **quantités > 1** : décider sur le moment (une boîte par unité ou un seul bloc) — mise en
+      place à définir ;
+    - un bloc est **posé sur le fond ou sur un autre bloc** (pas de bloc qui flotte) ;
+    - on garde **la disposition et des dimensions de caisse « au plus juste »** calculées
+      d'après l'encombrement réel ;
+    - **pas besoin d'aller loin sur les rotations** pour l'instant (quarts de tour suffisent) ;
+    - phase suivante, **bien plus tard** : placement automatique.
+  - **Technologies envisagées** :
+    - **three.js** (moteur 3D WebGL, s'affiche dans la webview WebView2 de Tauri, rien à
+      installer sur les postes) via **@react-three/fiber** (three.js piloté en composants
+      React, cohérent avec le reste de l'interface) et **@react-three/drei** (caméra orbitale
+      à la souris, contrôles de déplacement / rotation d'un objet, grille, étiquettes) ;
+    - logique de placement **pure** dans `domain/` (comme les autres calculs) : boîtes alignées
+      sur les axes (AABB), rotations par 90° = permutation des dimensions, détection de
+      chevauchement entre boîtes et de dépassement des parois, « gravité » simplifiée (un bloc
+      descend jusqu'au fond ou au premier bloc en dessous), aimantation à une grille et aux
+      parois, encombrement réel = boîte englobante des blocs → dimensions de caisse proposées ;
+    - pas de moteur physique (cannon / rapier) : inutile avec des boîtes alignées et des quarts
+      de tour, et trop lourd ;
+    - positions enregistrées en base par affaire et par caisse colisage (nouvelle table :
+      bloc = colis ou pièce, position x / y / z, orientation), via une commande Rust comme le
+      reste ;
+    - placement automatique (plus tard) : heuristique de rangement 3D (« bin packing », ex.
+      remplissage par couches ou « extreme points »), écrite en TypeScript dans `domain/` ou
+      en Rust si le calcul devient lourd.
+- **Droits par tâche** — (2026-10-15 : la **documentation technique** de la page Documentation
+  doit être visible selon un droit dédié ; en attendant, **réservée aux administrateurs**,
+  `Documentation.tsx::docTechniqueVisible`.) Les rôles Utilisateur / Lecteur / Administrateur existent depuis le
   2026-09-30 (`utilisateur.role`, cf. journal). Si des droits plus fins deviennent utiles
   (par section ou par action), les porter par ce même rôle ou une table dédiée ; seuls les
   administrateurs ont un mot de passe, les autres trigrammes restent déclaratifs.
@@ -2476,8 +2760,9 @@ bien celui souhaité, aucun changement de code nécessaire.
        volume plus juste ;
     4. **alerte** si le volume des pièces mises dans un colis dépasse le volume du colis.
     **Réponses de l'utilisateur (2026-10-07)** :
-    - liste des cartons **saisie par l'utilisateur** dans un **nouvel onglet Admin
-      « Consommables »** (références, dimensions, et sans doute le poids de chaque carton) ;
+    - liste des cartons **saisie par l'utilisateur** — faite le 2026-10-14 dans **Conso en
+      stock › Cartons conso** (et non un onglet Admin « Consommables ») : référence
+      `AR_RAJA__XXXXX`, dimensions intérieures / extérieures, poids ;
     - nom de colis dans le picking : **une lettre = une caisse**, **un chiffre = un colis** ;
     - poids : celui du colis (poids du carton noté aussi dans la liste, « au cas où ») ;
     - champ « colisé » : **0 = non colisé, 1 = colisé** ;

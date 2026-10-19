@@ -32,8 +32,8 @@ const CARDS: CardDef[] = [
   },
   {
     id: "stock",
-    titre: "Caisses en stock",
-    description: "Inventaire des caisses disponibles",
+    titre: "Consommable",
+    description: "Caisses en stock, cartons et caisses pesées",
     icone: "🏷️",
   },
   {
@@ -187,7 +187,7 @@ function StockACommander({ caisses, onOuvrir }: { caisses: CaisseStock[]; onOuvr
                 background: "var(--danger-bg)",
                 cursor: "pointer",
               }}
-              title="Ouvrir Caisses en stock"
+              title="Ouvrir Consommable"
             >
               <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600, color: "var(--text)" }}>
                 <PastilleAlerte titre="Stock au seuil d'alerte" />

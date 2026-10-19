@@ -132,8 +132,8 @@ export const SECTIONS_DOC: SectionDoc[] = [
   },
   {
     id: "stock",
-    sommaire: "Caisses en stock",
-    titre: "Caisses en stock (section indépendante)",
+    sommaire: "Consommable",
+    titre: "Consommable (section indépendante)",
     blocs: [
       li(
         "Répertorie les caisses actuellement en stock. Les références « AR_CAISS » n'ont pas de quantité et ne sont reliées à aucune autre donnée — c'est une liste purement indicative.",
@@ -150,6 +150,10 @@ export const SECTIONS_DOC: SectionDoc[] = [
         "Modifier les dimensions ou le type d'ouverture d'une caisse déjà sélectionnée dans Gestion des caisses les reporte, après confirmation, sur les caisses pas encore livrées qui l'utilisent (et sur leurs caisses dans Simulations). Les caisses déjà livrées gardent leurs valeurs.",
       ),
       li("Supprimer une caisse encore utilisée affiche un avertissement : les lignes concernées gardent leurs dimensions, mais la caisse n'y est plus sélectionnée."),
+      h3("Cartons conso"),
+      li(
+        "Le second onglet liste les cartons consommables : référence « AR_RAJA__XXXXX », dimensions intérieures et extérieures, poids. Ils ne sont affectés à aucune affaire ; on les crée, modifie ou supprime avec le bouton « Gérer les cartons ».",
+      ),
     ],
   },
   {
@@ -175,7 +179,7 @@ export const SECTIONS_DOC: SectionDoc[] = [
         "Plusieurs postes peuvent travailler sur la même base de données (dossier réseau partagé) : le verrouillage évite que deux personnes modifient la même chose au même moment.",
       ),
       li(
-        "Portée : un verrou couvre l'écran entier pour Gestion des caisses, Caisses en stock et Demandes d'achats ; pour Simulations, le verrou est pris par affaire précise.",
+        "Portée : un verrou couvre l'écran entier pour Gestion des caisses, Consommable et Demandes d'achats ; pour Simulations, le verrou est pris par affaire précise.",
       ),
       li(
         "La prise du verrou est automatique à l'ouverture de l'écran ou de l'affaire — aucune action volontaire n'est nécessaire. Il se libère en quittant l'écran, ou après 5 minutes sans activité (souris ou clavier).",
@@ -197,7 +201,7 @@ export const SECTIONS_DOC: SectionDoc[] = [
       li(
         "Toutes les données (caisses, affaires, articles, caisses en stock, références) sont dans un seul fichier, **caisses.sqlite3**, placé dans le dossier choisi au premier lancement de l'application. Ce dossier peut être sur le réseau pour que plusieurs postes partagent les mêmes données.",
       ),
-      li("L'enregistrement est immédiat dans Simulations et Caisses en stock. Dans Gestion des caisses, les modifications restent en attente jusqu'au clic sur « Enregistrer »."),
+      li("L'enregistrement est immédiat dans Simulations et Consommable. Dans Gestion des caisses, les modifications restent en attente jusqu'au clic sur « Enregistrer »."),
       li(
         "La base est copiée automatiquement (chaque jour ou chaque semaine) dans un dossier de sauvegarde, sous le nom **caisses_JJ-MM-AAAA_HH-MM-SS.sqlite3**. La copie est faite par le premier poste ouvert au moment où elle est due, un seul poste à la fois ; les plus anciennes sont supprimées au-delà d'un nombre de copies fixé (30 par défaut).",
       ),

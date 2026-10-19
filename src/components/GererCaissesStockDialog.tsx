@@ -234,11 +234,11 @@ export default function GererCaissesStockDialog({ caisses, onCreer, onModifier, 
 }
 
 // Dimensions saisies en mètres dans un state texte (« 0.5 » ne doit pas être bloqué à « 0 »).
-function texteDim(mm: number): string {
+export function texteDim(mm: number): string {
   return mm === 0 ? "" : String(mm / 1000);
 }
 
-function mmDepuisTexte(texte: string): number {
+export function mmDepuisTexte(texte: string): number {
   const n = Number(texte.replace(",", "."));
   return Number.isFinite(n) ? Math.round(n * 1000) : 0;
 }
@@ -381,18 +381,21 @@ function FormulaireCaisse({
 // Encadré d'un groupe de dimensions (intérieures / extérieures), titre en haut — deux blocs bien
 // distincts pour ne pas les confondre (retour du 2026-10-06). `obligatoire` : fond orangé sur
 // les champs vides ou nuls.
-function GroupeDimensions({
+export function GroupeDimensions({
   titre,
   valeurs,
   onChange,
   obligatoire,
   accent,
+  unite = "m",
 }: {
   titre: string;
   valeurs: string[];
   onChange: (valeurs: string[]) => void;
   obligatoire?: boolean;
   accent?: boolean;
+  // Unité affichée dans les champs (« m » pour les caisses, « cm » pour les cartons conso).
+  unite?: string;
 }) {
   return (
     <fieldset
@@ -414,7 +417,7 @@ function GroupeDimensions({
             value={valeurs[i]}
             onChange={(e) => onChange(valeurs.map((v, j) => (j === i ? e.target.value : v)))}
             onFocus={(e) => e.target.select()}
-            placeholder={`${libelle} (m)`}
+            placeholder={`${libelle} (${unite})`}
             title={titre}
             style={{ ...champStyle, width: 70, background: obligatoire && mmDepuisTexte(valeurs[i]) <= 0 ? "var(--warn-bg)" : "var(--bg-panel)" }}
           />

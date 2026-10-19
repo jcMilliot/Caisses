@@ -18,6 +18,15 @@ const A_FAIRE: Point[] = [
 
 const A_VERIFIER: Point[] = [
   {
+    titre: "Simulations : onglet Colisage réel",
+    detail:
+      "Après « Vérifier mise à jour », la colonne Colis se remplit et l'onglet « Colisage réel » devient cliquable : choix des cartons (ou carton libre de récup), alertes de volume et de dimensions, caisses colisage copiées et comparatif avec le colisage détaillé.",
+  },
+  {
+    titre: "Consommable : cartons et caisses pesées",
+    detail: "Onglet « Cartons conso » : création, modification et suppression des cartons (dimensions en cm). Onglet « Poids » : caisses pesées, modifiables par tous (les réglages de l'estimation restent dans l'Admin).",
+  },
+  {
     titre: "Dossier de la base",
     detail:
       "Admin › Paramètres › « Dossier de la base » : noter le chemin pour les nouveaux postes. Sur un nouveau poste, coller ce chemin au premier démarrage. Un changement de dossier se fait app fermée sur les autres postes ; ils suivent à leur prochain démarrage.",
@@ -60,9 +69,14 @@ const A_DECIDER: Point[] = [
     detail: "Idée : pouvoir créer directement les caisses enfants dans la fenêtre « Créer une nouvelle caisse ».",
   },
   {
-    titre: "Cartons standards (outil de colisage)",
+    titre: "Vue 3D des caisses",
     detail:
-      "Idée : repérer dans le picking de l'intranet les pièces déjà colisées, afficher une vue avec leurs colis et les pièces restantes, et ranger colis et pièces dans les caisses pour un volume plus juste. Alerte si les pièces d'un colis dépassent son volume. Une liste des colis (références et dimensions) sera intégrée à l'application.",
+      "Idée : après le colisage, une vue 3D d'une caisse où l'on place les colis et les pièces de sa lettre, qu'on déplace et tourne à la main, pour affiner les dimensions de la caisse. Plus tard peut-être, un placement automatique.",
+  },
+  {
+    titre: "Droits plus fins",
+    detail:
+      "Définir qui a accès à quoi au-delà des rôles actuels — par exemple la documentation technique, réservée pour l'instant aux administrateurs.",
   },
   {
     titre: "Base de données partagée sur le réseau",

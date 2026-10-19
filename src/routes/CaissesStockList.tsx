@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import { caisseStockApi } from "../data/caisseStock";
 import { demandesApi } from "../data/demandes";
 import { demandeCaisseApi } from "../data/demandeCaisse";
-import { useSectionLock } from "../hooks/useSectionLock";
-import LockBanner from "../components/LockBanner";
 import GererCaissesStockDialog from "../components/GererCaissesStockDialog";
 import { estArCaiss, estStockACommander } from "../domain/caisseStock";
 import PastilleAlerte from "../components/PastilleAlerte";
@@ -12,11 +10,14 @@ import type { CaisseStock, Demande, DemandeCaisse } from "../domain/types";
 
 interface Props {
   trigramme: string;
+  readOnly: boolean;
+  // Incrémenté par Consommable après une prise de main : recharge les données.
+  rechargement: number;
 }
 
-export default function CaissesStockList({ trigramme }: Props) {
-  const lock = useSectionLock("stock", trigramme);
-  const readOnly = lock.status !== "held";
+// Onglet « Caisses en stock » de Consommable (le verrou et l'en-tête de la page sont portés
+// par ConsoStockList).
+export default function CaissesStockList({ trigramme, readOnly, rechargement }: Props) {
   const [caisses, setCaisses] = useState<CaisseStock[]>([]);
   const [demandes, setDemandes] = useState<Demande[]>([]);
   const [demandeCaisses, setDemandeCaisses] = useState<DemandeCaisse[]>([]);
@@ -37,7 +38,7 @@ export default function CaissesStockList({ trigramme }: Props) {
 
   useEffect(() => {
     reload();
-  }, []);
+  }, [rechargement]);
 
   // Caisse de récup (hors AR_CAISS_) utilisée sur une ligne livrée : masquée de la liste, pas
   // supprimée — les lignes de Gestion des caisses continuent de pointer dessus (2026-10-01).
@@ -54,34 +55,17 @@ export default function CaissesStockList({ trigramme }: Props) {
   });
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 24px 48px" }}>
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Caisses en stock</h1>
-          <p className="page-subtitle">
-            Création, modification et suppression des caisses.
-            <br />
-            L'affectation d'une caisse à une affaire se fait depuis Gestion des caisses (menu « Stock » d'une ligne).
-          </p>
-        </div>
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, marginBottom: 16 }}>
+        <p className="page-subtitle" style={{ margin: 0 }}>
+          Création, modification et suppression des caisses.
+          <br />
+          L'affectation d'une caisse à une affaire se fait depuis Gestion des caisses (menu « Stock » d'une ligne).
+        </p>
         <button className="btn btn-primary" onClick={() => setGestionOuverte(true)} disabled={readOnly}>
           Gérer les caisses
         </button>
       </div>
-
-      {(readOnly || lock.incomingRequest) && (
-        <LockBanner
-          lectureSeule={lock.lectureSeule}
-          holderTrigramme={lock.holderTrigramme}
-          incomingRequest={lock.incomingRequest}
-          outgoingRequestStatus={lock.outgoingRequestStatus}
-          onRequestPen={lock.requestPen}
-          onApprove={lock.approveRequest}
-          onDeny={lock.denyRequest}
-          verrouLibre={lock.verrouLibre}
-          onPrendreLaMain={async () => { if (await lock.prendreLaMain()) await reload(); }}
-        />
-      )}
 
       {loading ? (
         <p style={{ color: "var(--text-muted)" }}>Chargement…</p>
@@ -182,7 +166,7 @@ export default function CaissesStockList({ trigramme }: Props) {
           onClose={() => setGestionOuverte(false)}
         />
       )}
-    </div>
+    </>
   );
 }
 

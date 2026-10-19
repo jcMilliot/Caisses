@@ -1,8 +1,10 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SECTIONS_DOC, textesParDefaut, type BlocDoc } from "../domain/documentation";
 import { documentationApi } from "../data/documentation";
 import { confirmerAction } from "../data/confirm";
 import { useSessionAdmin } from "../hooks/useSessionAdmin";
+import { rendreTexte } from "../components/texteDoc";
+import DocumentationTechnique from "./DocumentationTechnique";
 
 // Documentation du processus métier. Contenu par défaut dans domain/documentation.ts ; les
 // administrateurs peuvent en modifier les textes (titres, sommaire, points) via « Modifier »
@@ -15,18 +17,34 @@ interface Props {
   estAdmin: boolean;
 }
 
-// Texte avec **gras** → éléments React.
-function rendreTexte(texte: string): React.ReactNode {
-  return texte.split(/(\*\*[^*]+\*\*)/g).map((morceau, i) =>
-    morceau.startsWith("**") && morceau.endsWith("**") && morceau.length > 4 ? (
-      <strong key={i}>{morceau.slice(2, -2)}</strong>
-    ) : (
-      <Fragment key={i}>{morceau}</Fragment>
-    ),
+type Onglet = "utilisateur" | "technique";
+
+// Page Documentation : onglets « Documentation utilisateur » et « Documentation technique »
+// (2026-10-15). L'onglet technique n'est visible qu'avec le droit correspondant — pour l'instant
+// les administrateurs, en attendant l'affinement des droits (cf. CLAUDE.md › À réfléchir plus tard).
+export default function Documentation({ trigramme, estAdmin }: Props) {
+  const docTechniqueVisible = estAdmin;
+  const [onglet, setOnglet] = useState<Onglet>("utilisateur");
+  const vue = docTechniqueVisible ? onglet : "utilisateur";
+
+  return (
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: docTechniqueVisible ? "20px 24px 32px" : "32px 24px" }}>
+      {docTechniqueVisible && (
+        <div className="tabs">
+          <button className={vue === "utilisateur" ? "tab actif" : "tab"} onClick={() => setOnglet("utilisateur")}>
+            Documentation utilisateur
+          </button>
+          <button className={vue === "technique" ? "tab actif" : "tab"} onClick={() => setOnglet("technique")}>
+            Documentation technique
+          </button>
+        </div>
+      )}
+      {vue === "technique" ? <DocumentationTechnique /> : <DocumentationUtilisateur trigramme={trigramme} estAdmin={estAdmin} />}
+    </div>
   );
 }
 
-export default function Documentation({ trigramme, estAdmin }: Props) {
+function DocumentationUtilisateur({ trigramme, estAdmin }: Props) {
   const defauts = useMemo(() => textesParDefaut(), []);
   const [enregistres, setEnregistres] = useState<Record<string, string>>({});
   const [brouillon, setBrouillon] = useState<Record<string, string> | null>(null);
@@ -149,7 +167,7 @@ export default function Documentation({ trigramme, estAdmin }: Props) {
   }
 
   return (
-    <div style={{ display: "flex", maxWidth: 1200, margin: "0 auto", padding: "32px 24px", gap: 32 }}>
+    <div style={{ display: "flex", gap: 32 }}>
       <aside
         style={{
           width: 220,

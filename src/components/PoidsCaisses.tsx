@@ -14,15 +14,18 @@ import {
   type ReglagesPoidsCaisse,
 } from "../domain/poidsCaisse";
 
-// Sous-onglet « Poids » d'Admin › Caisses (2026-10-08) : caisses réellement pesées, comparées à
-// l'estimation, et réglages de l'estimation (masses volumiques, épaisseurs…). L'estimation sert
-// à l'alerte de charge de Simulations (poids de la caisse compris).
-export default function PoidsCaisses() {
+// Estimation du poids des caisses (2026-10-08), répartie depuis le 2026-10-16 :
+// - `CaissesPesees` : onglet « Poids » de Consommable — caisses réellement pesées, comparées à
+//   l'estimation, avec la masse volumique conseillée (sans bouton) ; écriture avec le verrou de
+//   la page, comme le reste de Consommable ;
+// - `ReglagesPoidsCaisses` (défaut) : Admin › Caisses › Poids — réglages de l'estimation et
+//   masse volumique conseillée avec « Utiliser cette valeur » (admins seulement).
+// L'estimation sert à l'alerte de charge de Simulations (poids de la caisse compris).
+
+function useDonneesPoids(rechargement = 0) {
   const [pesees, setPesees] = useState<CaissePesee[] | null>(null);
   const [reglages, setReglages] = useState<ReglagesPoidsCaisse>(REGLAGES_POIDS_DEFAUT);
   const [erreur, setErreur] = useState<string | null>(null);
-  const [editionId, setEditionId] = useState<number | null>(null);
-  const [vue, setVue] = useState<"caisses" | "reglages">("caisses");
 
   async function charger() {
     try {
@@ -35,7 +38,7 @@ export default function PoidsCaisses() {
   }
   useEffect(() => {
     charger();
-  }, []);
+  }, [rechargement]);
 
   async function action(f: () => Promise<void>): Promise<boolean> {
     setErreur(null);
@@ -49,92 +52,110 @@ export default function PoidsCaisses() {
     }
   }
 
+  return { pesees, reglages, erreur, action };
+}
+
+export function CaissesPesees({ trigramme, readOnly, rechargement }: { trigramme: string; readOnly: boolean; rechargement: number }) {
+  const { pesees, reglages, erreur, action } = useDonneesPoids(rechargement);
+  const [editionId, setEditionId] = useState<number | null>(null);
+
+  if (!pesees) return erreur ? <p style={{ color: "var(--danger-text)" }}>{erreur}</p> : null;
+
+  return (
+    <section style={{ minWidth: 0 }}>
+      <p className="page-subtitle" style={{ margin: "0 0 16px" }}>
+        Caisses réellement pesées : dimensions intérieures et poids à vide (tare, souvent inscrite sur la caisse par le fabricant,
+        sans mousse ni bâche). L'écart compare la tare au poids estimé de la caisse vide.
+      </p>
+      {!readOnly && (
+        // Saisie hors du tableau (ajout ou modification) : le tableau reste étroit (2026-10-08).
+        <FormulairePesee
+          key={editionId ?? `nouvelle-${pesees.length}`}
+          initial={pesees.find((p) => p.id === editionId)}
+          onValider={(c) =>
+            editionId !== null
+              ? action(() => poidsCaisseApi.updatePesee(editionId, c, trigramme)).then((ok) => ok && setEditionId(null))
+              : action(() => poidsCaisseApi.createPesee(c, trigramme))
+          }
+          onAnnuler={editionId !== null ? () => setEditionId(null) : undefined}
+        />
+      )}
+      {pesees.length === 0 ? (
+        <p style={{ ...aideStyle, marginTop: 14 }}>Aucune caisse pesée pour l'instant.</p>
+      ) : (
+        <div className="panel" style={{ overflowX: "auto", padding: 0, marginTop: 14 }}>
+          <table className="table-donnees compacte" style={{ width: "100%", fontSize: 12.5 }}>
+            <thead>
+              <tr>
+                <th>Affaire</th>
+                <th>Dimensions (m)</th>
+                <th>Tare</th>
+                <th>Composition</th>
+                <th>Estimé à vide</th>
+                <th>Écart</th>
+                <th>Avec mousse + bâche</th>
+                {!readOnly && <th />}
+              </tr>
+            </thead>
+            <tbody>
+              {pesees.map((p) => (
+                <LignePesee
+                  key={p.id}
+                  caisse={p}
+                  reglages={reglages}
+                  enEdition={editionId === p.id}
+                  readOnly={readOnly}
+                  onModifier={() => setEditionId(p.id)}
+                  onSupprimer={async () => {
+                    if (await confirmerSuppression(`Supprimer la caisse pesée « ${p.affaire || "sans nom"} » ?`))
+                      await action(() => poidsCaisseApi.deletePesee(p.id, trigramme));
+                  }}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {erreur && <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--danger-text)" }}>{erreur}</p>}
+      <div style={{ display: "grid", gap: 6, marginTop: 12 }}>
+        {MATIERES_ESTIMATION.map((m) => (
+          <Conseil key={m} matiere={m} pesees={pesees} reglages={reglages} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export default function ReglagesPoidsCaisses() {
+  const { pesees, reglages, erreur, action } = useDonneesPoids();
+
   async function enregistrerReglages(r: ReglagesPoidsCaisse) {
     await action(() => poidsCaisseApi.setReglages(JSON.stringify(r)));
   }
 
   if (!pesees) return erreur ? <p style={{ color: "var(--danger-text)" }}>{erreur}</p> : null;
 
+  // Masse volumique conseillée d'après les caisses pesées, affichée sous le champ concerné
+  // (retour du 2026-10-16 : le bloc en haut de page semblait là par hasard).
+  const conseils: Conseils = {};
+  for (const m of MATIERES_ESTIMATION) {
+    const c = masseVolumiqueConseillee(pesees, m, reglages);
+    if (c) conseils[cleMasse(m)] = { valeur: Math.round(c.valeur), nbCaisses: c.nbCaisses };
+  }
+
   return (
     <div style={{ minWidth: 0 }}>
-      <div className="segmented" style={{ marginBottom: 16 }}>
-        <button className={vue === "caisses" ? "actif" : undefined} onClick={() => setVue("caisses")}>
-          Caisses pesées
-        </button>
-        <button className={vue === "reglages" ? "actif" : undefined} onClick={() => setVue("reglages")}>
-          Réglages
-        </button>
-      </div>
-      {vue === "reglages" ? (
-        <Reglages reglages={reglages} onEnregistrer={enregistrerReglages} />
-      ) : (
-      <section style={{ minWidth: 0 }}>
-        <h3 style={titreStyle}>Caisses pesées</h3>
-        <p style={aideStyle}>
-          Dimensions intérieures et poids à vide (tare, souvent inscrite sur la caisse par le fabricant, sans mousse ni bâche).
-          L'écart compare la tare au poids estimé de la caisse vide.
-        </p>
-        {/* Saisie hors du tableau (ajout ou modification) : le tableau reste étroit et tient dans
-            la page (retour du 2026-10-08). */}
-        <FormulairePesee
-          key={editionId ?? `nouvelle-${pesees.length}`}
-          initial={pesees.find((p) => p.id === editionId)}
-          onValider={(c) =>
-            editionId !== null
-              ? action(() => poidsCaisseApi.updatePesee(editionId, c)).then((ok) => ok && setEditionId(null))
-              : action(() => poidsCaisseApi.createPesee(c))
-          }
-          onAnnuler={editionId !== null ? () => setEditionId(null) : undefined}
-        />
-        {pesees.length > 0 && (
-          <div className="panel" style={{ overflowX: "auto", padding: 0, marginTop: 14 }}>
-            <table className="table-donnees compacte" style={{ width: "100%", fontSize: 12.5 }}>
-              <thead>
-                <tr>
-                  <th>Affaire</th>
-                  <th>Dimensions (m)</th>
-                  <th>Tare</th>
-                  <th>Composition</th>
-                  <th>Estimé à vide</th>
-                  <th>Écart</th>
-                  <th>Avec mousse + bâche</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {pesees.map((p) => (
-                  <LignePesee
-                    key={p.id}
-                    caisse={p}
-                    reglages={reglages}
-                    enEdition={editionId === p.id}
-                    onModifier={() => setEditionId(p.id)}
-                    onSupprimer={async () => {
-                      if (await confirmerSuppression(`Supprimer la caisse pesée « ${p.affaire || "sans nom"} » ?`))
-                        await action(() => poidsCaisseApi.deletePesee(p.id));
-                    }}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {erreur && <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--danger-text)" }}>{erreur}</p>}
-        <div style={{ display: "grid", gap: 6, marginTop: 12 }}>
-          {MATIERES_ESTIMATION.map((m) => (
-            <Conseil key={m} matiere={m} pesees={pesees} reglages={reglages} onUtiliser={(v) => enregistrerReglages({ ...reglages, ...champMasse(m, v) })} />
-          ))}
-        </div>
-      </section>
-      )}
-      {vue === "reglages" && erreur && <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--danger-text)" }}>{erreur}</p>}
+      <Reglages reglages={reglages} conseils={conseils} onEnregistrer={enregistrerReglages} />
+      {erreur && <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--danger-text)" }}>{erreur}</p>}
     </div>
   );
 }
 
-function champMasse(m: MatiereCaisse, v: number): Partial<ReglagesPoidsCaisse> {
-  return m === "Bois" ? { bois_masse_volumique: v } : { cp_masse_volumique: v };
+function cleMasse(m: MatiereCaisse): keyof ReglagesPoidsCaisse {
+  return m === "Bois" ? "bois_masse_volumique" : "cp_masse_volumique";
 }
+
+type Conseils = Partial<Record<keyof ReglagesPoidsCaisse, { valeur: number; nbCaisses: number }>>;
 
 const fmtM = (mm: number) => (mm / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 3 });
 const fmtKg = (kg: number) => kg.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -143,12 +164,14 @@ function LignePesee({
   caisse: p,
   reglages,
   enEdition,
+  readOnly,
   onModifier,
   onSupprimer,
 }: {
   caisse: CaissePesee;
   reglages: ReglagesPoidsCaisse;
   enEdition: boolean;
+  readOnly: boolean;
   onModifier: () => void;
   onSupprimer: () => void;
 }) {
@@ -188,14 +211,16 @@ function LignePesee({
       <td className="mono" style={{ whiteSpace: "nowrap", color: p.mousse_bache ? undefined : "var(--text-muted)" }}>
         {p.mousse_bache ? `${fmtKg(est.totalKg)} kg` : "—"}
       </td>
-      <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
-        <button className="btn btn-sm" onClick={onModifier} disabled={enEdition}>
-          Modifier
-        </button>{" "}
-        <button className="btn btn-sm btn-danger" onClick={onSupprimer}>
-          Suppr.
-        </button>
-      </td>
+      {!readOnly && (
+        <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
+          <button className="btn btn-sm" onClick={onModifier} disabled={enEdition}>
+            Modifier
+          </button>{" "}
+          <button className="btn btn-sm btn-danger" onClick={onSupprimer}>
+            Suppr.
+          </button>
+        </td>
+      )}
     </tr>
   );
 }
@@ -353,12 +378,10 @@ function Conseil({
   matiere,
   pesees,
   reglages,
-  onUtiliser,
 }: {
   matiere: MatiereCaisse;
   pesees: CaissePesee[];
   reglages: ReglagesPoidsCaisse;
-  onUtiliser: (valeur: number) => void;
 }) {
   const conseil = masseVolumiqueConseillee(pesees, matiere, reglages);
   const actuelle = matiere === "Bois" ? reglages.bois_masse_volumique : reglages.cp_masse_volumique;
@@ -380,11 +403,7 @@ function Conseil({
         <strong className="mono">{valeur} kg/m³</strong> (d'après {conseil.nbCaisses} caisse{conseil.nbCaisses > 1 ? "s" : ""}, actuelle{" "}
         {actuelle} kg/m³)
       </span>
-      {valeur !== actuelle && (
-        <button className="btn btn-sm" onClick={() => onUtiliser(valeur)}>
-          Utiliser cette valeur
-        </button>
-      )}
+
     </div>
   );
 }
@@ -447,7 +466,15 @@ const GROUPES_REGLAGES: { titre: string; aide?: string; champs: [keyof ReglagesP
   },
 ];
 
-function Reglages({ reglages, onEnregistrer }: { reglages: ReglagesPoidsCaisse; onEnregistrer: (r: ReglagesPoidsCaisse) => Promise<void> }) {
+function Reglages({
+  reglages,
+  conseils,
+  onEnregistrer,
+}: {
+  reglages: ReglagesPoidsCaisse;
+  conseils: Conseils;
+  onEnregistrer: (r: ReglagesPoidsCaisse) => Promise<void>;
+}) {
   const [saisie, setSaisie] = useState<Record<string, string>>({});
   useEffect(() => {
     setSaisie(Object.fromEntries(Object.entries(reglages).map(([k, v]) => [k, String(v)])));
@@ -460,25 +487,45 @@ function Reglages({ reglages, onEnregistrer }: { reglages: ReglagesPoidsCaisse; 
   return (
     <section>
       <h3 style={titreStyle}>Réglages de l'estimation</h3>
-      <p style={aideStyle}>Valeurs approximatives, à ajuster d'après les caisses pesées.</p>
+      <p style={aideStyle}>Valeurs approximatives, à ajuster d'après les caisses pesées (saisies dans Consommable › Poids).</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))", gap: 12 }}>
         {GROUPES_REGLAGES.map((g) => (
           <div key={g.titre} className="panel" style={{ padding: "12px 14px" }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: g.aide ? 2 : 8 }}>{g.titre}</div>
             {g.aide && <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>{g.aide}</div>}
-            {g.champs.map(([cle, libelle, unite]) => (
-              <label key={cle} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, marginBottom: 6 }}>
-                <span style={{ flex: 1 }}>{libelle}</span>
-                <input
-                  className="input"
-                  inputMode="decimal"
-                  value={saisie[cle] ?? ""}
-                  onChange={(e) => setSaisie((s) => ({ ...s, [cle]: e.target.value }))}
-                  style={{ width: 80, textAlign: "right" }}
-                />
-                <span style={{ width: 40, color: "var(--text-muted)" }}>{unite}</span>
-              </label>
-            ))}
+            {g.champs.map(([cle, libelle, unite]) => {
+              const conseil = conseils[cle as keyof ReglagesPoidsCaisse];
+              return (
+                <div key={cle} style={{ marginBottom: 6 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
+                    <span style={{ flex: 1 }}>{libelle}</span>
+                    <input
+                      className="input"
+                      inputMode="decimal"
+                      value={saisie[cle] ?? ""}
+                      onChange={(e) => setSaisie((s) => ({ ...s, [cle]: e.target.value }))}
+                      style={{ width: 80, textAlign: "right" }}
+                    />
+                    <span style={{ width: 40, color: "var(--text-muted)" }}>{unite}</span>
+                  </label>
+                  {/* Valeur conseillée d'après les caisses pesées : « Appliquer » remplit le champ,
+                      l'enregistrement reste celui du bouton « Enregistrer ». */}
+                  {conseil && nombre(saisie[cle] ?? "") !== conseil.valeur && (
+                    <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 3, paddingRight: 48, textAlign: "right" }}>
+                      Conseillé : <strong className="mono">{conseil.valeur} {unite}</strong> d'après {conseil.nbCaisses} caisse
+                      {conseil.nbCaisses > 1 ? "s" : ""} pesée{conseil.nbCaisses > 1 ? "s" : ""} ·{" "}
+                      <button
+                        className="btn-ghost"
+                        style={{ border: "none", background: "none", padding: 0, font: "inherit", fontWeight: 600, color: "var(--accent)", cursor: "pointer" }}
+                        onClick={() => setSaisie((s) => ({ ...s, [cle]: String(conseil.valeur) }))}
+                      >
+                        Appliquer
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ))}
       </div>

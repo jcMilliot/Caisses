@@ -1,3 +1,4 @@
+import PastilleColis from "./PastilleColis";
 import { useMemo, useRef, useState } from "react";
 import IconeFiltre from "./IconeFiltre";
 import { volumeUnitaireM3, formaterVolumeM3, champsManquants, type ChampArticleManquant } from "../domain/calculs";
@@ -25,7 +26,7 @@ interface Props {
 }
 
 type Champ = "ar" | "reference" | "designation" | "dim1_mm" | "dim2_mm" | "dim3_mm" | "poids_unitaire_kg" | "quantite";
-type ColonneTriable = Champ | "volume" | "caisse";
+type ColonneTriable = Champ | "volume" | "colis" | "caisse";
 type Tri = { colonne: ColonneTriable; sens: "asc" | "desc" };
 
 function chargerTri(affaireId: number): Tri | null {
@@ -134,6 +135,8 @@ export default function ArticlesTable({
         return formaterVolumeM3(volumeUnitaireM3(a));
       case "caisse":
         return caisseName(a.caisse_id);
+      case "colis":
+        return a.colis || "—";
       default:
         return String(a[colonne]);
     }
@@ -172,6 +175,8 @@ export default function ArticlesTable({
           return volumeUnitaireM3(a);
         case "caisse":
           return caisseName(a.caisse_id).toLowerCase();
+        case "colis":
+          return a.colis.toLowerCase();
         default:
           return CHAMPS_TEXTE.has(tri.colonne as Champ)
             ? String(a[tri.colonne as Champ]).toLowerCase()
@@ -391,6 +396,7 @@ export default function ArticlesTable({
           {thTriable("poids_unitaire_kg", "Poids u. (kg)", "right")}
           {thTriable("quantite", "Qté", "right")}
           {thTriable("volume", "Vol. u. (m³)", "right")}
+          {thTriable("colis", "Colis")}
           {thTriable("caisse", "Caisse")}
         </tr>
       </thead>
@@ -398,7 +404,7 @@ export default function ArticlesTable({
         {articlesTries.length === 0 ? (
           <tr>
             <td
-              colSpan={(onStartDrag ? 1 : 0) + 10}
+              colSpan={(onStartDrag ? 1 : 0) + 11}
               style={{ ...tdStyle, textAlign: "center", color: "var(--text-muted)", padding: "20px 8px" }}
             >
               {yATrouFiltre ? "Aucun article ne correspond aux filtres actifs." : "Aucun article."}
@@ -456,6 +462,14 @@ export default function ArticlesTable({
                 <td style={{ ...tdStyle, textAlign: "right" }} className="mono">
                   {formaterVolumeM3(volumeUnitaireM3(a))}
                 </td>
+                {/* Colis de l'intranet (2026-10-14) : lettre = caisse, chiffre = colis. */}
+                <td style={{ ...tdStyle, textAlign: "center" }} title={a.colis ? "Colisé (intranet)" : "Non colisé"}>
+                  {a.colis ? (
+                    <PastilleColis tag={a.colis} />
+                  ) : (
+                    <span style={{ color: "var(--text-faint)" }}>—</span>
+                  )}
+                </td>
                 <td style={tdStyle}>
                   {caisseAssignee ? (
                     <span
@@ -483,6 +497,7 @@ export default function ArticlesTable({
     </table>
   );
 }
+
 
 
 const thStyle: React.CSSProperties = {

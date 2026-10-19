@@ -13,6 +13,8 @@ export interface LignePicking {
   // QTARF — null = ligne supprimée dans l'intranet.
   quantite: number | null;
   qte_initiale: number | null;
+  // `pack_tag` si la ligne est colisée (`pack_ctrl` = 1), sinon vide.
+  colis: string;
 }
 
 export interface ArticleIntranet {
@@ -27,6 +29,7 @@ export interface ArticleIntranet {
   quantite: number;
   qte_initiale: number | null;
   supprime_intranet: boolean;
+  colis: string;
 }
 
 export interface PlanImport {
@@ -86,6 +89,7 @@ const CHAMPS: { cle: keyof ArticleIntranet & keyof Article; libelle: string; tex
   { cle: "dim3_mm", libelle: "Dim3" },
   { cle: "poids_unitaire_kg", libelle: "Poids" },
   { cle: "quantite", libelle: "Qté" },
+  { cle: "colis", libelle: "Colis" },
 ];
 
 function egal(a: unknown, b: unknown): boolean {
@@ -106,6 +110,7 @@ function versArticle(l: LigneAvecBesoin, quantite: number, supprime: boolean): A
     quantite,
     qte_initiale: l.qte_initiale,
     supprime_intranet: supprime,
+    colis: l.colis,
   };
 }
 

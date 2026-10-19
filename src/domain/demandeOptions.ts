@@ -95,7 +95,7 @@ export function stockAutorisePourEnvoi(typeEnvoiCaisse: string): boolean {
 }
 
 // Type d'ouverture imposé (non modifiable, affiché sans menu déroulant), ou null s'il est libre :
-//  - ligne liée à une caisse en stock : celui de la caisse (géré dans Caisses en stock › Gérer
+//  - ligne liée à une caisse en stock : celui de la caisse (géré dans Consommable › Gérer
 //    les caisses), déjà recopié dans `type_ouverture` à la sélection
 //  - 4C : « Par dessus » (housse soudée)
 export function ouvertureImposee(etat: {
@@ -114,7 +114,7 @@ export const ALERTE_OUVERTURE_DIFFERENTE = "Le type d'ouverture est différent d
 
 export function motifOuvertureImposee(etat: { caisse_stock_id: number | null }): string {
   return etat.caisse_stock_id != null
-    ? "Type d'ouverture de la caisse en stock (modifiable dans Caisses en stock › Gérer les caisses)"
+    ? "Type d'ouverture de la caisse en stock (modifiable dans Consommable › Gérer les caisses)"
     : "Caisse 4C : ouverture par dessus uniquement";
 }
 

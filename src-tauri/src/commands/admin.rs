@@ -47,6 +47,17 @@ pub fn require_admin(session: &AdminSession) -> Result<(), String> {
     }
 }
 
+/// Refuse l'appel si la session admin ouverte n'est pas celle d'AJC (réglages réservés à
+/// l'administrateur permanent, ex. « Coller depuis Excel », 2026-10-14).
+pub fn require_admin_permanent(session: &AdminSession) -> Result<(), String> {
+    let guard = session.0.lock().map_err(|e| e.to_string())?;
+    if guard.as_deref() == Some(ADMIN_PERMANENT) {
+        Ok(())
+    } else {
+        Err(format!("Réglage réservé à {ADMIN_PERMANENT}."))
+    }
+}
+
 /// Ouvre la session admin si `trigramme` est administrateur. Renvoie true si elle est ouverte.
 pub fn ouvrir_session_si_admin(conn: &Connection, session: &AdminSession, trigramme: &str) -> Result<bool, String> {
     let admin = role_de(conn, trigramme)? == ROLE_ADMIN;

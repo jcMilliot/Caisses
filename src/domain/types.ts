@@ -49,6 +49,8 @@ export interface Article {
   normm: number | null;
   qte_initiale: number | null;
   supprime_intranet: boolean;
+  // 0041 — colis de l'intranet (`pack_tag` si `pack_ctrl` = 1), vide sinon.
+  colis: string;
 }
 
 export interface NewArticle {
@@ -226,6 +228,23 @@ export interface NewCaisseStock {
   tare_kg: number;
 }
 
+// 0040 — carton consommable en stock (Consommable › Cartons conso), sans affectation.
+export interface CartonConso {
+  id: number;
+  nom: string;
+  longueur_mm: number;
+  largeur_mm: number;
+  hauteur_mm: number;
+  ext_longueur_mm: number;
+  ext_largeur_mm: number;
+  ext_hauteur_mm: number;
+  // 0 = non saisi.
+  poids_kg: number;
+  ordre: number;
+}
+
+export type NewCartonConso = Omit<CartonConso, "id" | "ordre">;
+
 // Listes de valeurs de la section Demandes auxquelles l'utilisateur peut ajouter ses propres
 // options (les valeurs "de base" restent dans demandeOptions.ts, la table ne porte que les ajouts).
 export type ListeOption = "moteurs" | "module_lineaire" | "terminaux";
@@ -303,4 +322,18 @@ export interface ArticleTropGrand {
   article: Article;
   // Axes qui dépassent, avec la valeur de l'article et celle de la caisse (mm).
   depassements: { axe: "longueur" | "largeur" | "hauteur"; article: number; caisse: number }[];
+}
+
+// 0043 — caisse de l'onglet Colisage de Simulations : copie indépendante d'une caisse de l'affaire
+// (`source_caisse_id`, null si ajoutée à la main ou originale supprimée).
+export interface CaisseColisage {
+  id: number;
+  affaire_id: number;
+  nom: string;
+  longueur_mm: number;
+  largeur_mm: number;
+  hauteur_mm: number;
+  couleur: string;
+  source_caisse_id: number | null;
+  ordre: number;
 }

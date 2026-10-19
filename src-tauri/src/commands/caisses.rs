@@ -11,7 +11,7 @@ fn require_lock_for_caisse(conn: &rusqlite::Connection, caisse_id: i64, trigramm
 }
 
 /// Palette pastel attribuée automatiquement aux nouvelles caisses, dans l'ordre de création.
-const PALETTE: &[&str] = &[
+pub(crate) const PALETTE: &[&str] = &[
     "#dbeafe", "#fde2e2", "#dcfce7", "#fef3c7", "#ede9fe", "#fce7f3", "#e0f2fe", "#fee2d5",
 ];
 

@@ -71,7 +71,7 @@ export default function Admin({ trigramme }: Props) {
       </div>
 
       {onglet === "utilisateurs" && <UtilisateursOnglet />}
-      {onglet === "parametres" && <ParametresOnglet />}
+      {onglet === "parametres" && <ParametresOnglet trigramme={trigramme} />}
       {onglet === "caisses" && <AdminCaisses trigramme={trigramme} />}
       {onglet === "sauvegarde" && <SauvegardeOnglet trigramme={trigramme} />}
       {onglet === "journal" && <Journal />}
@@ -257,7 +257,7 @@ function UtilisateursOnglet() {
 // Seuil d'alerte général (décision 2026-09-30) : seul endroit où il se règle. L'enregistrer
 // l'applique aux nouvelles affaires et écrase celui des affaires dont la caisse n'est pas
 // encore livrée ; les affaires livrées gardent le leur.
-function ParametresOnglet() {
+function ParametresOnglet({ trigramme }: { trigramme: string }) {
   const [actuel, setActuel] = useState<number | null>(null);
   const [saisie, setSaisie] = useState("");
   const [message, setMessage] = useState<{ ok: boolean; texte: string } | null>(null);
@@ -331,7 +331,7 @@ function ParametresOnglet() {
         <p style={{ margin: "12px 0 0", fontSize: 13, color: message.ok ? "var(--ok-text)" : "var(--danger-text)" }}>{message.texte}</p>
       )}
       <PoidsMaxParametre />
-      <IntranetParametres />
+      <IntranetParametres trigramme={trigramme} />
       <DossierBaseParametre />
     </div>
   );
@@ -404,8 +404,9 @@ function PoidsMaxParametre() {
 }
 
 // Import des articles depuis l'intranet (2026-10-07) : adresse de l'API (réglage, pas dans le
-// code — dépôt public) et affichage du bouton « Coller depuis Excel » de Simulations.
-function IntranetParametres() {
+// code — dépôt public) et affichage du bouton « Coller depuis Excel » de Simulations (réglage
+// visible pour AJC seulement, 2026-10-14).
+function IntranetParametres({ trigramme }: { trigramme: string }) {
   const [url, setUrl] = useState<string | null>(null);
   const [saisie, setSaisie] = useState("");
   const [collageVisible, setCollageVisible] = useState(true);
@@ -468,6 +469,7 @@ function IntranetParametres() {
           </button>
         </div>
       </div>
+      {trigramme === ADMIN_PERMANENT && (
       <div className="panel" style={{ ...panneauReglageStyle, marginTop: 16 }}>
         <label style={labelStyle}>
           <span style={libelleStyle}>Bouton « Coller depuis Excel »</span>
@@ -478,8 +480,9 @@ function IntranetParametres() {
             onChange={(e) => changerCollage(e.target.checked)}
           />
         </label>
-        <p style={aideStyle}>Affiche ou masque le collage depuis Excel dans les affaires de Simulations.</p>
+        <p style={aideStyle}>Affiche ou masque le collage depuis Excel dans les affaires de Simulations (réservé à {ADMIN_PERMANENT}).</p>
       </div>
+      )}
       {message && (
         <p style={{ margin: "12px 0 0", fontSize: 13, color: message.ok ? "var(--ok-text)" : "var(--danger-text)" }}>{message.texte}</p>
       )}

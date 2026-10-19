@@ -307,6 +307,8 @@ pub struct LignePicking {
     /// `QTARF` — `None` = ligne supprimée dans l'intranet.
     pub quantite: Option<i64>,
     pub qte_initiale: Option<i64>,
+    /// `pack_tag` si la ligne est colisée (`pack_ctrl` = 1), sinon vide.
+    pub colis: String,
 }
 
 fn nombre(v: Option<&Value>) -> Option<f64> {
@@ -341,6 +343,9 @@ fn lire_ligne(l: &Value) -> LignePicking {
         poids_unitaire_kg: nombre(l.get("POIDL")).unwrap_or(0.0),
         quantite: entier(l.get("QTARF")),
         qte_initiale: entier(l.get("initial_qty")),
+        // `pack_ctrl` (nombre) : 0 = non colisé, 1 = colisé ; `pack_tag` (texte, ex. "2") :
+        // lettre = caisse, chiffre = colis — 2026-10-07 / 14.
+        colis: if l.get("pack_ctrl").and_then(Value::as_i64) == Some(1) { texte(l.get("pack_tag")) } else { String::new() },
     }
 }
 
@@ -403,6 +408,8 @@ pub struct ArticleIntranet {
     pub quantite: i64,
     pub qte_initiale: Option<i64>,
     pub supprime_intranet: bool,
+    #[serde(default)]
+    pub colis: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -459,11 +466,11 @@ fn appliquer(conn: &mut rusqlite::Connection, affaire_id: i64, plan: &PlanImport
     for a in &plan.ajouts {
         tx.execute(
             "INSERT INTO article (affaire_id, ar, reference, designation, dim1_mm, dim2_mm, dim3_mm, poids_unitaire_kg,
-                                  quantite, ordre, normm, qte_initiale, supprime_intranet)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                                  quantite, ordre, normm, qte_initiale, supprime_intranet, colis)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             rusqlite::params![
                 affaire_id, a.ar, a.reference, a.designation, a.dim1_mm, a.dim2_mm, a.dim3_mm, a.poids_unitaire_kg,
-                a.quantite, ordre, a.normm, a.qte_initiale, a.supprime_intranet,
+                a.quantite, ordre, a.normm, a.qte_initiale, a.supprime_intranet, a.colis,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -475,11 +482,11 @@ fn appliquer(conn: &mut rusqlite::Connection, affaire_id: i64, plan: &PlanImport
         tx.execute(
             "UPDATE article SET ar = ?1, reference = ?2, designation = ?3, dim1_mm = ?4, dim2_mm = ?5, dim3_mm = ?6,
                     poids_unitaire_kg = ?7, quantite = ?8, normm = ?9, qte_initiale = ?10, supprime_intranet = ?11,
-                    caisse_id = CASE WHEN ?11 THEN NULL ELSE caisse_id END
+                    caisse_id = CASE WHEN ?11 THEN NULL ELSE caisse_id END, colis = ?14
              WHERE id = ?12 AND affaire_id = ?13",
             rusqlite::params![
                 a.ar, a.reference, a.designation, a.dim1_mm, a.dim2_mm, a.dim3_mm, a.poids_unitaire_kg, a.quantite,
-                a.normm, a.qte_initiale, a.supprime_intranet, m.id, affaire_id,
+                a.normm, a.qte_initiale, a.supprime_intranet, m.id, affaire_id, a.colis,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -518,7 +525,8 @@ pub fn set_intranet_url(db: State<Db>, session: State<AdminSession>, url: String
 }
 
 /// Bouton « Coller depuis Excel » de Simulations affiché (défaut) ou masqué — réglage Admin,
-/// en attendant de le retirer une fois l'import intranet adopté (décision 2026-10-06).
+/// en attendant de le retirer une fois l'import intranet adopté (décision 2026-10-06). Collage et
+/// réglage réservés à AJC depuis le 2026-10-14.
 #[tauri::command]
 pub fn get_collage_excel_visible(db: State<Db>) -> Result<bool, String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
@@ -528,7 +536,7 @@ pub fn get_collage_excel_visible(db: State<Db>) -> Result<bool, String> {
 
 #[tauri::command]
 pub fn set_collage_excel_visible(db: State<Db>, session: State<AdminSession>, visible: bool) -> Result<(), String> {
-    require_admin(&session)?;
+    crate::commands::admin::require_admin_permanent(&session)?;
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     ecrire(conn, CLE_COLLAGE_VISIBLE, if visible { "1" } else { "0" })
@@ -559,6 +567,7 @@ mod tests {
             quantite,
             qte_initiale: Some(2),
             supprime_intranet: supprime,
+            colis: "A".into(),
         }
     }
 
@@ -585,6 +594,14 @@ mod tests {
         assert_eq!(p.quantite, Some(1));
         assert_eq!(p.qte_initiale, Some(2));
         assert_eq!(p.dim1_mm, 85.0);
+        assert_eq!(p.colis, "");
+        // Colis : pack_tag repris seulement si pack_ctrl = 1.
+        let colisee: Value = serde_json::from_str(r#"{"ARAVF":"AR_Z","pack_ctrl":1,"pack_tag":"2"}"#).unwrap();
+        assert_eq!(lire_ligne(&colisee).colis, "2");
+        let lettre: Value = serde_json::from_str(r#"{"ARAVF":"AR_Z","pack_ctrl":1,"pack_tag":"B "}"#).unwrap();
+        assert_eq!(lire_ligne(&lettre).colis, "B");
+        let non_colisee: Value = serde_json::from_str(r#"{"ARAVF":"AR_Z","pack_ctrl":0,"pack_tag":"B"}"#).unwrap();
+        assert_eq!(lire_ligne(&non_colisee).colis, "");
         let supprimee: Value = serde_json::from_str(r#"{"ARAVF":"AR_Y","QTARF":null,"NORMM":null}"#).unwrap();
         let p = lire_ligne(&supprimee);
         assert_eq!(p.quantite, None);
@@ -606,6 +623,8 @@ mod tests {
         appliquer(&mut conn, 1, &plan).unwrap();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM article WHERE normm IS NOT NULL", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 2);
+        let colis: String = conn.query_row("SELECT colis FROM article WHERE normm = 10", [], |r| r.get(0)).unwrap();
+        assert_eq!(colis, "A");
         let colle: i64 = conn.query_row("SELECT COUNT(*) FROM article WHERE ar = 'AR_COLLE'", [], |r| r.get(0)).unwrap();
         assert_eq!(colle, 0);
 

@@ -3,7 +3,7 @@ use crate::db::Db;
 use crate::models::{Article, NewArticle};
 use tauri::State;
 
-fn require_lock_for_article(conn: &rusqlite::Connection, article_id: i64, trigramme: &str) -> Result<(), String> {
+pub(crate) fn require_lock_for_article(conn: &rusqlite::Connection, article_id: i64, trigramme: &str) -> Result<(), String> {
     let affaire_id: i64 = conn
         .query_row("SELECT affaire_id FROM article WHERE id = ?1", [article_id], |row| row.get(0))
         .map_err(|e| e.to_string())?;
@@ -27,10 +27,11 @@ pub(crate) fn map_row(row: &rusqlite::Row) -> rusqlite::Result<Article> {
         normm: row.get(12)?,
         qte_initiale: row.get(13)?,
         supprime_intranet: row.get(14)?,
+        colis: row.get(15)?,
     })
 }
 
-pub(crate) const SELECT_COLS: &str = "id, affaire_id, caisse_id, ar, reference, designation, dim1_mm, dim2_mm, dim3_mm, poids_unitaire_kg, quantite, ordre, normm, qte_initiale, supprime_intranet";
+pub(crate) const SELECT_COLS: &str = "id, affaire_id, caisse_id, ar, reference, designation, dim1_mm, dim2_mm, dim3_mm, poids_unitaire_kg, quantite, ordre, normm, qte_initiale, supprime_intranet, colis";
 
 #[tauri::command]
 pub fn list_articles(db: State<Db>, affaire_id: i64) -> Result<Vec<Article>, String> {
@@ -66,6 +67,10 @@ pub fn bulk_create_articles(
 ) -> Result<Vec<Article>, String> {
     let mut guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_mut().ok_or("base de données non initialisée")?;
+    // Collage depuis Excel (seul appelant) réservé à AJC (2026-10-14).
+    if trigramme != crate::commands::admin::ADMIN_PERMANENT {
+        return Err(format!("Le collage depuis Excel est réservé à {}.", crate::commands::admin::ADMIN_PERMANENT));
+    }
     require_lock(conn, &format!("affaire:{}", affaire_id), &trigramme)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut ids = Vec::with_capacity(articles.len());

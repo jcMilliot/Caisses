@@ -1,8 +1,10 @@
-//! Estimation du poids des caisses (2026-10-08) : caisses réellement pesées (Admin › Caisses ›
-//! Poids) et réglages de l'estimation (masses volumiques, épaisseurs…). Le calcul lui-même est
-//! côté frontend (`domain/poidsCaisse.ts`) ; ici, seulement le stockage.
+//! Estimation du poids des caisses (2026-10-08) : caisses réellement pesées (Consommable › Poids
+//! depuis le 2026-10-16, écriture avec le verrou « stock » comme le reste de la page) et réglages
+//! de l'estimation (masses volumiques, épaisseurs… — Admin › Caisses › Poids, session admin). Le
+//! calcul lui-même est côté frontend (`domain/poidsCaisse.ts`) ; ici, seulement le stockage.
 
 use crate::commands::admin::{require_admin, AdminSession};
+use crate::commands::locks::require_lock;
 use crate::commands::backup::{ecrire, lire};
 use crate::db::Db;
 use serde::{Deserialize, Serialize};
@@ -90,11 +92,11 @@ pub fn list_caisses_pesees(db: State<Db>) -> Result<Vec<CaissePesee>, String> {
 }
 
 #[tauri::command]
-pub fn create_caisse_pesee(db: State<Db>, session: State<AdminSession>, caisse: NewCaissePesee) -> Result<(), String> {
-    require_admin(&session)?;
+pub fn create_caisse_pesee(db: State<Db>, caisse: NewCaissePesee, trigramme: String) -> Result<(), String> {
     verifier(&caisse)?;
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock(conn, "stock", &trigramme)?;
     conn.execute(
         "INSERT INTO caisse_pesee (affaire, longueur_mm, largeur_mm, hauteur_mm, tare_kg, nb_pieds, matiere, mousse_bache,
                                    nb_renforts_longueur, nb_renforts_largeur, nb_tasseaux)
@@ -109,11 +111,11 @@ pub fn create_caisse_pesee(db: State<Db>, session: State<AdminSession>, caisse: 
 }
 
 #[tauri::command]
-pub fn update_caisse_pesee(db: State<Db>, session: State<AdminSession>, id: i64, caisse: NewCaissePesee) -> Result<(), String> {
-    require_admin(&session)?;
+pub fn update_caisse_pesee(db: State<Db>, id: i64, caisse: NewCaissePesee, trigramme: String) -> Result<(), String> {
     verifier(&caisse)?;
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock(conn, "stock", &trigramme)?;
     conn.execute(
         "UPDATE caisse_pesee SET affaire = ?1, longueur_mm = ?2, largeur_mm = ?3, hauteur_mm = ?4, tare_kg = ?5,
                 nb_pieds = ?6, matiere = ?7, mousse_bache = ?8, nb_renforts_longueur = ?9, nb_renforts_largeur = ?10,
@@ -129,10 +131,10 @@ pub fn update_caisse_pesee(db: State<Db>, session: State<AdminSession>, id: i64,
 }
 
 #[tauri::command]
-pub fn delete_caisse_pesee(db: State<Db>, session: State<AdminSession>, id: i64) -> Result<(), String> {
-    require_admin(&session)?;
+pub fn delete_caisse_pesee(db: State<Db>, id: i64, trigramme: String) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    require_lock(conn, "stock", &trigramme)?;
     conn.execute("DELETE FROM caisse_pesee WHERE id = ?1", [id]).map_err(|e| e.to_string())?;
     Ok(())
 }

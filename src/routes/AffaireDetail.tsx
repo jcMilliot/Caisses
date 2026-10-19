@@ -1,3 +1,7 @@
+import PanneauCaissesColisage from "../components/PanneauCaissesColisage";
+import { useColisage } from "../hooks/useColisage";
+import ColisageVue from "../components/ColisageVue";
+import { ADMIN_PERMANENT } from "../data/admin";
 import ArticlesNonCollesBloc from "../components/ArticlesNonCollesBloc";
 import ArticlesSupprimesIntranetBloc from "../components/ArticlesSupprimesIntranetBloc";
 import AjouterDemandesDialog from "../components/AjouterDemandesDialog";
@@ -64,13 +68,21 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
   } = useAffaire(affaireId, trigramme);
 
   const conteneurArticlesRef = useRef<HTMLDivElement>(null);
+  const [ongletArticles, setOngletArticles] = useState<"infos" | "colisage">("infos");
+  const aDesColis = articles.some((a) => a.colis.trim() !== "");
+  // Plus aucun article colisé (après une mise à jour) : retour à Informations générales.
+  const ongletVue = aDesColis ? ongletArticles : "infos";
+  // Onglet Colisage (2026-10-14) : état partagé entre la liste des colis et les caisses colisage.
+  const colisage = useColisage(affaireId, articles, caissesCalculees, affaire?.seuil_defaut ?? 70, trigramme, ongletVue === "colisage");
   const importIntranet = useImportIntranet(affaireId, affaire?.nom, tousArticles, trigramme, reload);
   const [anomaliesOuvertes, setAnomaliesOuvertes] = useState(false);
-  // Bouton « Coller depuis Excel » masquable dans Admin › Paramètres (en attendant son retrait).
-  const [collageVisible, setCollageVisible] = useState(true);
+  // Bouton « Coller depuis Excel » : réservé à AJC (2026-10-14), masquable dans Admin ›
+  // Paramètres (en attendant son retrait).
+  const [collageReglage, setCollageReglage] = useState(true);
   useEffect(() => {
-    intranetApi.getCollageExcelVisible().then(setCollageVisible).catch(() => {});
+    intranetApi.getCollageExcelVisible().then(setCollageReglage).catch(() => {});
   }, []);
+  const collageVisible = collageReglage && trigramme === ADMIN_PERMANENT;
   // Lignes écartées au collage (AR ne commençant ni par « AR » ni par « ZR »), gardées en base.
   const [nonColles, setNonColles] = useState<ArticleNonColle[]>([]);
   const { assurerSession, dialogue: dialogueSessionAdmin } = useSessionAdmin(trigramme);
@@ -354,6 +366,15 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
           : { marginBottom: 28 }
       }
     >
+      {ongletVue === "colisage" ? (
+        <>
+          <h2 style={{ ...sectionTitleStyle, marginBottom: 14 }}>
+            Caisses colisage <span style={sectionCountStyle}>{colisage.caisses.length}</span>
+          </h2>
+          <PanneauCaissesColisage colisage={colisage} nbCaissesInfos={caissesCalculees.length} readOnly={readOnly} />
+        </>
+      ) : (
+      <>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
         <h2 style={sectionTitleStyle}>Caisses <span style={sectionCountStyle}>{caissesCalculees.length}</span></h2>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -520,11 +541,29 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
           ))}
         </div>
       )}
+      </>
+      )}
     </section>
   );
 
   const panneauArticles = (
     <section style={{ flex: 1, minWidth: 0 }}>
+      {/* Onglets (2026-10-14, renommés le 2026-10-16) : « Colisage détaillé » (tableau des articles)
+          et « Colisage réel », cliquable seulement si au moins un article est colisé. */}
+      <div className="tabs" style={{ marginBottom: 14 }}>
+        <button className={ongletVue === "infos" ? "tab actif" : "tab"} onClick={() => setOngletArticles("infos")}>
+          Colisage détaillé
+        </button>
+        <button
+          className={ongletVue === "colisage" ? "tab actif" : "tab"}
+          onClick={() => setOngletArticles("colisage")}
+          disabled={!aDesColis}
+          title={aDesColis ? undefined : "Aucune référence colisée dans l'intranet (« Vérifier mise à jour » pour récupérer le colisage)"}
+          style={aDesColis ? undefined : { opacity: 0.45, cursor: "not-allowed" }}
+        >
+          Colisage réel
+        </button>
+      </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <h2 style={sectionTitleStyle}>Articles <span style={sectionCountStyle}>{articles.length}</span></h2>
         <div style={{ display: "flex", gap: 8 }}>
@@ -565,6 +604,9 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
         </div>
       </div>
 
+      {ongletVue === "colisage" ? (
+        <ColisageVue colisage={colisage} readOnly={readOnly} />
+      ) : (
       <div ref={conteneurArticlesRef} className="panel" style={{ padding: "0 12px", overflow: "auto", maxHeight: "calc(100vh - 190px)" }}>
         <ArticlesTable
           affaireId={affaireId}
@@ -587,6 +629,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
           champsManquantsParArticle={surlignerManques ? articlesAvecManque : undefined}
         />
       </div>
+      )}
 
       <ArticlesSupprimesIntranetBloc articles={articlesSupprimesIntranet} />
 

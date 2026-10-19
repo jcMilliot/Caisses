@@ -3,7 +3,7 @@ import Accueil from "./routes/Accueil";
 import AffairesList from "./routes/AffairesList";
 import AffaireDetail from "./routes/AffaireDetail";
 import DemandesList from "./routes/DemandesList";
-import CaissesStockList from "./routes/CaissesStockList";
+import ConsoStockList from "./routes/ConsoStockList";
 import DemandesAchatsList from "./routes/DemandesAchatsList";
 import Admin from "./routes/Admin";
 import Documentation from "./routes/Documentation";
@@ -33,7 +33,7 @@ type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "ad
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "demandes", label: "Gestion des caisses" },
   { id: "simulations", label: "Simulations" },
-  { id: "stock", label: "Caisses en stock" },
+  { id: "stock", label: "Consommable" },
   { id: "achats", label: "Demandes d'achats" },
 ];
 
@@ -331,7 +331,7 @@ export default function App() {
           ) : (
             <AffaireDetail affaireId={affaireId} onBack={() => setAffaireId(null)} trigramme={trigramme} estAdmin={estAdmin} />
           ))}
-        {section === "stock" && <CaissesStockList trigramme={trigramme} />}
+        {section === "stock" && <ConsoStockList trigramme={trigramme} />}
         {section === "achats" && <DemandesAchatsList trigramme={trigramme} />}
         {section === "admin" && estAdmin && <Admin trigramme={trigramme} />}
         {section === "documentation" && <Documentation trigramme={trigramme} estAdmin={estAdmin} />}

@@ -5,6 +5,8 @@ pub mod articles;
 pub mod articles_non_colles;
 pub mod backup;
 pub mod caisse_stock;
+pub mod carton_conso;
+pub mod colisage;
 pub mod caisses;
 pub mod demande_caisse;
 pub mod demandes;

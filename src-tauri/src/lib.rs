@@ -21,6 +21,13 @@ use commands::caisse_stock::{
     remettre_stock_ligne, set_caisse_stock_suivi, set_caisse_stock_validee, stock_decompte_ligne, transfer_caisse_stock,
     update_caisse_stock,
 };
+use commands::carton_conso::{
+    create_carton_conso, delete_carton_conso, list_cartons_conso, list_colis_affaire, set_colis_carton, set_colis_carton_libre, update_carton_conso,
+};
+use commands::colisage::{
+    copier_caisses_colisage, create_caisse_colisage, delete_caisse_colisage, list_caisses_colisage, list_colis_rangement,
+    list_pieces_acceptees, set_colis_rangement, set_piece_acceptee, update_caisse_colisage,
+};
 use commands::caisses::{
     create_caisse, delete_caisse, lier_caisse_ligne, link_caisse_demande, link_caisse_demande_caisse, list_caisses, set_caisse_caisse_stock,
     update_caisse,
@@ -153,6 +160,22 @@ pub fn run() {
             stock_decompte_ligne,
             remettre_stock_ligne,
             count_caisse_stock_lignes_liees,
+            list_cartons_conso,
+            create_carton_conso,
+            update_carton_conso,
+            delete_carton_conso,
+            list_colis_affaire,
+            set_colis_carton,
+            set_colis_carton_libre,
+            list_caisses_colisage,
+            copier_caisses_colisage,
+            create_caisse_colisage,
+            update_caisse_colisage,
+            delete_caisse_colisage,
+            list_colis_rangement,
+            set_colis_rangement,
+            list_pieces_acceptees,
+            set_piece_acceptee,
             acquire_lock,
             release_lock,
             heartbeat,

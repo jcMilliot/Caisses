@@ -45,6 +45,8 @@ pub struct Article {
     pub qte_initiale: Option<i64>,
     /// 0036 — ligne supprimée dans l'intranet (sortie du tableau, listée en dessous).
     pub supprime_intranet: bool,
+    /// 0041 — `pack_tag` de l'intranet si la ligne est colisée (`pack_ctrl` = 1), sinon vide.
+    pub colis: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -227,6 +229,74 @@ pub struct NewCaisseStock {
     pub ext_largeur_mm: f64,
     pub ext_hauteur_mm: f64,
     pub tare_kg: f64,
+}
+
+/// 0040 — carton consommable en stock (onglet « Cartons conso »), sans affectation.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CartonConso {
+    pub id: i64,
+    pub nom: String,
+    pub longueur_mm: f64,
+    pub largeur_mm: f64,
+    pub hauteur_mm: f64,
+    pub ext_longueur_mm: f64,
+    pub ext_largeur_mm: f64,
+    pub ext_hauteur_mm: f64,
+    /// 0 = non saisi.
+    pub poids_kg: f64,
+    pub ordre: i64,
+}
+
+/// 0042 — carton choisi pour un colis (`pack_tag` chiffré) d'une affaire : carton conso, ou
+/// (0044) carton libre aux dimensions extérieures saisies (`carton_conso_id` = None).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ColisAffaire {
+    pub tag: String,
+    pub carton_conso_id: Option<i64>,
+    pub libre_longueur_mm: f64,
+    pub libre_largeur_mm: f64,
+    pub libre_hauteur_mm: f64,
+    pub libre_poids_kg: f64,
+}
+
+/// 0043 — caisse de l'onglet Colisage (copie indépendante d'une caisse de l'affaire).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CaisseColisage {
+    pub id: i64,
+    pub affaire_id: i64,
+    pub nom: String,
+    pub longueur_mm: f64,
+    pub largeur_mm: f64,
+    pub hauteur_mm: f64,
+    pub couleur: String,
+    pub source_caisse_id: Option<i64>,
+    pub ordre: i64,
+}
+
+/// 0045 — pièce acceptée malgré l'alerte de dimensions, pour le carton `carton`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PieceAcceptee {
+    pub article_id: i64,
+    pub carton: String,
+}
+
+/// 0043 — rangement choisi à la main d'un colis / d'une lettre (None = non rangé).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ColisRangement {
+    pub tag: String,
+    pub caisse_colisage_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NewCartonConso {
+    pub nom: String,
+    pub longueur_mm: f64,
+    pub largeur_mm: f64,
+    pub hauteur_mm: f64,
+    pub ext_longueur_mm: f64,
+    pub ext_largeur_mm: f64,
+    pub ext_hauteur_mm: f64,
+    pub poids_kg: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

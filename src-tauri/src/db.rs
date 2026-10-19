@@ -166,6 +166,30 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0039_supprimer_mots_de_passe",
         include_str!("../../migrations/0039_supprimer_mots_de_passe.sql"),
     ),
+    (
+        "0040_add_carton_conso",
+        include_str!("../../migrations/0040_add_carton_conso.sql"),
+    ),
+    (
+        "0041_add_article_colis",
+        include_str!("../../migrations/0041_add_article_colis.sql"),
+    ),
+    (
+        "0042_add_colis_affaire",
+        include_str!("../../migrations/0042_add_colis_affaire.sql"),
+    ),
+    (
+        "0043_add_caisse_colisage",
+        include_str!("../../migrations/0043_add_caisse_colisage.sql"),
+    ),
+    (
+        "0044_colis_carton_libre",
+        include_str!("../../migrations/0044_colis_carton_libre.sql"),
+    ),
+    (
+        "0045_add_piece_acceptee",
+        include_str!("../../migrations/0045_add_piece_acceptee.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {
