@@ -45,7 +45,7 @@ export const SECTIONS_DOC: SectionDoc[] = [
         "Le tableau est trié par défaut de la date de picking la plus lointaine dans le futur à la plus ancienne ; l'ordre se modifie dans le bouton « Options ».",
       ),
       li(
-        "Les informations se modifient directement dans le tableau, et certaines modifications en déclenchent d'autres : changer le type d'envoi agit sur le type d'ouverture et le traitement, sélectionner une caisse de stock agit sur les dimensions et le type d'ouverture, etc. Les modifications ne sont enregistrées qu'au clic sur « Enregistrer » (« Annuler » revient à l'état enregistré).",
+        "Les informations se modifient directement dans le tableau, et certaines modifications en déclenchent d'autres : changer le type d'envoi agit sur le type d'ouverture et le traitement, sélectionner une caisse de stock agit sur les dimensions et le type d'ouverture, etc. Chaque modification est enregistrée automatiquement, sans bouton à cliquer ; « Livré » demande une confirmation. Les dimensions d'une ligne se saisissent ensemble dans une fenêtre (clic sur l'une d'elles), qui propose aussi de les reporter sur la caisse de Simulations si l'affaire est simulée.",
       ),
       li(
         "La dernière colonne, « Actions », regroupe les boutons de chaque ligne : « Livré » / « Non livré », « Simuler », « + Caisse » (caisse détaillée) et « Suppr. ».",
@@ -131,6 +131,20 @@ export const SECTIONS_DOC: SectionDoc[] = [
     ],
   },
   {
+    id: "alertes",
+    sommaire: "Alertes",
+    titre: "Alertes (expédition anticipée)",
+    blocs: [
+      li(
+        "La page « Alertes » (carte de l'accueil ou onglet de la barre) liste les affaires de Gestion des caisses pas encore livrées (hors ACHSTOCK) avec leur date d'expédition initiale (date de picking).",
+      ),
+      li(
+        "Quand une expédition est demandée plus tôt que prévu, saisir la **date anticipée** : elle remplace la date de picking pour l'alerte « À commander » (pastilles rouges, barre des tâches) et pour les blocs « Caisses à commander / à rapatrier cette semaine » de l'accueil. La date de picking elle-même n'est pas modifiée ; la date anticipée apparaît en orange sous elle dans Gestion des caisses.",
+      ),
+      li("La colonne « Commentaires » est libre. Tout est enregistré immédiatement ; effacer la date anticipée revient à la date de picking."),
+    ],
+  },
+  {
     id: "stock",
     sommaire: "Consommable",
     titre: "Consommable (section indépendante)",
@@ -201,7 +215,7 @@ export const SECTIONS_DOC: SectionDoc[] = [
       li(
         "Toutes les données (caisses, affaires, articles, caisses en stock, références) sont dans un seul fichier, **caisses.sqlite3**, placé dans le dossier choisi au premier lancement de l'application. Ce dossier peut être sur le réseau pour que plusieurs postes partagent les mêmes données.",
       ),
-      li("L'enregistrement est immédiat dans Simulations et Consommable. Dans Gestion des caisses, les modifications restent en attente jusqu'au clic sur « Enregistrer »."),
+      li("L'enregistrement est immédiat partout : Gestion des caisses, Simulations, Consommable et Alertes."),
       li(
         "La base est copiée automatiquement (chaque jour ou chaque semaine) dans un dossier de sauvegarde, sous le nom **caisses_JJ-MM-AAAA_HH-MM-SS.sqlite3**. La copie est faite par le premier poste ouvert au moment où elle est due, un seul poste à la fois ; les plus anciennes sont supprimées au-delà d'un nombre de copies fixé (30 par défaut).",
       ),

@@ -24,6 +24,8 @@ L'application s'organise autour d'un **menu principal à 4 sections** (`App.tsx`
   affectation (`CartonsConsoList.tsx`), pour la future simulation avec colis.
 - **Demandes d'achats** : génération des "affiches" des demandes « OK pour être commandées », à
   copier dans un mail pour S2C (`DemandesAchatsList.tsx`, `AfficheCaisseCard.tsx`).
+- **Alertes** (2026-10-19, `AlertesList.tsx`) : date d'expédition anticipée + commentaire par ligne
+  mère non livrée ; la date anticipée remplace le picking dans le calcul des alertes de commande.
 
 Utilisateur unique pour l'instant (l'auteur, développeur freelance), usage quotidien.
 Sessions de travail espacées dans le temps → **ce fichier est la mémoire de reprise du projet.**
@@ -42,6 +44,20 @@ Documents complémentaires à ce fichier :
 - **[docs/ADR/](docs/ADR/README.md)** : décisions structurantes actées (pourquoi ce choix plutôt
   qu'un autre), pour ne pas remettre en question sans contexte un arbitrage déjà tranché.
 
+Consignes propres à Caisses pour les procédures globales (`/reprise`, `/verifier`, `/bug`, `/audit`) :
+- **Suivi** : pas de `TODO.md` — tout est dans ce fichier : « Journal des étapes » (un bloc daté par
+  lot, avec « Validation » et « Non testé en conditions réelles ») et « Prochaines étapes » (Fait / À
+  faire / À réfléchir plus tard / Annulé). Le « À faire » a une copie sans termes techniques dans
+  Admin › « Feuille de route » (`src/routes/AdminFeuilleDeRoute.tsx`) : les tenir alignés.
+- **Vérifications** : `cd src-tauri && cargo check`, `cargo test --lib`, `npx tsc --noEmit`,
+  `npx vite build` ; `npm run tauri build -- --debug` avant de proposer une release. Pas d'outil
+  pour piloter l'interface : un parcours UI reste « non testé en conditions réelles ».
+- **Bugs** : [Bugs.md](Bugs.md), index **par symptôme**, sans numéro.
+- **Releases** : cf. « Distribution et releases » (bump des 3 fichiers, tag, brouillon publié par
+  l'utilisateur, soumission Defender) — proposer, jamais lancer de soi-même.
+- **Dépôt public** : ni nom d'entreprise, ni adresse d'API, ni identifiant, ni donnée réelle
+  (`docs/prive/` est ignoré par git).
+
 ## Stack technique et décisions d'architecture
 
 - **Framework desktop** : Tauri 2 (backend Rust, webview système — pas de runtime Electron/Chromium embarqué)
@@ -53,7 +69,8 @@ Documents complémentaires à ce fichier :
   dossier réseau partagé pour un usage multi-poste — voir avertissement dans "Prochaines étapes"
   sur les risques de corruption SQLite en écriture concurrente sur ce genre de partage.
 - **Pas de bouton "Enregistrer"** : chaque action UI (édition, assignation, création) déclenche
-  immédiatement l'appel Tauri correspondant et persiste en base.
+  immédiatement l'appel Tauri correspondant et persiste en base. Gestion des caisses garde un
+  brouillon local, mais l'envoie automatiquement après chaque action (depuis le 2026-10-20).
 
 ### Séparation des couches (important pour l'évolutivité multi-utilisateur future)
 
@@ -106,6 +123,8 @@ src-tauri/src/
     demandes.rs       → CRUD demande + bulk_create_demandes (collage Excel) + set_demande_validee,
                         table indépendante (pas de FK vers affaire — `affaire` = texte libre)
     demande_caisse.rs → CRUD sous-caisses d'une demande (multi-caisses par demande)
+    demande_alerte.rs → page Alertes : list_demande_alertes / set_demande_alerte (verrou
+                        « alertes », date + commentaire vides = ligne supprimée)
     carton_conso.rs   → CRUD cartons conso (list/create/update/delete, verrou « stock »,
                         nom AR_RAJA__XXXXX unique, dims int. + ext. obligatoires) +
                         list_colis_affaire / set_colis_carton / set_colis_carton_libre (carton
@@ -162,8 +181,8 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-10-15 : migrations `0001` à `0045` (dernière :
-`0045_add_piece_acceptee.sql` ; pas de `0019_reorder` — supprimé avant
+État au 2026-10-19 : migrations `0001` à `0046` (dernière :
+`0046_add_demande_alerte.sql` ; pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes).
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
 triées côté frontend par `demandeOptions.ts::comparerOption` (quantité de tête puis n° de
@@ -278,7 +297,14 @@ piece_acceptee (article_id PK REFERENCES article ON DELETE CASCADE, carton TEXT)
          -- pièce acceptée malgré « ne rentre pas dans le carton » (en diagonale), pour le carton
          -- `carton` (« conso:<id> » / « libre:<L>x<l>x<H> ») ; autre carton → alerte revient.
 
-section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" | "affaire:{id}"
+demande_alerte (demande_id PK REFERENCES demande ON DELETE CASCADE,  -- 0046, page Alertes
+         date_anticipee TEXT,  -- AAAA-MM-JJ, '' = aucune ; remplace date_picking dans
+                               --   domain/caissesACommander.ts (dateReference)
+         commentaire TEXT)
+         -- table à part : l'enregistrement de Gestion des caisses réécrit toute la ligne `demande`
+         -- depuis son brouillon et écraserait une date saisie entre-temps dans Alertes.
+
+section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" | "alertes" | "affaire:{id}"
               titulaire, acquis_le, dernier_battement,  -- trigramme + horodatages
               demandeur NULL, demande_le NULL, demande_statut)  -- 'aucune'|'en_attente'|'refusee'
 
@@ -2041,6 +2067,80 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   Migrations `0040` à `0045` (appliquées sur la base partagée au premier lancement).
 - Validation avant tag : `npx tsc --noEmit`, `cargo test --lib` (15),
   `npm run tauri build -- --debug`. Soumission Microsoft Defender à faire dès publication si
+  l'installeur est bloqué.
+
+### 2026-10-19 — Page « Alertes » : date d'expédition anticipée
+
+- **Demande de l'utilisateur** : une page « Alertes » (carte de l'accueil + onglet de la barre)
+  qui liste les affaires de Gestion des caisses avec Affaire / Date expé initiale (= picking) /
+  Date anticipée (sélecteur de date) / Commentaires (texte libre). Quand une expédition est
+  avancée, la date anticipée sert à l'alerte de commande de caisse.
+- **Décisions de l'utilisateur** : une ligne = une **ligne mère** (sous-caisses non listées) ;
+  lignes **non livrées, hors ACHSTOCK** ; la date anticipée remplace le picking pour **l'alerte
+  « À commander »** (7 jours, pastilles, barre des tâches), **« à commander cette semaine »** et
+  **« à rapatrier cette semaine »**, avec un **repère** « Anticipée : JJ/MM/AAAA » (orange) sous
+  la date de picking des lignes mères de Gestion des caisses ; **verrou propre « alertes »**,
+  chaque saisie enregistrée tout de suite. Pas pris en compte : délai des affiches de Demandes
+  d'achats, statistiques.
+- **Table à part** `demande_alerte` (migration `0046`) plutôt que colonnes de `demande` : cf.
+  modèle de données (écrasement par « Enregistrer » de Gestion des caisses).
+- Code : `commands/demande_alerte.rs`, `data/demandeAlertes.ts`, `routes/AlertesList.tsx`
+  (tri picking croissant, sans date à la fin, recherche par affaire, pastille « À commander »,
+  « Après la date initiale » si la date anticipée est plus tardive) ;
+  `domain/caissesACommander.ts` : `DatesAnticipees`, `datesAnticipees()`, `dateReference()`,
+  paramètre `anticipees` ajouté (avant `aujourdHui`) aux fonctions d'alerte,
+  `AffaireACommander.anticipee` (accueil : « Expé anticipée JJ/MM/AAAA » en orange, picking
+  initial en infobulle). Chargées par `Accueil`, `useAlerteCommande`, `DemandesList`.
+  Documentation utilisateur : section « Alertes » ajoutée (nouvel `id`, aucune clé décalée) ;
+  documentation technique : table citée.
+- Validation : `cargo test --lib` (16, + enregistrement / effacement / verrou / suppression en
+  cascade), `npx tsc --noEmit`, `npx vite build`, calcul vérifié sur 6 cas (fichier jetable).
+  **Non testé en conditions réelles**.
+
+### 2026-10-20 — Gestion des caisses : enregistrement automatique
+
+- **Repère « Anticipée »** (Gestion des caisses) sur deux lignes : « Anticipée » puis la date.
+- **Décision de l'utilisateur** : plus de boutons « Enregistrer » ni « Annuler » dans Gestion des
+  caisses (revient sur le brouillon + Annuler du 2026-09-02, accepté : plus de retour en arrière
+  global) ; **confirmation avant « Livré »** (« … Le stock de AR_CAISS_… sera mis à jour. » si la
+  ligne utilise une `AR_CAISS_`), à retirer si elle s'avère trop lourde à l'usage.
+- **Choix d'implémentation** (`DemandesList.tsx`) : le brouillon et la comparaison avec l'état
+  serveur sont gardés tels quels — `handleEnregistrer` devient `envoyerModifications`, lancé par
+  un effet 300 ms après chaque changement du brouillon (groupe les cascades d'une même action,
+  ex. « Livré » sur la mère et ses sous-caisses), un envoi à la fois (`enregistrementRef`).
+  Créations, sous-caisses, mouvements de stock, report vers Simulations : même code qu'avant.
+  En fin d'envoi, l'état serveur = l'instantané envoyé ; dans le brouillon, seuls les ids
+  temporaires sont remplacés (une modification faite pendant l'envoi — confirmations — part au
+  suivant). **En cas d'erreur** (main perdue, base injoignable) : message rouge + rechargement
+  depuis la base (sinon une création à moitié envoyée serait refaite en double).
+  Badge « Enregistrement… » pendant l'envoi. Le garde de sortie d'`App` ne se déclenche plus que
+  pendant un envoi en cours.
+- **Conséquence** : les confirmations qui arrivaient en lot à « Enregistrer » arrivent à chaque
+  action. Pour les dimensions (3 questions de report vers Simulations), **décision du même jour** :
+  sur une **ligne mère**, un clic sur une dimension ouvre `components/DimensionsDemandeDialog.tsx`
+  (L / l / H ensemble + case « Reporter aussi sur la caisse « X » de Simulations », cochée par
+  défaut, affichée seulement si la caisse liée a d'autres dimensions ; caisse en stock retirée si
+  les dimensions changent, signalé). Le report y est fait directement
+  (`DemandesList::reporterDimsSurSimu`) et `repercuterDimsVersSimulation` ne repose pas la
+  question pour cette ligne (`dimsDejaTraitees`). Recherche de la caisse liée factorisée
+  (`caisseSimuLiee`). Sous-lignes : saisie cellule par cellule inchangée (pas de report vers
+  Simulations depuis une sous-ligne). Repère d'Alertes : « Anticipée : » puis la date.
+- Documentation utilisateur (textes, pas de structure) et technique mises à jour.
+- Validation : `npx tsc --noEmit`, `npx vite build`. **Non testé en conditions réelles** — à
+  vérifier en particulier : création d'une caisse avec sous-caisses, « Livré » / « Non livré »
+  avec une `AR_CAISS_` (stock), sélection d'une caisse de récup prise par une autre ligne, perte
+  de la main pendant une saisie.
+
+### 2026-10-20 — Release 0.17.0
+
+- Contenu : page **Alertes** (date d'expédition anticipée + commentaire, prise en compte par
+  l'alerte « À commander » et les blocs de l'accueil, repère dans Gestion des caisses) ;
+  **Gestion des caisses en enregistrement automatique** (plus d'« Enregistrer » / « Annuler »,
+  confirmation avant « Livré », fenêtre des dimensions des lignes mères avec report vers
+  Simulations). Migration `0046` (appliquée sur la base partagée au premier lancement).
+- Validation avant tag : `npx tsc --noEmit`, `cargo test --lib` (16), `npx vite build`,
+  `npm run tauri build -- --debug` (dossier de compilation à part : l'instance de dev tenait
+  `target/debug/caisses.exe`). Soumission Microsoft Defender à faire dès publication si
   l'installeur est bloqué.
 
 ## Prochaines étapes

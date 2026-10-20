@@ -229,6 +229,13 @@ export interface NewCaisseStock {
 }
 
 // 0040 — carton consommable en stock (Consommable › Cartons conso), sans affectation.
+// 0046 — page « Alertes » : date d'expédition anticipée + commentaire d'une ligne mère.
+export interface DemandeAlerte {
+  demande_id: number;
+  date_anticipee: string; // AAAA-MM-JJ, "" = aucune
+  commentaire: string;
+}
+
 export interface CartonConso {
   id: number;
   nom: string;

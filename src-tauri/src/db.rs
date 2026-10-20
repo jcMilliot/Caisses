@@ -190,6 +190,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0045_add_piece_acceptee",
         include_str!("../../migrations/0045_add_piece_acceptee.sql"),
     ),
+    (
+        "0046_add_demande_alerte",
+        include_str!("../../migrations/0046_add_demande_alerte.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {

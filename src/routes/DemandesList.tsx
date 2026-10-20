@@ -6,7 +6,10 @@ import { caisseStockApi } from "../data/caisseStock";
 import { affairesApi } from "../data/affaires";
 import { caissesApi } from "../data/caisses";
 import { optionsListeApi } from "../data/optionsListe";
+import { demandeAlertesApi } from "../data/demandeAlertes";
+import { datesAnticipees } from "../domain/caissesACommander";
 import DemandesTable from "../components/DemandesTable";
+import DimensionsDemandeDialog, { type Dimensions } from "../components/DimensionsDemandeDialog";
 import AjouterDemandesDialog from "../components/AjouterDemandesDialog";
 import GererReferencesDialog from "../components/GererReferencesDialog";
 import LockBanner from "../components/LockBanner";
@@ -26,6 +29,8 @@ import {
   estDemandeCaisseValidee,
 } from "../domain/demandeOptions";
 import type {
+  Caisse,
+  DemandeAlerte,
   Affaire,
   Demande,
   NewDemande,
@@ -93,9 +98,10 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   const lock = useSectionLock("demandes", trigramme);
   const readOnly = lock.status !== "held";
   const [demandes, setDemandes] = useState<Demande[]>([]);
-  // Copie éditable localement : les modifications de champs/cases à cocher et les nouvelles
-  // lignes n'atteignent le serveur qu'au clic sur "Enregistrer" (pas de sauvegarde auto par
-  // édition, pour éviter les allers-retours réseau à chaque frappe/coche).
+  // Copie éditable localement. Depuis le 2026-10-20, plus de bouton « Enregistrer » : chaque action
+  // modifie le brouillon, puis `enregistrer()` est lancé automatiquement (léger délai pour grouper
+  // les modifications d'une même action, ex. « Livré » sur la mère et ses sous-caisses) et envoie
+  // l'écart entre le brouillon et l'état serveur (`demandes`).
   const [brouillon, setBrouillon] = useState<Demande[]>([]);
   const [demandeCaisses, setDemandeCaisses] = useState<DemandeCaisse[]>([]);
   // Référence serveur des sous-caisses, pour détecter les sous-caisses brouillon (id < 0) créées
@@ -109,6 +115,13 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   const [lignesEtendues, setLignesEtendues] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [enregistrement, setEnregistrement] = useState(false);
+  const [erreurEnregistrement, setErreurEnregistrement] = useState<string | null>(null);
+  // Fenêtre des dimensions d'une ligne mère (caisseSimu : undefined = recherche en cours).
+  const [dimsEnEdition, setDimsEnEdition] = useState<{ demande: Demande; caisseSimu: Caisse | null | undefined } | null>(null);
+  // Lignes dont le report des dimensions vers Simulations a déjà été décidé dans cette fenêtre :
+  // repercuterDimsVersSimulation ne repose pas la question.
+  const dimsDejaTraitees = useRef(new Set<number>());
+  const enregistrementRef = useRef(false);
   const [ajoutOuvert, setAjoutOuvert] = useState(false);
   const [gestionRefsOuvert, setGestionRefsOuvert] = useState(false);
   const [slotOptions, setSlotOptions] = useState<HTMLDivElement | null>(null);
@@ -134,6 +147,8 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
 
   // Taux de remplissage des affaires simulées (colonne « Taux de remplissage », 2026-10-02).
   const [remplissage, setRemplissage] = useState<RemplissageCaisse[]>([]);
+  // Dates d'expédition anticipées de la page Alertes (lecture seule ici).
+  const [anticipees, setAnticipees] = useState<Map<number, string>>(new Map());
   // Taux par ligne : caisse(s) de Simulations liées à la ligne mère ou à la sous-caisse.
   function seuilAffaire(nomAffaire: string): number {
     return affaires.find((a) => memeNomAffaire(a.nom, nomAffaire))?.seuil_defaut ?? 70;
@@ -153,15 +168,17 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   async function reload() {
     setLoading(true);
     try {
-      const [d, dc, cs, opts, aff, remp] = await Promise.all([
+      const [d, dc, cs, opts, aff, remp, alertes] = await Promise.all([
         demandesApi.list(),
         demandeCaisseApi.listAll(),
         caisseStockApi.list(),
         optionsListeApi.list(),
         affairesApi.list(),
         affairesApi.remplissage().catch(() => [] as RemplissageCaisse[]),
+        demandeAlertesApi.list().catch(() => [] as DemandeAlerte[]),
       ]);
       setRemplissage(remp);
+      setAnticipees(datesAnticipees(alertes));
       setDemandes(d);
       setBrouillon(d);
       setDemandeCaisses(dc);
@@ -230,7 +247,8 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     "type_ouverture",
   ];
 
-  async function handleEditLocal(id: number, patch: Partial<Demande>) {
+  // Renvoie false si l'utilisateur a refusé une confirmation (rien n'est modifié).
+  async function handleEditLocal(id: number, patch: Partial<Demande>): Promise<boolean> {
     const demandeActuelle = brouillonRef.current.find((d) => d.id === id);
     if (demandeActuelle) patch = synchroCdeSelonStock(demandeActuelle, detacherStockSiDimsModifiees(demandeActuelle, patch));
     // Passage en 4B / 4C : les caisses en stock de la ligne et de ses sous-caisses seront retirées
@@ -244,7 +262,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
           `Pas de caisse en stock pour un envoi 4B / 4C : ${nbStock} caisse(s) en stock sélectionnée(s) sur cette ligne et ses sous-caisses seront retirées. Continuer ?`,
           "Caisse en stock",
         );
-        if (!confirme) return;
+        if (!confirme) return false;
       }
     }
     const toucheChampConditionnant = CHAMPS_CONDITIONNANT_OK_CDE.some((champ) => champ in patch);
@@ -256,7 +274,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
           `Cette modification videra le(s) champ(s) suivant(s), nécessaire(s) à la commande : ${manquants.join(", ")}. La caisse ne sera plus « OK pour être commandée ». Confirmer ce changement ?`,
           "Modification bloquante pour la commande",
         );
-        if (!confirme) return;
+        if (!confirme) return false;
         patch = { ...patch, ok_pour_passer_cde: false };
       }
     }
@@ -273,7 +291,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     const cascade: Partial<DemandeCaisse> = {};
     if ("date_picking" in patch) cascade.date_picking = patch.date_picking;
     if ("type_envoi_caisse" in patch) cascade.type_envoi_caisse = patch.type_envoi_caisse;
-    if (Object.keys(cascade).length === 0) return;
+    if (Object.keys(cascade).length === 0) return true;
 
     setDemandeCaisses((prev) =>
       prev.map((c) => {
@@ -291,27 +309,77 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
         return { ...c, ...cascade, ...synchroCdeSelonStock(c, regles) };
       }),
     );
+    return true;
+  }
+
+  // Caisse de Simulations liée à une ligne mère : lien explicite (caisse.demande_id), à défaut la
+  // caisse qui porte le nom de l'affaire et n'est pas liée à une sous-caisse de demande.
+  async function caisseSimuLiee(d: Demande): Promise<{ affaire: Affaire; caisse: Caisse } | null> {
+    const affaire = (await affairesApi.list()).find((a) => memeNomAffaire(a.nom, d.affaire));
+    if (!affaire) return null;
+    const caisses = await caissesApi.list(affaire.id);
+    const memeNom = caisses.filter((c) => c.nom.trim().toLowerCase() === d.affaire.trim().toLowerCase());
+    const caisse =
+      caisses.find((c) => c.demande_id === d.id) ?? memeNom.find((c) => c.demande_caisse_id === null) ?? memeNom[0];
+    return caisse ? { affaire, caisse } : null;
+  }
+
+  async function reporterDimsSurSimu(caisse: Caisse, dims: Dimensions) {
+    try {
+      await caissesApi.update(
+        caisse.id,
+        caisse.nom,
+        dims.longueur_mm,
+        dims.largeur_mm,
+        dims.hauteur_mm,
+        caisse.seuil_pct,
+        caisse.couleur,
+        caisse.type_envoi_caisse,
+        trigramme,
+      );
+    } catch (e) {
+      await confirmerAction(
+        `Impossible de mettre à jour la caisse « ${caisse.nom} » dans Simulations : ${e}. ` +
+          `L'affaire est peut-être ouverte sur un autre poste. La demande, elle, a bien été enregistrée.`,
+        "Synchronisation Simulations échouée",
+      );
+    }
+  }
+
+  function handleEditerDimensions(demande: Demande) {
+    setDimsEnEdition({ demande, caisseSimu: undefined });
+    caisseSimuLiee(demande)
+      .then((r) => r?.caisse ?? null)
+      .catch(() => null)
+      .then((caisseSimu) => setDimsEnEdition((e) => (e && e.demande.id === demande.id ? { ...e, caisseSimu } : e)));
+  }
+
+  async function handleEnregistrerDimensions(demande: Demande, dims: Dimensions, reporter: boolean) {
+    const caisseSimu = dimsEnEdition?.caisseSimu ?? null;
+    setDimsEnEdition(null);
+    const change =
+      dims.longueur_mm !== demande.longueur_mm || dims.largeur_mm !== demande.largeur_mm || dims.hauteur_mm !== demande.hauteur_mm;
+    if (change) {
+      if (!(await handleEditLocal(demande.id, dims))) return;
+      dimsDejaTraitees.current.add(demande.id);
+    }
+    if (reporter && caisseSimu) await reporterDimsSurSimu(caisseSimu, dims);
   }
 
   // Après enregistrement : si une demande dont les dimensions ont changé (ou qui vient d'être
   // créée) correspond à une affaire Simulations existante, propose de mettre à jour la caisse
   // interne du même nom. Une confirmation par affaire concernée.
   async function repercuterDimsVersSimulation(modifiees: Demande[], creees: Demande[]) {
-    const affaires = await affairesApi.list();
     const dejaProposees = new Set<string>();
 
     async function traiter(d: Demande, dimsOntChange: boolean) {
       if (!dimsOntChange) return;
-      const affaire = affaires.find((a) => memeNomAffaire(a.nom, d.affaire));
-      if (!affaire || dejaProposees.has(affaire.nom)) return;
+      // Report déjà décidé dans la fenêtre des dimensions : pas de seconde question.
+      if (dimsDejaTraitees.current.delete(d.id)) return;
+      const lien = await caisseSimuLiee(d);
+      if (!lien || dejaProposees.has(lien.affaire.nom)) return;
+      const { affaire, caisse } = lien;
       dejaProposees.add(affaire.nom);
-      const caisses = await caissesApi.list(affaire.id);
-      // Priorité au lien explicite (caisse.demande_id) ; à défaut, la caisse "mère" = celle qui
-      // porte le nom de l'affaire et n'est pas liée à une sous-caisse de demande.
-      const memeNom = caisses.filter((c) => c.nom.trim().toLowerCase() === d.affaire.trim().toLowerCase());
-      const caisse =
-        caisses.find((c) => c.demande_id === d.id) ?? memeNom.find((c) => c.demande_caisse_id === null) ?? memeNom[0];
-      if (!caisse) return;
       const identique =
         Math.abs(caisse.longueur_mm - d.longueur_mm) < 0.5 &&
         Math.abs(caisse.largeur_mm - d.largeur_mm) < 0.5 &&
@@ -322,25 +390,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
         "Synchroniser avec Simulations",
       );
       if (!ok) return;
-      try {
-        await caissesApi.update(
-          caisse.id,
-          caisse.nom,
-          d.longueur_mm,
-          d.largeur_mm,
-          d.hauteur_mm,
-          caisse.seuil_pct,
-          caisse.couleur,
-          caisse.type_envoi_caisse,
-          trigramme,
-        );
-      } catch (e) {
-        await confirmerAction(
-          `Impossible de mettre à jour la caisse « ${caisse.nom} » dans Simulations : ${e}. ` +
-            `L'affaire est peut-être ouverte sur un autre poste. La demande, elle, a bien été enregistrée.`,
-          "Synchronisation Simulations échouée",
-        );
-      }
+      await reporterDimsSurSimu(caisse, d);
     }
 
     for (const d of creees) await traiter(d, true);
@@ -401,7 +451,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     return ["livré", "livre", "livrée", "livree", "rapatriée", "rapatriee"].includes(o);
   }
 
-  function handleValider(id: number, validee: boolean) {
+  async function handleValider(id: number, validee: boolean) {
     const demande = brouillonRef.current.find((d) => d.id === id);
     if (!validee) {
       // Dévalider : retirer aussi l'observation « Livré/Rapatriée » (sinon estDemandeValidee la
@@ -415,6 +465,15 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
       }
       return;
     }
+    // Plus d'« Annuler » depuis l'enregistrement automatique : petite sécurité avant de livrer
+    // (le stock des AR_CAISS_ est mis à jour tout de suite). Décision du 2026-10-20.
+    const nomCaisse = caissesStock.find((c) => c.id === demande?.caisse_stock_id)?.nom;
+    const ok = await confirmerAction(
+      `Marquer « ${demande?.affaire ?? ""} » comme livrée ?` +
+        (nomCaisse && estArCaiss(nomCaisse) ? ` Le stock de ${nomCaisse} sera mis à jour.` : ""),
+      "Livré",
+    );
+    if (!ok) return;
     if (demande?.cde_passee_affaire) {
       handleEditLocal(id, { validee, observations: "Livré" });
     } else if (demande?.cde_passee_achat_stock) {
@@ -432,13 +491,13 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   }
 
   function handleCreerDemandeCaisse(demande: Demande) {
-    // Toujours en brouillon (id temporaire négatif) — persistée à l'enregistrement.
+    // Id temporaire négatif, créée en base par l'enregistrement automatique qui suit.
     setDemandeCaisses((prev) => [...prev, nouvelleSousCaisseBrouillon(demande, prochainIdTemporaire--)]);
     setLignesEtendues((prev) => new Set(prev).add(demande.id));
   }
 
-  // Édition d'une sous-caisse : purement locale (brouillon) — persistée dans handleEnregistrer,
-  // comme les lignes mères. « Annuler » restaure l'état serveur.
+  // Édition d'une sous-caisse : brouillon, envoyé par l'enregistrement automatique comme les
+  // lignes mères.
   function handleEditDemandeCaisse(id: number, patch: Partial<DemandeCaisse>) {
     setDemandeCaisses((prev) =>
       prev.map((c) => (c.id === id ? { ...c, ...synchroCdeSelonStock(c, detacherStockSiDimsModifiees(c, patch)) } : c)),
@@ -477,7 +536,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     await caisseStockApi.transfer(cs.id, demandeId, trigramme);
     // Retire le lien côté état local, en miroir du UPDATE fait côté serveur. La ligne qui perd la
     // caisse repasse en « Cde passée sur affaire » (synchroCdeSelonStock) : modification du
-    // brouillon seulement, enregistrée avec le reste au clic sur « Enregistrer ».
+    // brouillon, envoyée par l'enregistrement automatique.
     setDemandes((prev) => prev.map((d) => (d.id !== demandeId && d.caisse_stock_id === cs.id ? { ...d, caisse_stock_id: null } : d)));
     setBrouillon((prev) =>
       prev.map((d) =>
@@ -505,8 +564,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   }
 
   async function handleSelectStock(demandeId: number, caisseStockId: number | null) {
-    // Édition brouillon comme le reste du tableau — rien n'est persisté avant « Enregistrer »,
-    // et « Annuler » restaure les dimensions d'origine.
+    // Édition brouillon comme le reste du tableau, envoyée par l'enregistrement automatique.
     if (caisseStockId === null) {
       noterOuverture(`d:${demandeId}`, null, null);
       handleEditLocal(demandeId, { caisse_stock_id: null });
@@ -615,129 +673,160 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     });
   }
 
-  async function handleEnregistrer() {
+  // Enregistrement automatique (2026-10-20) : un seul à la fois (`enregistrementRef`). Relancé
+  // après chaque modification du brouillon (effet ci-dessous) ; une modification faite pendant
+  // un enregistrement (confirmations…) est envoyée par le suivant. En cas d'erreur (main perdue,
+  // base injoignable…) : message + rechargement depuis la base — l'état local pourrait sinon
+  // contenir une création à moitié envoyée, refaite en double au prochain enregistrement.
+  async function enregistrer() {
+    if (enregistrementRef.current) return;
+    enregistrementRef.current = true;
     setEnregistrement(true);
     try {
-      const aCreer = brouillon.filter((d) => d.id < 0);
-      const aModifier = brouillon.filter((d) => {
-        if (d.id < 0) return false;
-        const original = demandes.find((o) => o.id === d.id);
-        return original && JSON.stringify(original) !== JSON.stringify(d);
-      });
-      // Mapping id temporaire (brouillon, < 0) → id réel une fois la demande créée en base —
-      // sert à reconstruire le state local sans reload() complet.
-      const idsReelsParIdTemporaire = new Map<number, number>();
-      // Sous-caisses brouillon créées en base, avec leur id réel (id temporaire → objet créé).
-      const sousCaissesCreeesParIdTemporaire = new Map<number, DemandeCaisse>();
-      const caissesStockValidation = new Map<number, boolean>();
-
-      if (aCreer.length > 0) {
-        // bulkCreate renvoie les demandes créées dans l'ordre d'entrée : on relie chaque id
-        // temporaire à son id réel pour persister ensuite les sous-caisses brouillon.
-        const creees = await demandesApi.bulkCreate(
-          aCreer.map(({ id: _id, ordre: _ordre, validee: _validee, ...n }) => n),
-          trigramme,
-        );
-        for (let i = 0; i < aCreer.length; i++) {
-          const idReel = creees[i]?.id;
-          if (idReel === undefined) continue;
-          idsReelsParIdTemporaire.set(aCreer[i].id, idReel);
-          const sousCaisses = demandeCaisses.filter((c) => c.demande_id === aCreer[i].id);
-          for (const sc of sousCaisses) {
-            const creee = await demandeCaisseApi.create(sousCaisseSansId(sc, idReel), trigramme);
-            sousCaissesCreeesParIdTemporaire.set(sc.id, creee);
-          }
-        }
-      }
-      // Stock AR_CAISS_ (décisions 2026-10-01) : lignes qui passent de livrée à non livrée →
-      // proposer de remettre en stock ce qui avait été décompté, AVANT d'enregistrer (la remise
-      // vise la caisse en stock encore liée en base).
-      const { devalidees, livrees } = transitionsLivraison();
-      await proposerRemisesEnStock(devalidees);
-
-      for (const d of aModifier) {
-        const { id, ordre: _ordre, validee, ...n } = d;
-        const original = demandes.find((o) => o.id === id);
-        await demandesApi.update(id, n, trigramme);
-        if (!original || original.validee !== validee) {
-          await demandesApi.setValidee(id, validee, trigramme);
-          // Validation → caisses de stock utilisées marquées livrées ; dévalidation → remises
-          // disponibles (sinon elles restaient masquées de Caisses en stock et des menus Stock).
-          const changement = validee && (!original || !original.validee) ? true : !validee && original?.validee ? false : null;
-          if (changement !== null) {
-            const ids = [d.caisse_stock_id, ...demandeCaisses.filter((c) => c.demande_id === id).map((c) => c.caisse_stock_id)];
-            for (const csId of ids) {
-              if (csId === null) continue;
-              await caisseStockApi.setValidee(csId, changement, trigramme);
-              caissesStockValidation.set(csId, changement);
-            }
-          }
-        }
-      }
-
-      // Sous-caisses sur demandes déjà enregistrées : créations (id < 0 rattachées à une mère
-      // id > 0), modifications et suppressions.
-      for (const sc of demandeCaisses.filter((c) => c.id < 0 && c.demande_id > 0)) {
-        const creee = await demandeCaisseApi.create(sousCaisseSansId(sc, sc.demande_id), trigramme);
-        sousCaissesCreeesParIdTemporaire.set(sc.id, creee);
-      }
-      for (const sc of demandeCaisses.filter((c) => c.id > 0)) {
-        const original = demandeCaissesServeur.find((o) => o.id === sc.id);
-        if (original && JSON.stringify(original) !== JSON.stringify(sc)) {
-          const { id: _id, ordre: _ordre, ...base } = sc;
-          await demandeCaisseApi.update(sc.id, base, trigramme);
-        }
-      }
-      const idsSousCaissesSupprimees = new Set<number>();
-      for (const sc of sousCaissesSupprimees) {
-        const demandeParente = demandes.find((d) => d.id === sc.demande_id);
-        if (demandeParente) await supprimerCaisseLieeSiConfirmee(demandeParente.affaire, sc.id);
-        await demandeCaisseApi.delete(sc.id, trigramme);
-        idsSousCaissesSupprimees.add(sc.id);
-      }
-      setSousCaissesSupprimees([]);
-
-      // Lignes qui viennent d'être livrées : leur quantité est retirée du stock de leur AR_CAISS_
-      // gérée (ou ajoutée pour une ligne ACHSTOCK = réception), une fois les lignes enregistrées
-      // (le backend relit caisse et quantité en base).
-      let stockModifie = devalidees.length > 0;
-      for (const l of livrees) {
-        if (await caisseStockApi.decompterLivraison(l.table, l.id, trigramme)) stockModifie = true;
-      }
-      if (stockModifie) setCaissesStock(await caisseStockApi.list());
-
-      // Répercussion des modifs de dimensions sur la simulation, si l'affaire existe.
-      await repercuterDimsVersSimulation(aModifier, aCreer);
-
-      // Reconstruction du state local à partir de ce qu'on vient d'envoyer — pas de reload()
-      // complet (5 appels réseau), qui provoquait un "flash" visuel du tableau à chaque
-      // enregistrement. `brouillon` porte déjà les valeurs exactes envoyées au serveur ; seuls
-      // les ids temporaires (< 0) doivent être remplacés par les ids réels.
-      const demandesFinal = brouillon.map((d) => {
-        const idReel = idsReelsParIdTemporaire.get(d.id);
-        return idReel !== undefined ? { ...d, id: idReel } : d;
-      });
-      setDemandes(demandesFinal);
-      setBrouillon(demandesFinal);
-
-      const demandeCaissesFinal = demandeCaisses
-        .filter((c) => !idsSousCaissesSupprimees.has(c.id))
-        .map((c) => {
-          const creee = sousCaissesCreeesParIdTemporaire.get(c.id);
-          if (creee) return creee;
-          const idDemandeReel = idsReelsParIdTemporaire.get(c.demande_id);
-          return idDemandeReel !== undefined ? { ...c, demande_id: idDemandeReel } : c;
-        });
-      setDemandeCaisses(demandeCaissesFinal);
-      setDemandeCaissesServeur(demandeCaissesFinal);
-
-      if (caissesStockValidation.size > 0) {
-        setCaissesStock((prev) =>
-          prev.map((cs) => (caissesStockValidation.has(cs.id) ? { ...cs, validee: caissesStockValidation.get(cs.id)! } : cs)),
-        );
-      }
+      await envoyerModifications();
+      setErreurEnregistrement(null);
+    } catch (e) {
+      setErreurEnregistrement(`La dernière modification n'a pas pu être enregistrée : ${e}`);
+      dimsDejaTraitees.current.clear();
+      await reload().catch(() => {});
     } finally {
+      enregistrementRef.current = false;
       setEnregistrement(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!modifie || readOnly || loading) return;
+    const t = window.setTimeout(() => {
+      if (!enregistrementRef.current) enregistrer();
+    }, 300);
+    return () => window.clearTimeout(t);
+    // enregistrer() relit l'état du rendu courant ; relancé à chaque changement du brouillon.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brouillon, demandeCaisses, sousCaissesSupprimees, demandes, readOnly, loading]);
+
+  async function envoyerModifications() {
+    const aCreer = brouillon.filter((d) => d.id < 0);
+    const aModifier = brouillon.filter((d) => {
+      if (d.id < 0) return false;
+      const original = demandes.find((o) => o.id === d.id);
+      return original && JSON.stringify(original) !== JSON.stringify(d);
+    });
+    // Mapping id temporaire (brouillon, < 0) → id réel une fois la demande créée en base —
+    // sert à reconstruire le state local sans reload() complet.
+    const idsReelsParIdTemporaire = new Map<number, number>();
+    // Sous-caisses brouillon créées en base, avec leur id réel (id temporaire → objet créé).
+    const sousCaissesCreeesParIdTemporaire = new Map<number, DemandeCaisse>();
+    const caissesStockValidation = new Map<number, boolean>();
+
+    if (aCreer.length > 0) {
+      // bulkCreate renvoie les demandes créées dans l'ordre d'entrée : on relie chaque id
+      // temporaire à son id réel pour persister ensuite les sous-caisses brouillon.
+      const creees = await demandesApi.bulkCreate(
+        aCreer.map(({ id: _id, ordre: _ordre, validee: _validee, ...n }) => n),
+        trigramme,
+      );
+      for (let i = 0; i < aCreer.length; i++) {
+        const idReel = creees[i]?.id;
+        if (idReel === undefined) continue;
+        idsReelsParIdTemporaire.set(aCreer[i].id, idReel);
+        const sousCaisses = demandeCaisses.filter((c) => c.demande_id === aCreer[i].id);
+        for (const sc of sousCaisses) {
+          const creee = await demandeCaisseApi.create(sousCaisseSansId(sc, idReel), trigramme);
+          sousCaissesCreeesParIdTemporaire.set(sc.id, creee);
+        }
+      }
+    }
+    // Stock AR_CAISS_ (décisions 2026-10-01) : lignes qui passent de livrée à non livrée →
+    // proposer de remettre en stock ce qui avait été décompté, AVANT d'enregistrer (la remise
+    // vise la caisse en stock encore liée en base).
+    const { devalidees, livrees } = transitionsLivraison();
+    await proposerRemisesEnStock(devalidees);
+
+    for (const d of aModifier) {
+      const { id, ordre: _ordre, validee, ...n } = d;
+      const original = demandes.find((o) => o.id === id);
+      await demandesApi.update(id, n, trigramme);
+      if (!original || original.validee !== validee) {
+        await demandesApi.setValidee(id, validee, trigramme);
+        // Validation → caisses de stock utilisées marquées livrées ; dévalidation → remises
+        // disponibles (sinon elles restaient masquées de Caisses en stock et des menus Stock).
+        const changement = validee && (!original || !original.validee) ? true : !validee && original?.validee ? false : null;
+        if (changement !== null) {
+          const ids = [d.caisse_stock_id, ...demandeCaisses.filter((c) => c.demande_id === id).map((c) => c.caisse_stock_id)];
+          for (const csId of ids) {
+            if (csId === null) continue;
+            await caisseStockApi.setValidee(csId, changement, trigramme);
+            caissesStockValidation.set(csId, changement);
+          }
+        }
+      }
+    }
+
+    // Sous-caisses sur demandes déjà enregistrées : créations (id < 0 rattachées à une mère
+    // id > 0), modifications et suppressions.
+    for (const sc of demandeCaisses.filter((c) => c.id < 0 && c.demande_id > 0)) {
+      const creee = await demandeCaisseApi.create(sousCaisseSansId(sc, sc.demande_id), trigramme);
+      sousCaissesCreeesParIdTemporaire.set(sc.id, creee);
+    }
+    for (const sc of demandeCaisses.filter((c) => c.id > 0)) {
+      const original = demandeCaissesServeur.find((o) => o.id === sc.id);
+      if (original && JSON.stringify(original) !== JSON.stringify(sc)) {
+        const { id: _id, ordre: _ordre, ...base } = sc;
+        await demandeCaisseApi.update(sc.id, base, trigramme);
+      }
+    }
+    const idsSousCaissesSupprimees = new Set<number>();
+    for (const sc of sousCaissesSupprimees) {
+      const demandeParente = demandes.find((d) => d.id === sc.demande_id);
+      if (demandeParente) await supprimerCaisseLieeSiConfirmee(demandeParente.affaire, sc.id);
+      await demandeCaisseApi.delete(sc.id, trigramme);
+      idsSousCaissesSupprimees.add(sc.id);
+    }
+    setSousCaissesSupprimees((prev) => prev.filter((sc) => !idsSousCaissesSupprimees.has(sc.id)));
+
+    // Lignes qui viennent d'être livrées : leur quantité est retirée du stock de leur AR_CAISS_
+    // gérée (ou ajoutée pour une ligne ACHSTOCK = réception), une fois les lignes enregistrées
+    // (le backend relit caisse et quantité en base).
+    let stockModifie = devalidees.length > 0;
+    for (const l of livrees) {
+      if (await caisseStockApi.decompterLivraison(l.table, l.id, trigramme)) stockModifie = true;
+    }
+    if (stockModifie) setCaissesStock(await caisseStockApi.list());
+
+    // Répercussion des modifs de dimensions sur la simulation, si l'affaire existe.
+    await repercuterDimsVersSimulation(aModifier, aCreer);
+
+    // Reconstruction du state local à partir de ce qu'on vient d'envoyer — pas de reload()
+    // complet (5 appels réseau), qui provoquait un "flash" visuel du tableau à chaque
+    // enregistrement. L'état serveur = l'instantané envoyé (ids temporaires remplacés) ; le
+    // brouillon, lui, peut avoir changé pendant l'envoi (confirmations…) : on n'y remplace que
+    // les ids, ses autres changements partiront au prochain enregistrement.
+    const idReel = (id: number) => idsReelsParIdTemporaire.get(id) ?? id;
+    setDemandes(brouillon.map((d) => ({ ...d, id: idReel(d.id) })));
+    setBrouillon((prev) => prev.map((d) => (idsReelsParIdTemporaire.has(d.id) ? { ...d, id: idReel(d.id) } : d)));
+
+    const versServeur = (c: DemandeCaisse): DemandeCaisse => {
+      const creee = sousCaissesCreeesParIdTemporaire.get(c.id);
+      return creee
+        ? { ...c, id: creee.id, ordre: creee.ordre, demande_id: creee.demande_id }
+        : { ...c, demande_id: idReel(c.demande_id) };
+    };
+    setDemandeCaissesServeur(
+      demandeCaisses
+        .filter((c) => !idsSousCaissesSupprimees.has(c.id) && (c.id > 0 || sousCaissesCreeesParIdTemporaire.has(c.id)))
+        .map(versServeur),
+    );
+    setDemandeCaisses((prev) =>
+      prev
+        .filter((c) => !idsSousCaissesSupprimees.has(c.id))
+        .map((c) => (sousCaissesCreeesParIdTemporaire.has(c.id) || idsReelsParIdTemporaire.has(c.demande_id) ? versServeur(c) : c)),
+    );
+
+    if (caissesStockValidation.size > 0) {
+      setCaissesStock((prev) =>
+        prev.map((cs) => (caissesStockValidation.has(cs.id) ? { ...cs, validee: caissesStockValidation.get(cs.id)! } : cs)),
+      );
     }
   }
 
@@ -796,12 +885,6 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     for (const l of aAnnuler) await caisseStockApi.remettreStockLigne(l.table, l.id, trigramme);
   }
 
-  function handleAnnuler() {
-    setBrouillon(demandes);
-    setDemandeCaisses(demandeCaissesServeur);
-    setSousCaissesSupprimees([]);
-  }
-
   // Verrou libéré : on reprend la main puis on recharge (l'autre poste a pu enregistrer entre-temps).
   async function handlePrendreLaMain() {
     if (
@@ -842,7 +925,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
           <h1 className="page-title">Tableau de gestion des caisses</h1>
         </div>
         <div className="page-actions" style={{ justifyContent: "flex-end" }}>
-          {modifie && <span className="badge badge-warn">● Modifications non enregistrées</span>}
+          {enregistrement && <span className="badge badge-warn">Enregistrement…</span>}
           <button className="btn btn-info" onClick={() => setAjoutOuvert(true)} disabled={readOnly}>
             + Créer une nouvelle caisse
           </button>
@@ -850,14 +933,6 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
             Gérer les références
           </button>
           <div ref={setSlotOptions} style={{ display: "inline-flex" }} />
-          {modifie && (
-            <button className="btn" onClick={handleAnnuler}>
-              Annuler
-            </button>
-          )}
-          <button className="btn btn-success-solid" disabled={!modifie || enregistrement || readOnly} onClick={handleEnregistrer}>
-            {enregistrement ? "Enregistrement…" : "Enregistrer"}
-          </button>
         </div>
       </div>
 
@@ -873,6 +948,12 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
           verrouLibre={lock.verrouLibre}
           onPrendreLaMain={handlePrendreLaMain}
         />
+      )}
+
+      {erreurEnregistrement && (
+        <div className="panel" style={{ padding: "10px 14px", marginBottom: 12, background: "var(--danger-bg)", color: "var(--danger-text)" }}>
+          {erreurEnregistrement} Le tableau a été rechargé depuis la base.
+        </div>
       )}
 
       {loading ? (
@@ -898,11 +979,22 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
             optionsPersonnalisees={optionsPersonnalisees}
             slotOptions={slotOptions}
             tauxRemplissage={tauxRemplissage}
+            datesAnticipees={anticipees}
+            onEditerDimensions={handleEditerDimensions}
             readOnly={readOnly}
           />
         </div>
       )}
 
+      {dimsEnEdition && !readOnly && (
+        <DimensionsDemandeDialog
+          demande={dimsEnEdition.demande}
+          caisseSimu={dimsEnEdition.caisseSimu}
+          nomCaisseStock={caissesStock.find((c) => c.id === dimsEnEdition.demande.caisse_stock_id)?.nom ?? null}
+          onEnregistrer={(dims, reporter) => handleEnregistrerDimensions(dimsEnEdition.demande, dims, reporter)}
+          onClose={() => setDimsEnEdition(null)}
+        />
+      )}
       {ajoutOuvert && (
         <AjouterDemandesDialog
           caissesStock={caissesStock}

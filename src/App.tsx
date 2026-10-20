@@ -4,6 +4,7 @@ import AffairesList from "./routes/AffairesList";
 import AffaireDetail from "./routes/AffaireDetail";
 import DemandesList from "./routes/DemandesList";
 import ConsoStockList from "./routes/ConsoStockList";
+import AlertesList from "./routes/AlertesList";
 import DemandesAchatsList from "./routes/DemandesAchatsList";
 import Admin from "./routes/Admin";
 import Documentation from "./routes/Documentation";
@@ -28,13 +29,14 @@ import { usePresence } from "./hooks/usePresence";
 import { useAlerteCommande } from "./hooks/useAlerteCommande";
 import type { Demande, DemandeCaisse } from "./domain/types";
 
-type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "admin" | "documentation";
+type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "alertes" | "admin" | "documentation";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "demandes", label: "Gestion des caisses" },
   { id: "simulations", label: "Simulations" },
   { id: "stock", label: "Consommable" },
   { id: "achats", label: "Demandes d'achats" },
+  { id: "alertes", label: "Alertes" },
 ];
 
 export default function App() {
@@ -89,7 +91,8 @@ export default function App() {
   async function confirmerSortieDemandes(): Promise<boolean> {
     if (section !== "demandes" || !demandesModifieRef.current) return true;
     return confirmerAction(
-      "Des modifications de la section Demandes ne sont pas enregistrées. Quitter sans enregistrer ?",
+      // Enregistrement automatique (2026-10-20) : n'arrive que pendant un envoi en cours.
+      "Une modification de Gestion des caisses est en cours d'enregistrement. Quitter quand même ?",
       "Modifications non enregistrées",
     );
   }
@@ -333,6 +336,7 @@ export default function App() {
           ))}
         {section === "stock" && <ConsoStockList trigramme={trigramme} />}
         {section === "achats" && <DemandesAchatsList trigramme={trigramme} />}
+        {section === "alertes" && <AlertesList trigramme={trigramme} />}
         {section === "admin" && estAdmin && <Admin trigramme={trigramme} />}
         {section === "documentation" && <Documentation trigramme={trigramme} estAdmin={estAdmin} />}
       </div>

@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import { demandesApi } from "../data/demandes";
 import { alerteApi } from "../data/alerte";
 import { caisseStockApi } from "../data/caisseStock";
-import { affairesACommanderUrgentes } from "../domain/caissesACommander";
+import { demandeAlertesApi } from "../data/demandeAlertes";
+import { affairesACommanderUrgentes, datesAnticipees } from "../domain/caissesACommander";
 import { caissesStockACommander } from "../domain/caisseStock";
 
 // Pastille rouge sur l'icône de la barre des tâches tant qu'au moins une affaire est en alerte
@@ -17,10 +18,12 @@ export function useAlerteCommande(pret: boolean, declencheur: unknown) {
     if (!pret) return;
     let annule = false;
     const verifier = () => {
-      Promise.all([demandesApi.list(), caisseStockApi.list()])
-        .then(([demandes, caissesStock]) => {
+      Promise.all([demandesApi.list(), caisseStockApi.list(), demandeAlertesApi.list()])
+        .then(([demandes, caissesStock, alertes]) => {
           if (annule) return;
-          const alerte = affairesACommanderUrgentes(demandes).length > 0 || caissesStockACommander(caissesStock).length > 0;
+          const alerte =
+            affairesACommanderUrgentes(demandes, datesAnticipees(alertes)).length > 0 ||
+            caissesStockACommander(caissesStock).length > 0;
           return alerteApi.definirBarreDesTaches(alerte);
         })
         .catch((e) => console.warn("Alerte à commander :", e));

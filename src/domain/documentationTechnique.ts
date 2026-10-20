@@ -25,7 +25,7 @@ export const SECTIONS_DOC_TECHNIQUE: SectionDocTechnique[] = [
     blocs: [
       li("Application de bureau Windows, installée sur chaque poste. Elle remplace un fichier Excel de calcul du volume et du poids des caisses d'expédition, et le suivi des demandes de caisses."),
       li("Toutes les données sont dans **un seul fichier SQLite** (`caisses.sqlite3`), placé dans un dossier partagé sur le réseau : tous les postes travaillent sur le même fichier, sans serveur."),
-      li("Pas de bouton « Enregistrer » général : chaque action est écrite en base immédiatement (sauf le tableau Gestion des caisses, qui garde un brouillon jusqu'à « Enregistrer »)."),
+      li("Pas de bouton « Enregistrer » général : chaque action est écrite en base immédiatement. Gestion des caisses garde un brouillon local, envoyé automatiquement après chaque action (écart avec l'état serveur, un envoi à la fois, rechargement depuis la base en cas d'erreur)."),
     ],
   },
   {
@@ -72,6 +72,7 @@ export const SECTIONS_DOC_TECHNIQUE: SectionDocTechnique[] = [
       li("Principales tables :", [
         "`affaire`, `caisse`, `article` : Simulations (articles importés de l'intranet ou collés depuis Excel) ;",
         "`demande`, `demande_caisse` : Gestion des caisses (indépendantes des affaires, liées par le nom et par des liens explicites) ;",
+        "`demande_alerte` : page Alertes (date d'expédition anticipée, qui remplace le picking dans le calcul des alertes, et commentaire) — table à part pour que l'enregistrement de Gestion des caisses, qui réécrit toute la ligne `demande`, ne l'écrase pas ;",
         "`caisse_stock`, `carton_conso` : Consommable ;",
         "`colis_affaire`, `caisse_colisage`, `colis_rangement` : onglet Colisage d'une affaire ;",
         "`section_lock`, `poste_actif` : verrous et postes ouverts ;",

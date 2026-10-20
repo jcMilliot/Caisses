@@ -5,10 +5,17 @@ import { caissesStockACommander } from "../domain/caisseStock";
 import PastilleAlerte from "../components/PastilleAlerte";
 import IconeNav from "../components/IconeNav";
 import { dateIsoVersAffichage } from "../domain/dates";
-import { MESSAGE_ALERTE_COMMANDE, caissesACommanderCetteSemaine, caissesARapatrierCetteSemaine, type AffaireACommander } from "../domain/caissesACommander";
+import { demandeAlertesApi } from "../data/demandeAlertes";
+import {
+  MESSAGE_ALERTE_COMMANDE,
+  caissesACommanderCetteSemaine,
+  caissesARapatrierCetteSemaine,
+  datesAnticipees,
+  type AffaireACommander,
+} from "../domain/caissesACommander";
 import type { CaisseStock, Demande } from "../domain/types";
 
-type Section = "demandes" | "simulations" | "stock" | "achats" | "admin" | "documentation";
+type Section = "demandes" | "simulations" | "stock" | "achats" | "alertes" | "admin" | "documentation";
 
 interface CardDef {
   id: Exclude<Section, "admin" | "documentation">;
@@ -42,6 +49,12 @@ const CARDS: CardDef[] = [
     description: "Génération et envoi des affiches d'achat",
     icone: "🛒",
   },
+  {
+    id: "alertes",
+    titre: "Alertes",
+    description: "Expéditions anticipées et commentaires",
+    icone: "⏰",
+  },
 ];
 
 interface Props {
@@ -52,17 +65,23 @@ interface Props {
 export default function Accueil({ onSelect, estAdmin }: Props) {
   const [demandes, setDemandes] = useState<Demande[] | null>(null);
   const [stockACommander, setStockACommander] = useState<CaisseStock[]>([]);
+  const [anticipees, setAnticipees] = useState<Map<number, string>>(new Map());
 
   useEffect(() => {
-    demandesApi.list().then(setDemandes);
+    // Dates anticipées chargées avant les demandes : les blocs ne s'affichent qu'avec les deux.
+    demandeAlertesApi
+      .list()
+      .then((a) => setAnticipees(datesAnticipees(a)))
+      .catch((e) => console.warn("Dates anticipées :", e))
+      .finally(() => demandesApi.list().then(setDemandes));
     caisseStockApi
       .list()
       .then((c) => setStockACommander(caissesStockACommander(c)))
       .catch((e) => console.warn("Caisses de stock à commander :", e));
   }, []);
 
-  const aCommander = demandes ? caissesACommanderCetteSemaine(demandes) : [];
-  const aRapatrier = demandes ? caissesARapatrierCetteSemaine(demandes) : [];
+  const aCommander = demandes ? caissesACommanderCetteSemaine(demandes, anticipees) : [];
+  const aRapatrier = demandes ? caissesARapatrierCetteSemaine(demandes, anticipees) : [];
 
   return (
     // Conteneur positionné : Admin est calé en haut à droite de l'écran d'accueil (et non de la
@@ -133,7 +152,7 @@ function ListeAffaires({
           <p style={{ margin: 0 }}>Aucune affaire pour l'instant.</p>
         ) : (
           <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-            {affaires.map(({ demande, datePickingAffichage, urgent }) => (
+            {affaires.map(({ demande, datePickingAffichage, anticipee, urgent }) => (
               <li
                 key={demande.id}
                 style={{
@@ -155,8 +174,11 @@ function ListeAffaires({
                     <span style={{ marginLeft: 10, fontSize: 12.5, fontWeight: 700, color: "var(--ok-text)" }}>En commande</span>
                   )}
                 </span>
-                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                  Picking {dateIsoVersAffichage(datePickingAffichage)}
+                <span
+                  style={{ fontSize: 13, color: anticipee ? "var(--warn-text)" : "var(--text-muted)", fontWeight: anticipee ? 600 : undefined }}
+                  title={anticipee ? `Picking initial : ${dateIsoVersAffichage(demande.date_picking)}` : undefined}
+                >
+                  {anticipee ? "Expé anticipée" : "Picking"} {dateIsoVersAffichage(datePickingAffichage)}
                 </span>
               </li>
             ))}

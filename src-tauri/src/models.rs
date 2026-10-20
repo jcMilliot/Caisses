@@ -231,6 +231,15 @@ pub struct NewCaisseStock {
     pub tare_kg: f64,
 }
 
+/// 0046 — date d'expédition anticipée et commentaire d'une ligne mère (page « Alertes »).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DemandeAlerte {
+    pub demande_id: i64,
+    /// AAAA-MM-JJ, '' = aucune.
+    pub date_anticipee: String,
+    pub commentaire: String,
+}
+
 /// 0040 — carton consommable en stock (onglet « Cartons conso »), sans affectation.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CartonConso {

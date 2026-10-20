@@ -6,7 +6,7 @@ type TauxLigne = { caisses: TauxCaisse[]; seuil: number };
 import { libelleCaisseStock } from "../domain/caisseStock";
 import IconeFiltre from "./IconeFiltre";
 import { largeurPlusLongMot, largeurTexte } from "./mesureTexte";
-import { MESSAGE_ALERTE_COMMANDE, estACommanderUrgent } from "../domain/caissesACommander";
+import { MESSAGE_ALERTE_COMMANDE, estACommanderUrgent, type DatesAnticipees } from "../domain/caissesACommander";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Demande, DemandeCaisse, CaisseStock, OptionListe } from "../domain/types";
@@ -63,6 +63,12 @@ interface Props {
     sous: (sc: DemandeCaisse, mere: Demande) => TauxLigne | null;
   };
   readOnly?: boolean;
+  // Dates d'expédition anticipées (page Alertes) : repère sous la date de picking des lignes mères,
+  // et prises en compte par la pastille « À commander ».
+  datesAnticipees?: DatesAnticipees;
+  // Dimensions d'une ligne mère : saisies ensemble dans une fenêtre (2026-10-20) au lieu de
+  // l'édition cellule par cellule.
+  onEditerDimensions?: (demande: Demande) => void;
 }
 
 type Champ =
@@ -366,6 +372,8 @@ export default function DemandesTable({
   slotOptions,
   readOnly,
   tauxRemplissage,
+  datesAnticipees,
+  onEditerDimensions,
 }: Props) {
   const { parChamp: optionsParChamp, parChampSousLigne: optionsParChampSousLigne } = useMemo(
     () => buildOptions(optionsPersonnalisees),
@@ -739,7 +747,11 @@ export default function DemandesTable({
         }}
         className={estNombre ? "mono" : undefined}
         title={avertissement ?? (ouvertureVerrouillee ? motifOuvertureImposee(demande) : undefined)}
-        onClick={() => !nonEditable && !enEdition && setCellEnEdition({ id: demande.id, champ })}
+        onClick={() => {
+          if (nonEditable || enEdition) return;
+          if (estDim && onEditerDimensions) onEditerDimensions(demande);
+          else setCellEnEdition({ id: demande.id, champ });
+        }}
       >
         {enEdition && champ === "type_ouverture" ? (
           <EditableCellSelect
@@ -777,6 +789,15 @@ export default function DemandesTable({
                   </Fragment>
                 ))
               : valeurAffichee}
+            {champ === "date_picking" && datesAnticipees?.has(demande.id) && (
+              <div
+                style={{ fontSize: 11.5, fontWeight: 650, color: "var(--warn-text)", whiteSpace: "nowrap", marginTop: 2 }}
+                title="Date d'expédition anticipée (page Alertes) : utilisée pour l'alerte « À commander »."
+              >
+                <div>Anticipée :</div>
+                <div>{dateIsoVersAffichage(datesAnticipees.get(demande.id)!)}</div>
+              </div>
+            )}
             {avertissement && <AvertissementBadge texte={avertissement} rouge={!avertissementMousse && Boolean(avertissementMesures4C)} />}
           </>
         )}
@@ -980,7 +1001,7 @@ export default function DemandesTable({
                       }}
                     >
                       <td style={{ ...td, textAlign: "center", whiteSpace: "nowrap" }}>
-                        {estACommanderUrgent(d) && <PastilleAlerte titre={MESSAGE_ALERTE_COMMANDE} />}
+                        {estACommanderUrgent(d, datesAnticipees) && <PastilleAlerte titre={MESSAGE_ALERTE_COMMANDE} />}
                         {sousLignes.length > 0 && (
                           <button
                             onClick={() => onToggleEtendue(d.id)}
