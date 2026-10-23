@@ -58,8 +58,12 @@ function useDonneesPoids(rechargement = 0) {
 export function CaissesPesees({ trigramme, readOnly, rechargement }: { trigramme: string; readOnly: boolean; rechargement: number }) {
   const { pesees, reglages, erreur, action } = useDonneesPoids(rechargement);
   const [editionId, setEditionId] = useState<number | null>(null);
+  const [filtreMatiere, setFiltreMatiere] = useState<MatiereCaisse | null>(null);
 
   if (!pesees) return erreur ? <p style={{ color: "var(--danger-text)" }}>{erreur}</p> : null;
+
+  const matiereDe = (p: CaissePesee) => versCaisseAEstimer(p).matiere;
+  const peseesAffichees = filtreMatiere ? pesees.filter((p) => matiereDe(p) === filtreMatiere) : pesees;
 
   return (
     <section style={{ minWidth: 0 }}>
@@ -80,10 +84,23 @@ export function CaissesPesees({ trigramme, readOnly, rechargement }: { trigramme
           onAnnuler={editionId !== null ? () => setEditionId(null) : undefined}
         />
       )}
+      {pesees.length > 0 && (
+        // Filtre par matière (2026-10-20) ; pastilles aux couleurs des lignes du tableau.
+        <div className="segmented" style={{ marginTop: 14 }}>
+          {([null, ...MATIERES_ESTIMATION] as (MatiereCaisse | null)[]).map((m) => (
+            <button key={m ?? "toutes"} className={filtreMatiere === m ? "actif" : undefined} onClick={() => setFiltreMatiere(m)}>
+              {m && <PastilleMatiere matiere={m} />}
+              {m ?? "Toutes"} ({m ? pesees.filter((p) => matiereDe(p) === m).length : pesees.length})
+            </button>
+          ))}
+        </div>
+      )}
       {pesees.length === 0 ? (
         <p style={{ ...aideStyle, marginTop: 14 }}>Aucune caisse pesée pour l'instant.</p>
+      ) : peseesAffichees.length === 0 ? (
+        <p style={{ ...aideStyle, marginTop: 10 }}>Aucune caisse pesée en {filtreMatiere?.toLowerCase()}.</p>
       ) : (
-        <div className="panel" style={{ overflowX: "auto", padding: 0, marginTop: 14 }}>
+        <div className="panel" style={{ overflowX: "auto", padding: 0, marginTop: 10 }}>
           <table className="table-donnees compacte" style={{ width: "100%", fontSize: 12.5 }}>
             <thead>
               <tr>
@@ -98,7 +115,7 @@ export function CaissesPesees({ trigramme, readOnly, rechargement }: { trigramme
               </tr>
             </thead>
             <tbody>
-              {pesees.map((p) => (
+              {peseesAffichees.map((p) => (
                 <LignePesee
                   key={p.id}
                   caisse={p}
@@ -118,7 +135,7 @@ export function CaissesPesees({ trigramme, readOnly, rechargement }: { trigramme
       )}
       {erreur && <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--danger-text)" }}>{erreur}</p>}
       <div style={{ display: "grid", gap: 6, marginTop: 12 }}>
-        {MATIERES_ESTIMATION.map((m) => (
+        {MATIERES_ESTIMATION.filter((m) => !filtreMatiere || m === filtreMatiere).map((m) => (
           <Conseil key={m} matiere={m} pesees={pesees} reglages={reglages} />
         ))}
       </div>
@@ -151,6 +168,27 @@ export default function ReglagesPoidsCaisses() {
   );
 }
 
+const FOND_MATIERE: Record<MatiereCaisse, string> = { Bois: "var(--bois-bg)", Contreplaqué: "var(--cp-bg)" };
+const BORDURE_MATIERE: Record<MatiereCaisse, string> = { Bois: "var(--bois-border)", Contreplaqué: "var(--cp-border)" };
+
+function PastilleMatiere({ matiere }: { matiere: MatiereCaisse }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        display: "inline-block",
+        width: 10,
+        height: 10,
+        borderRadius: 3,
+        marginRight: 6,
+        verticalAlign: "-1px",
+        background: FOND_MATIERE[matiere],
+        border: `1px solid ${BORDURE_MATIERE[matiere]}`,
+      }}
+    />
+  );
+}
+
 function cleMasse(m: MatiereCaisse): keyof ReglagesPoidsCaisse {
   return m === "Bois" ? "bois_masse_volumique" : "cp_masse_volumique";
 }
@@ -175,7 +213,8 @@ function LignePesee({
   onModifier: () => void;
   onSupprimer: () => void;
 }) {
-  const est = estimerPoidsCaisse(versCaisseAEstimer(p), reglages);
+  const aEstimer = versCaisseAEstimer(p);
+  const est = estimerPoidsCaisse(aEstimer, reglages);
   const ecart = p.tare_kg - est.videKg;
   const composition = [
     `${p.nb_pieds} pied${p.nb_pieds > 1 ? "s" : ""}`,
@@ -184,8 +223,10 @@ function LignePesee({
     p.mousse_bache ? "mousse + bâche" : "",
   ].filter(Boolean);
   return (
-    <tr style={enEdition ? { background: "var(--accent-soft)" } : undefined}>
-      <td style={{ fontWeight: 600 }}>{p.affaire || "—"}</td>
+    // Fond de la ligne selon la matière (2026-10-20), liseré à gauche ; ligne en cours de
+    // modification toujours en couleur d'accent.
+    <tr style={{ background: enEdition ? "var(--accent-soft)" : FOND_MATIERE[aEstimer.matiere] }}>
+      <td style={{ fontWeight: 600, boxShadow: `inset 3px 0 0 ${BORDURE_MATIERE[aEstimer.matiere]}` }}>{p.affaire || "—"}</td>
       <td className="mono">
         <div>{`${fmtM(p.longueur_mm)} × ${fmtM(p.largeur_mm)} × ${fmtM(p.hauteur_mm)}`}</div>
         <div style={{ fontSize: 11.5, color: "var(--text-muted)" }} title="Dimensions extérieures calculées">

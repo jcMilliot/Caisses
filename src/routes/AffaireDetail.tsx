@@ -589,7 +589,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
             </button>
           )}
           <button
-            className="btn btn-sm btn-pastel-blue"
+            className="btn btn-success"
             onClick={importIntranet.lancer}
             disabled={readOnly || importIntranet.enCours}
             title="Articles de l'affaire dans l'intranet (picking)"

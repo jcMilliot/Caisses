@@ -11,6 +11,7 @@ import {
   caissesACommanderCetteSemaine,
   caissesARapatrierCetteSemaine,
   datesAnticipees,
+  libelleDateModifiee,
   type AffaireACommander,
 } from "../domain/caissesACommander";
 import type { CaisseStock, Demande } from "../domain/types";
@@ -178,7 +179,10 @@ function ListeAffaires({
                   style={{ fontSize: 13, color: anticipee ? "var(--warn-text)" : "var(--text-muted)", fontWeight: anticipee ? 600 : undefined }}
                   title={anticipee ? `Picking initial : ${dateIsoVersAffichage(demande.date_picking)}` : undefined}
                 >
-                  {anticipee ? "Expé anticipée" : "Picking"} {dateIsoVersAffichage(datePickingAffichage)}
+                  {anticipee
+                    ? `Expé ${libelleDateModifiee(demande.date_picking, datePickingAffichage).toLowerCase()}`
+                    : "Picking"}{" "}
+                  {dateIsoVersAffichage(datePickingAffichage)}
                 </span>
               </li>
             ))}

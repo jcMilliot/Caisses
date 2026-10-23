@@ -6,7 +6,15 @@ import LockBanner from "../components/LockBanner";
 import PastilleAlerte from "../components/PastilleAlerte";
 import { dateIsoVersAffichage } from "../domain/dates";
 import { estDemandeValidee } from "../domain/demandeOptions";
-import { MESSAGE_ALERTE_COMMANDE, datesAnticipees, estACommanderUrgent, estAchstock } from "../domain/caissesACommander";
+import {
+  MESSAGE_ALERTE_COMMANDE,
+  dateReference,
+  datesAnticipees,
+  estACommanderUrgent,
+  estAchstock,
+  libelleDateModifiee,
+  type DatesAnticipees,
+} from "../domain/caissesACommander";
 import type { Demande, DemandeAlerte } from "../domain/types";
 
 interface Props {
@@ -25,9 +33,14 @@ export default function AlertesList({ trigramme }: Props) {
   const [recherche, setRecherche] = useState("");
   const [erreur, setErreur] = useState<string | null>(null);
 
+  // Dates utilisées pour le tri : recopiées seulement au chargement et en quittant le champ date,
+  // pour que la ligne ne change pas de place pendant la saisie.
+  const [anticipeesTri, setAnticipeesTri] = useState<DatesAnticipees>(new Map());
+
   async function reload() {
     const [d, a] = await Promise.all([demandesApi.list(), demandeAlertesApi.list()]);
     setAlertes(new Map(a.map((x) => [x.demande_id, x])));
+    setAnticipeesTri(datesAnticipees(a));
     setDemandes(d);
   }
 
@@ -35,19 +48,22 @@ export default function AlertesList({ trigramme }: Props) {
     reload().catch((e) => setErreur(String(e)));
   }, []);
 
-  // Non livrées, hors ACHSTOCK ; picking le plus proche en haut, lignes sans date à la fin.
+  const anticipees = useMemo(() => datesAnticipees([...alertes.values()]), [alertes]);
+
+  // Non livrées, hors ACHSTOCK ; date la plus proche en haut (date anticipée / repoussée si
+  // saisie, sinon picking), lignes sans date à la fin.
   const lignes = useMemo(() => {
     const r = recherche.trim().toUpperCase();
     return (demandes ?? [])
       .filter((d) => !estDemandeValidee(d) && !estAchstock(d))
       .filter((d) => r === "" || d.affaire.toUpperCase().includes(r))
       .sort((a, b) => {
-        if (!a.date_picking !== !b.date_picking) return a.date_picking ? -1 : 1;
-        return a.date_picking.localeCompare(b.date_picking) || a.affaire.localeCompare(b.affaire);
+        const da = dateReference(a, anticipeesTri);
+        const db = dateReference(b, anticipeesTri);
+        if (!da !== !db) return da ? -1 : 1;
+        return da.localeCompare(db) || a.affaire.localeCompare(b.affaire);
       });
-  }, [demandes, recherche]);
-
-  const anticipees = useMemo(() => datesAnticipees([...alertes.values()]), [alertes]);
+  }, [demandes, recherche, anticipeesTri]);
 
   async function enregistrer(demandeId: number, patch: Partial<Pick<DemandeAlerte, "date_anticipee" | "commentaire">>) {
     const avant = alertes.get(demandeId);
@@ -130,7 +146,7 @@ export default function AlertesList({ trigramme }: Props) {
                 <th style={{ width: 28 }} />
                 <th>Affaire</th>
                 <th>Date expé initiale</th>
-                <th>Date anticipée</th>
+                <th>Date anticipée / repoussée</th>
                 <th style={{ width: "50%" }}>Commentaires</th>
               </tr>
             </thead>
@@ -138,7 +154,7 @@ export default function AlertesList({ trigramme }: Props) {
               {lignes.map((d) => {
                 const alerte = alertes.get(d.id);
                 const dateAnticipee = alerte?.date_anticipee ?? "";
-                const posterieure = dateAnticipee !== "" && d.date_picking !== "" && dateAnticipee > d.date_picking;
+                const repoussee = dateAnticipee !== "" && libelleDateModifiee(d.date_picking, dateAnticipee) === "Repoussée";
                 return (
                   <tr key={d.id}>
                     <td style={{ textAlign: "center" }}>
@@ -154,10 +170,11 @@ export default function AlertesList({ trigramme }: Props) {
                         value={dateAnticipee}
                         disabled={readOnly}
                         onChange={(e) => enregistrer(d.id, { date_anticipee: e.target.value })}
+                        onBlur={() => setAnticipeesTri(anticipees)}
                         style={dateAnticipee ? { borderColor: "var(--warn-text)", fontWeight: 600 } : undefined}
                       />
-                      {posterieure && (
-                        <div style={{ fontSize: 11.5, color: "var(--warn-text)", marginTop: 2 }}>Après la date initiale</div>
+                      {repoussee && (
+                        <div style={{ fontSize: 11.5, color: "var(--warn-text)", marginTop: 2 }}>Repoussée</div>
                       )}
                     </td>
                     <td>

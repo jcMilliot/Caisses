@@ -6,7 +6,13 @@ type TauxLigne = { caisses: TauxCaisse[]; seuil: number };
 import { libelleCaisseStock } from "../domain/caisseStock";
 import IconeFiltre from "./IconeFiltre";
 import { largeurPlusLongMot, largeurTexte } from "./mesureTexte";
-import { MESSAGE_ALERTE_COMMANDE, estACommanderUrgent, type DatesAnticipees } from "../domain/caissesACommander";
+import {
+  MESSAGE_ALERTE_COMMANDE,
+  dateReference,
+  estACommanderUrgent,
+  libelleDateModifiee,
+  type DatesAnticipees,
+} from "../domain/caissesACommander";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Demande, DemandeCaisse, CaisseStock, OptionListe } from "../domain/types";
@@ -573,6 +579,8 @@ export default function DemandesTable({
     const facteur = tri.sens === "asc" ? 1 : -1;
     const valeur = (d: Demande): string | number => {
       if (tri.colonne === "stock") return stockAffiche(d).toLowerCase();
+      // Date modifiée dans Alertes (anticipée / repoussée) prioritaire sur le picking initial.
+      if (tri.colonne === "date_picking") return dateReference(d, datesAnticipees);
       const v = d[tri.colonne];
       if (typeof v === "boolean") return v ? 1 : 0;
       if (typeof v === "number") return v;
@@ -586,7 +594,7 @@ export default function DemandesTable({
       return 0;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [demandesFiltrees, tri, caissesStock]);
+  }, [demandesFiltrees, tri, caissesStock, datesAnticipees]);
 
   // Ordre d'affichage effectif : le tableau inversé retourne la liste triée pour placer les
   // lignes les plus anciennes en haut (saisie de haut en bas façon Excel).
@@ -792,9 +800,9 @@ export default function DemandesTable({
             {champ === "date_picking" && datesAnticipees?.has(demande.id) && (
               <div
                 style={{ fontSize: 11.5, fontWeight: 650, color: "var(--warn-text)", whiteSpace: "nowrap", marginTop: 2 }}
-                title="Date d'expédition anticipée (page Alertes) : utilisée pour l'alerte « À commander »."
+                title="Date d'expédition modifiée (page Alertes) : utilisée pour le tri par date de picking et l'alerte « À commander »."
               >
-                <div>Anticipée :</div>
+                <div>{libelleDateModifiee(demande.date_picking, datesAnticipees.get(demande.id)!)} :</div>
                 <div>{dateIsoVersAffichage(datesAnticipees.get(demande.id)!)}</div>
               </div>
             )}

@@ -25,6 +25,12 @@ export function dateReference(d: Demande, anticipees: DatesAnticipees = new Map(
   return anticipees.get(d.id) ?? d.date_picking;
 }
 
+// « Repoussée » si la date saisie dans Alertes est après le picking initial, sinon « Anticipée »
+// (2026-10-20). Dates AAAA-MM-JJ : la comparaison de chaînes suit l'ordre chronologique.
+export function libelleDateModifiee(datePicking: string, dateSaisie: string): "Anticipée" | "Repoussée" {
+  return datePicking !== "" && dateSaisie > datePicking ? "Repoussée" : "Anticipée";
+}
+
 function versAffaire(d: Demande, anticipees: DatesAnticipees, urgent: boolean): AffaireACommander {
   return { demande: d, datePickingAffichage: dateReference(d, anticipees), anticipee: anticipees.has(d.id), urgent };
 }

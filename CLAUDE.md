@@ -2143,6 +2143,47 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   `target/debug/caisses.exe`). Soumission Microsoft Defender à faire dès publication si
   l'installeur est bloqué.
 
+### 2026-10-20 — Date modifiée dans Alertes : tri et « Repoussée »
+
+- **Demande de l'utilisateur** : la date saisie dans Alertes est prise en compte par le **tri par
+  date de picking** de Gestion des caisses (`DemandesTable::demandesTriees`, via `dateReference`)
+  et par le tri de la page Alertes. Dans Alertes, l'ordre n'est recalculé qu'**en quittant le champ
+  date** (`anticipeesTri`), sinon la ligne changerait de place pendant la saisie (choix de
+  l'assistant). Les filtres de colonne restent sur la date de picking initiale.
+- Date **après** le picking → **« Repoussée »** au lieu de « Anticipée »
+  (`caissesACommander.ts::libelleDateModifiee`) : repère de Gestion des caisses, mention sous le
+  champ d'Alertes (remplace « Après la date initiale »), accueil (« Expé repoussée »). En-tête
+  d'Alertes : « Date anticipée / repoussée ». Noms internes (`date_anticipee`…) inchangés.
+- Validation : `npx tsc --noEmit`, `npx vite build`. **Non testé en conditions réelles**.
+
+### 2026-10-20 — Consommable › Poids : couleur et filtre par matière
+
+- **Demande de l'utilisateur** : lignes des caisses pesées en **beige pastel pour le bois**, **vert
+  pastel pour le contreplaqué** — remplacé le même jour par du **gris-bleu** (le vert est la
+  couleur de la validation / « Livré ») — (tokens `--bois-*` / `--cp-*` de `index.css`, liseré à gauche),
+  et sélecteur **Toutes / Contreplaqué / Bois** (avec le nombre de caisses) au-dessus du tableau
+  (`PoidsCaisses.tsx::CaissesPesees`). Le filtre masque aussi le bloc « masse volumique
+  conseillée » de l'autre matière. Filtre non mémorisé (repart sur « Toutes »). Matière lue par
+  `versCaisseAEstimer` (même règle que l'estimation).
+- Validation : `npx tsc --noEmit`, `npx vite build`. Vu et validé par l'utilisateur le 2026-10-23.
+
+### 2026-10-23 — Simulations : bouton « Importer » / « Vérifier mise à jour » agrandi
+
+- Demande de l'utilisateur : bouton et texte plus grands, en vert pastel → `.btn-success` (15 px,
+  demi-gras, même gabarit que « + Créer une nouvelle caisse ») au lieu de `.btn-sm
+  .btn-pastel-blue` (`AffaireDetail.tsx`). Les points du 2026-10-20 (Alertes, Poids) et de la
+  0.17.0 sont validés par l'utilisateur.
+
+### 2026-10-23 — Release 0.17.1
+
+- Contenu : date modifiée d'Alertes prise en compte par les tris + « Repoussée », couleur et
+  filtre par matière dans Consommable › Poids, bouton « Importer » / « Vérifier mise à jour »
+  agrandi. Aucune migration.
+- Validation avant tag : `npx tsc --noEmit`, `npx vite build`, `cargo check`, `cargo test --lib`
+  (16), `npm run tauri build -- --debug` (dossier de compilation à part, l'instance de dev tenait
+  `target/debug/caisses.exe`). Soumission Microsoft Defender à faire dès publication si
+  l'installeur est bloqué.
+
 ## Prochaines étapes
 
 ### Fait

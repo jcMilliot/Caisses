@@ -41,6 +41,12 @@
   --violet-bg: #f1ebfb;
   --violet-border: #bda8e6;
   --violet-text: #5b3f9e;
+  /* Matière des caisses pesées (Consommable › Poids, 2026-10-20) : bois beige, contreplaqué
+     gris-bleu (pas de vert : réservé à la validation / « Livré »). */
+  --bois-bg: #f6ebdb;
+  --bois-border: #d2ac7c;
+  --cp-bg: #e7ecf3;
+  --cp-border: #9eb0c6;
 
   --radius: 8px;
   --radius-lg: 12px;

@@ -139,7 +139,7 @@ export const SECTIONS_DOC: SectionDoc[] = [
         "La page « Alertes » (carte de l'accueil ou onglet de la barre) liste les affaires de Gestion des caisses pas encore livrées (hors ACHSTOCK) avec leur date d'expédition initiale (date de picking).",
       ),
       li(
-        "Quand une expédition est demandée plus tôt que prévu, saisir la **date anticipée** : elle remplace la date de picking pour l'alerte « À commander » (pastilles rouges, barre des tâches) et pour les blocs « Caisses à commander / à rapatrier cette semaine » de l'accueil. La date de picking elle-même n'est pas modifiée ; la date anticipée apparaît en orange sous elle dans Gestion des caisses.",
+        "Quand une expédition est demandée plus tôt que prévu, saisir la **date anticipée** : elle remplace la date de picking pour l'alerte « À commander » (pastilles rouges, barre des tâches) et pour les blocs « Caisses à commander / à rapatrier cette semaine » de l'accueil. La date de picking elle-même n'est pas modifiée ; la nouvelle date apparaît en orange sous elle dans Gestion des caisses (« Anticipée » si elle est plus tôt, « Repoussée » si elle est plus tard) et sert au tri par date de picking, ici comme dans Gestion des caisses.",
       ),
       li("La colonne « Commentaires » est libre. Tout est enregistré immédiatement ; effacer la date anticipée revient à la date de picking."),
     ],
