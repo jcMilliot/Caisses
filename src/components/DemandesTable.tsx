@@ -437,9 +437,18 @@ export default function DemandesTable({
       min.taux_remplissage ?? 0,
       Math.ceil(largeurTexte("⚠ 100%", 12, 600) + 16 + paddingTd + 1 + 4),
     );
+    // Date picking : la date, et le repère « Anticipée : » / « Repoussée : » + date (page Alertes),
+    // insécable, s'il y en a un sur une ligne.
+    const contenusDate = [largeurTexte("00/00/0000", taillePoliceTd, 400)];
+    if (demandes.some((d) => datesAnticipees?.has(d.id))) {
+      contenusDate.push(
+        ...["Anticipée :", "Repoussée :", "00/00/0000"].map((t) => largeurTexte(t, 11.5, 650)),
+      );
+    }
+    min.date_picking = Math.max(min.date_picking ?? 0, Math.ceil(Math.max(...contenusDate) + paddingTd + 1 + 4));
     return min;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compact, demandes, demandeCaisses, policesPretes]);
+  }, [compact, demandes, demandeCaisses, datesAnticipees, policesPretes]);
 
   function commencerRedimensionnement(e: React.PointerEvent, champ: Colonne, largeurActuelle: number) {
     e.preventDefault();

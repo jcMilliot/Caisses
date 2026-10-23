@@ -2129,7 +2129,7 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 - Validation : `npx tsc --noEmit`, `npx vite build`. **Non testé en conditions réelles** — à
   vérifier en particulier : création d'une caisse avec sous-caisses, « Livré » / « Non livré »
   avec une `AR_CAISS_` (stock), sélection d'une caisse de récup prise par une autre ligne, perte
-  de la main pendant une saisie.
+  de la main pendant une saisie. **Validé par l'utilisateur le 2026-10-23.**
 
 ### 2026-10-20 — Release 0.17.0
 
@@ -2183,6 +2183,19 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   (16), `npm run tauri build -- --debug` (dossier de compilation à part, l'instance de dev tenait
   `target/debug/caisses.exe`). Soumission Microsoft Defender à faire dès publication si
   l'installeur est bloqué.
+
+### 2026-10-23 (après la 0.17.1) — Repère « Anticipée / Repoussée » qui débordait
+
+- Retour de l'utilisateur : dans Gestion des caisses, le repère « Anticipée : » / « Repoussée : »
+  + date (insécable) dépassait de la colonne Date picking, dont la largeur minimale ne tenait
+  compte que du titre. `DemandesTable::largeursMin` y ajoute la date (13 px) et, dès qu'une ligne
+  a une date modifiée dans Alertes, les deux lignes du repère (11,5 px, 650) : la colonne ne
+  descend plus en dessous (largeur enregistrée relevée, affichage compact compris).
+- Validation : `npx tsc --noEmit`, `npx vite build`. Vu et validé par l'utilisateur le 2026-10-23.
+- **Même jour, validé par l'utilisateur** : enregistrement automatique de Gestion des caisses
+  (0.17.0) ; Colisage réel et Cartons conso / caisses pesées de Consommable (0.16.0), y compris
+  les deux choix de l'assistant (pièce comparée à l'**intérieur** du carton ; acceptation d'une
+  pièce **par carton**). Retirés de « À vérifier » dans Admin › Feuille de route.
 
 ## Prochaines étapes
 
@@ -2827,7 +2840,10 @@ bien celui souhaité, aucun changement de code nécessaire.
   l'utilisateur penche pour oui) : la caisse simulée reprendrait la tare et les renforts de la
   caisse pesée au lieu de l'estimation et des valeurs par défaut des réglages.
 - **Vue 3D d'une caisse** (idée de l'utilisateur du 2026-10-15, **rien de développé** — à garder
-  ici tant que ce n'est pas lancé). Après le colisage : une vue 3D d'une caisse où l'on place des
+  ici tant que ce n'est pas lancé). **Branche `vue-3d`** créée le 2026-10-23 depuis `main` :
+  tout le travail 3D s'y fait ; **tant que l'utilisateur ne l'a pas validée, les autres
+  modifications se font sur `main`** (décision du 2026-10-23). Rebaser / fusionner `main` dans
+  `vue-3d` de temps en temps pour limiter les conflits. Après le colisage : une vue 3D d'une caisse où l'on place des
   blocs aux dimensions connues, qu'on déplace et tourne à la main, pour pousser la simulation
   (hors automatisme) et affiner les dimensions des caisses.
   - **Réponses de l'utilisateur (2026-10-15)** :
