@@ -168,8 +168,13 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
     });
   }
 
-  function toggleSelectAll() {
-    setSelectedIds((prev) => (prev.size === articles.length ? new Set() : new Set(articles.map((a) => a.id))));
+  // Case « tout sélectionner » : `ids` = lignes affichées (filtres du tableau appliqués). Si elles
+  // sont déjà toutes cochées, on vide la sélection ; sinon la sélection devient exactement ces
+  // lignes (une ligne masquée par un filtre n'est jamais sélectionnée en douce).
+  function toggleSelectAll(ids: number[]) {
+    setSelectedIds((prev) =>
+      ids.length > 0 && ids.every((id) => prev.has(id)) && prev.size === ids.length ? new Set() : new Set(ids),
+    );
   }
 
   async function handleAssign(caisseId: number | null) {

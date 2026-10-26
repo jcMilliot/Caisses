@@ -12,7 +12,8 @@ interface Props {
   caisses: Caisse[];
   selectedIds: Set<number>;
   onToggleSelect: (id: number) => void;
-  onToggleSelectAll: () => void;
+  // Reçoit les ids des lignes affichées (après filtres).
+  onToggleSelectAll: (idsAffiches: number[]) => void;
   onUpdate: (id: number, article: NewArticle) => Promise<void>;
   onStartDrag?: (articleId: number, e: React.PointerEvent) => void;
   // Collage multi-cellules (Excel) dans une cellule en édition → ouvre l'import avec ce texte
@@ -383,8 +384,13 @@ export default function ArticlesTable({
           <th style={thStyle}>
             <input
               type="checkbox"
-              checked={articles.length > 0 && selectedIds.size === articles.length}
-              onChange={onToggleSelectAll}
+              checked={
+                articlesFiltres.length > 0 &&
+                selectedIds.size === articlesFiltres.length &&
+                articlesFiltres.every((a) => selectedIds.has(a.id))
+              }
+              onChange={() => onToggleSelectAll(articlesFiltres.map((a) => a.id))}
+              title={yATrouFiltre ? "Sélectionner les lignes affichées (filtres appliqués)" : "Tout sélectionner"}
             />
           </th>
           {thTriable("ar", "AR")}

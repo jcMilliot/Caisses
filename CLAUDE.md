@@ -2197,6 +2197,16 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   les deux choix de l'assistant (pièce comparée à l'**intérieur** du carton ; acceptation d'une
   pièce **par carton**). Retirés de « À vérifier » dans Admin › Feuille de route.
 
+### 2026-10-26 — Simulations : « tout sélectionner » limité aux lignes filtrées
+
+- Demande de l'utilisateur : avec un filtre actif dans le tableau d'articles, la case de l'en-tête
+  sélectionne **seulement les lignes affichées** (avant : tous les articles de l'affaire, lignes
+  masquées comprises). La sélection devient exactement ces lignes (une ligne masquée déjà cochée
+  est décochée) ; si elles sont déjà toutes cochées, la sélection est vidée. Case cochée = lignes
+  affichées toutes sélectionnées. `ArticlesTable` passe les ids filtrés à `onToggleSelectAll`,
+  `AffaireDetail::toggleSelectAll(ids)`. Sur `main` (hors branche `vue-3d`).
+- Validation : `npx tsc --noEmit`, `npx vite build`. Validé par l'utilisateur le 2026-10-26.
+
 ## Prochaines étapes
 
 ### Fait
