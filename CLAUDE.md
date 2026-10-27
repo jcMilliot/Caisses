@@ -2294,6 +2294,19 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 - Validation : `cargo test --lib` (16, copie des seules caisses manquantes), `npx tsc --noEmit`,
   `npx vite build`. **Non vu à l'écran**.
 
+### 2026-10-27 — Release 0.18.0
+
+- Contenu : « tout sélectionner » limité aux lignes filtrées (2026-10-26), picking mis à jour à
+  l'ouverture d'une affaire + repère d'étapes, onglets Picking / Colisage en cours, alerte « ligne
+  plus volumineuse que le carton » (+ « Accepter »), cote égale dans le carton, caisses du Picking
+  reprises d'office dans le colisage avec report des dimensions. Migration `0048` (appliquée sur
+  la base partagée au premier lancement). **Sans la vue 3D** (branche `vue-3d`, migration `0047`).
+- Préparée à la demande de l'utilisateur, qui publie le brouillon et essaie l'app sur la tablette
+  Samsung sous Windows. Rien de cette version n'a été vu à l'écran avant le tag.
+- Validation avant tag : `npx tsc --noEmit`, `npx vite build`, `cargo test --lib` (16),
+  `npm run tauri build -- --debug` (dossier de compilation à part). Soumission Microsoft Defender
+  à faire dès publication si l'installeur est bloqué.
+
 ## Prochaines étapes
 
 ### Fait
