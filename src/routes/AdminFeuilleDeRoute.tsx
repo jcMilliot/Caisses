@@ -10,9 +10,19 @@ interface Point {
 
 const A_FAIRE: Point[] = [
   {
+    titre: "Colisage : rangement des colis",
+    detail:
+      "Si l'intranet indique dans quelle caisse va un colis, le reprendre. Sinon, quand l'affaire n'a qu'une caisse, y ranger les colis d'office.",
+  },
+  {
+    titre: "Tablette Samsung sous Windows",
+    detail:
+      "Essayer d'installer l'application sur la tablette, pour choisir les cartons pendant le colisage.",
+  },
+  {
     titre: "Documentation",
     detail:
-      "Faire le point ensemble : ajouter l'import depuis l'intranet (« Importer » / « Vérifier mise à jour », lignes supprimées, numéro de besoin) et revoir la section « Récupérer les articles ».",
+      "Faire le point ensemble : ajouter l'import du picking depuis l'intranet (mise à jour à l'ouverture d'une affaire, lignes supprimées, numéro de besoin), les onglets Picking / Colisage en cours, et revoir la section « Récupérer les articles ».",
   },
 ];
 

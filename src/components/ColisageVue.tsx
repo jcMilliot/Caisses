@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { CartonConso } from "../domain/types";
 import { cleCarton, controlerColis, estCartonLibre, lettreCaisse, libelleCaisseColisage, rangPropose, type GroupeRange } from "../domain/colisage";
 import { cm, mmDepuisCm, texteCm } from "../domain/cartonConso";
-import { formaterVolumeM3 } from "../domain/calculs";
+import { formaterVolumeM3, volumeUnitaireM3 } from "../domain/calculs";
 import type { Colisage } from "../hooks/useColisage";
 import PastilleColis from "./PastilleColis";
 
@@ -62,7 +62,7 @@ function RecapColisage({ colisage }: { colisage: Colisage }) {
   const ecart = t.volumeColisageM3 - t.volumeInfosM3;
   const ecartPct = t.volumeInfosM3 > 0 ? Math.round((ecart / t.volumeInfosM3) * 100) : null;
   const remarques = [
-    t.nbArticlesNonColises > 0 && `${t.nbArticlesNonColises} article(s) non colisé(s), comptés seulement dans le colisage détaillé`,
+    t.nbArticlesNonColises > 0 && `${t.nbArticlesNonColises} article(s) non colisé(s), comptés seulement dans le picking`,
     t.nbColisSansCarton > 0 && `${t.nbColisSansCarton} colis sans carton (volume des pièces compté)`,
     t.nbNonRanges > 0 && `${t.nbNonRanges} colis / lettre(s) non rangé(s) dans une caisse`,
   ].filter((r): r is string => Boolean(r));
@@ -70,11 +70,11 @@ function RecapColisage({ colisage }: { colisage: Colisage }) {
     <div className="panel" style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 24px", fontSize: 13 }}>
         <span>
-          Colisage détaillé : <span className="mono" style={{ fontWeight: 700 }}>{formaterVolumeM3(t.volumeInfosM3)} m³</span>
+          Picking : <span className="mono" style={{ fontWeight: 700 }}>{formaterVolumeM3(t.volumeInfosM3)} m³</span>
           <span className="mono" style={{ color: "var(--text-muted)" }}> · {t.poidsInfosKg.toFixed(3)} kg</span>
         </span>
         <span>
-          Colisage réel : <span className="mono" style={{ fontWeight: 700 }}>{formaterVolumeM3(t.volumeColisageM3)} m³</span>
+          Colisage en cours : <span className="mono" style={{ fontWeight: 700 }}>{formaterVolumeM3(t.volumeColisageM3)} m³</span>
           <span className="mono" style={{ color: "var(--text-muted)" }}> · {t.poidsColisageKg.toFixed(3)} kg</span>
         </span>
         <span>
@@ -104,8 +104,9 @@ function BlocColis({
   readOnly: boolean;
 }) {
   const carton = groupe.carton;
-  const controle = carton ? controlerColis(groupe, carton, colisage.acceptees) : null;
-  const enAlerte = controle !== null && (controle.depasseVolume || controle.piecesTropGrandes.length > 0);
+  const controle = carton ? controlerColis(groupe, carton, colisage.acceptees, colisage.accepteesVolume) : null;
+  const enAlerte =
+    controle !== null && (controle.depasseVolume || controle.piecesTropGrandes.length > 0 || controle.lignesTropVolumineuses.length > 0);
   const taux = controle && controle.volumeCartonM3 > 0 ? Math.round((groupe.volumePiecesM3 / controle.volumeCartonM3) * 100) : null;
   const caisse = colisage.caisses.find((c) => c.caisse.id === groupe.caisseId)?.caisse;
   const libre = carton !== undefined && estCartonLibre(carton);
@@ -228,6 +229,25 @@ function BlocColis({
               {formaterVolumeM3(controle.volumeCartonM3)} m³).
             </div>
           )}
+          {controle.lignesTropVolumineuses.map((a) => (
+            <div key={`v${a.id}`} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+              <span>
+                ⚠ {a.ar || a.reference} ({a.dim1_mm} × {a.dim2_mm} × {a.dim3_mm} mm × {a.quantite}) :{" "}
+                {formaterVolumeM3(volumeUnitaireM3(a) * a.quantite)} m³ à elle seule, plus que le carton — dimensions à vérifier
+                dans l'intranet (celles de la boîte ?).
+              </span>
+              {!readOnly && (
+                <button
+                  className="btn btn-sm btn-pastel-green"
+                  style={{ padding: "1px 8px" }}
+                  title="Ne plus signaler la ligne pour ce carton. Son volume compte toujours dans le colis."
+                  onClick={() => colisage.accepterPiece(a.id, "volume", cleCarton(carton!))}
+                >
+                  Accepter
+                </button>
+              )}
+            </div>
+          ))}
           {controle.piecesTropGrandes.map((a) => (
             <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
               <span>
@@ -239,7 +259,7 @@ function BlocColis({
                   className="btn btn-sm btn-pastel-green"
                   style={{ padding: "1px 8px" }}
                   title="La pièce passe autrement (en diagonale) : ne plus signaler pour ce carton"
-                  onClick={() => colisage.accepterPiece(a.id, cleCarton(carton!))}
+                  onClick={() => colisage.accepterPiece(a.id, "dimensions", cleCarton(carton!))}
                 >
                   Accepter
                 </button>
@@ -249,7 +269,7 @@ function BlocColis({
         </div>
       )}
 
-      {controle && controle.piecesAcceptees.length > 0 && (
+      {controle && (controle.piecesAcceptees.length > 0 || controle.lignesVolumeAcceptees.length > 0) && (
         <div style={{ padding: "6px 14px 8px 50px", fontSize: 12.5, color: "var(--text-muted)", borderTop: "1px solid var(--border)" }}>
           {controle.piecesAcceptees.map((a) => (
             <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -257,7 +277,20 @@ function BlocColis({
                 ✓ {a.ar || a.reference} ({a.dim1_mm} × {a.dim2_mm} × {a.dim3_mm} mm) : dépasse sur les 3 axes, accepté (en diagonale).
               </span>
               {!readOnly && (
-                <button className="btn btn-sm" style={{ padding: "1px 8px" }} onClick={() => colisage.accepterPiece(a.id, null)}>
+                <button className="btn btn-sm" style={{ padding: "1px 8px" }} onClick={() => colisage.accepterPiece(a.id, "dimensions", null)}>
+                  Annuler
+                </button>
+              )}
+            </div>
+          ))}
+          {controle.lignesVolumeAcceptees.map((a) => (
+            <div key={`v${a.id}`} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span>
+                ✓ {a.ar || a.reference} ({a.dim1_mm} × {a.dim2_mm} × {a.dim3_mm} mm × {a.quantite}) : plus volumineuse que le carton,
+                acceptée.
+              </span>
+              {!readOnly && (
+                <button className="btn btn-sm" style={{ padding: "1px 8px" }} onClick={() => colisage.accepterPiece(a.id, "volume", null)}>
                   Annuler
                 </button>
               )}
@@ -285,11 +318,23 @@ function BlocColis({
               {groupe.articles.map((a) => {
                 const tropGrande = controle?.piecesTropGrandes.includes(a) ?? false;
                 const acceptee = controle?.piecesAcceptees.includes(a) ?? false;
+                const tropVolumineuse = controle?.lignesTropVolumineuses.includes(a) ?? false;
+                const volumeAcceptee = controle?.lignesVolumeAcceptees.includes(a) ?? false;
                 return (
                   <tr
                     key={a.id}
-                    style={{ background: tropGrande ? "var(--danger-bg)" : acceptee ? "var(--warn-bg)" : undefined }}
-                    title={acceptee ? "Dépasse sur les 3 axes, accepté (en diagonale)" : undefined}
+                    style={{
+                      background: tropGrande || tropVolumineuse ? "var(--danger-bg)" : acceptee || volumeAcceptee ? "var(--warn-bg)" : undefined,
+                    }}
+                    title={
+                      tropVolumineuse
+                        ? "Volume de la ligne plus grand que le carton à lui seul : dimensions à vérifier dans l'intranet"
+                        : acceptee
+                          ? "Dépasse sur les 3 axes, accepté (en diagonale)"
+                          : volumeAcceptee
+                            ? "Plus volumineuse que le carton, acceptée"
+                            : undefined
+                    }
                   >
                     <td style={{ ...tdStyle, fontWeight: 600 }}>
                       {a.ar}

@@ -50,13 +50,19 @@ pub fn list_caisses_colisage(db: State<Db>, affaire_id: i64) -> Result<Vec<Caiss
 
 /// Ajoute une copie de chaque caisse de l'affaire (nom, dimensions, couleur, ordre), à la suite des
 /// caisses colisage existantes.
+// Copie les caisses de l'affaire (onglet Picking) pas encore copiées (2026-10-27 : appelé
+// automatiquement à l'arrivée sur Colisage en cours) ; les caisses colisage existantes ne sont pas
+// touchées. Une caisse colisage supprimée revient donc tant que sa caisse existe dans le Picking.
 fn copier(conn: &rusqlite::Connection, affaire_id: i64, trigramme: &str) -> Result<(), String> {
     verrou(conn, affaire_id, trigramme)?;
     conn.execute(
         "INSERT INTO caisse_colisage (affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm, couleur, source_caisse_id, ordre)
          SELECT affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm, couleur, id,
                 (SELECT COALESCE(MAX(ordre), -1) + 1 FROM caisse_colisage WHERE affaire_id = ?1) + ordre
-         FROM caisse WHERE affaire_id = ?1 ORDER BY ordre, id",
+         FROM caisse
+         WHERE affaire_id = ?1
+           AND id NOT IN (SELECT source_caisse_id FROM caisse_colisage WHERE affaire_id = ?1 AND source_caisse_id IS NOT NULL)
+         ORDER BY ordre, id",
         [affaire_id],
     )
     .map_err(|e| e.to_string())?;
@@ -177,41 +183,64 @@ pub fn set_colis_rangement(
     ranger(conn, affaire_id, &tag, propose, caisse_colisage_id, &trigramme)
 }
 
-/// Pièces de l'affaire acceptées malgré l'alerte de dimensions (2026-10-15).
+/// Pièces de l'affaire acceptées malgré une alerte : dimensions (2026-10-15) ou volume (2026-10-27).
 #[tauri::command]
 pub fn list_pieces_acceptees(db: State<Db>, affaire_id: i64) -> Result<Vec<PieceAcceptee>, String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     let mut stmt = conn
-        .prepare("SELECT p.article_id, p.carton FROM piece_acceptee p JOIN article a ON a.id = p.article_id WHERE a.affaire_id = ?1")
+        .prepare(
+            "SELECT p.article_id, p.carton, 'dimensions' FROM piece_acceptee p JOIN article a ON a.id = p.article_id WHERE a.affaire_id = ?1
+             UNION ALL
+             SELECT p.article_id, p.carton, 'volume' FROM piece_acceptee_volume p JOIN article a ON a.id = p.article_id WHERE a.affaire_id = ?1",
+        )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([affaire_id], |r| Ok(PieceAcceptee { article_id: r.get(0)?, carton: r.get(1)? }))
+        .query_map([affaire_id], |r| Ok(PieceAcceptee { article_id: r.get(0)?, carton: r.get(1)?, alerte: r.get(2)? }))
         .map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
-fn accepter(conn: &rusqlite::Connection, article_id: i64, carton: Option<&str>, trigramme: &str) -> Result<(), String> {
+// Table d'une alerte acceptable (liste figée : le nom est inséré dans la requête).
+fn table_acceptation(alerte: &str) -> Result<&'static str, String> {
+    match alerte {
+        "dimensions" => Ok("piece_acceptee"),
+        "volume" => Ok("piece_acceptee_volume"),
+        _ => Err(format!("alerte inconnue : {alerte}")),
+    }
+}
+
+fn accepter(conn: &rusqlite::Connection, article_id: i64, alerte: &str, carton: Option<&str>, trigramme: &str) -> Result<(), String> {
+    let table = table_acceptation(alerte)?;
     require_lock_for_article(conn, article_id, trigramme)?;
     match carton {
         Some(c) => conn.execute(
-            "INSERT INTO piece_acceptee (article_id, carton) VALUES (?1, ?2)
-             ON CONFLICT(article_id) DO UPDATE SET carton = excluded.carton",
+            &format!(
+                "INSERT INTO {table} (article_id, carton) VALUES (?1, ?2)
+                 ON CONFLICT(article_id) DO UPDATE SET carton = excluded.carton"
+            ),
             rusqlite::params![article_id, c],
         ),
-        None => conn.execute("DELETE FROM piece_acceptee WHERE article_id = ?1", [article_id]),
+        None => conn.execute(&format!("DELETE FROM {table} WHERE article_id = ?1"), [article_id]),
     }
     .map_err(|e| e.to_string())?;
     Ok(())
 }
 
-/// Accepte (`carton` = clé du carton actuel) ou annule (`None`) l'acceptation d'une pièce qui ne
-/// rentre pas dans son carton sur les 3 axes (elle peut passer en diagonale).
+/// Accepte (`carton` = clé du carton actuel) ou annule (`None`) l'acceptation d'une alerte d'une
+/// pièce : `alerte` = "dimensions" (ne rentre pas sur les 3 axes, passe en diagonale) ou "volume"
+/// (ligne plus volumineuse que le carton, ex. pièce en sachet).
 #[tauri::command]
-pub fn set_piece_acceptee(db: State<Db>, article_id: i64, carton: Option<String>, trigramme: String) -> Result<(), String> {
+pub fn set_piece_acceptee(
+    db: State<Db>,
+    article_id: i64,
+    alerte: String,
+    carton: Option<String>,
+    trigramme: String,
+) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
-    accepter(conn, article_id, carton.as_deref(), &trigramme)
+    accepter(conn, article_id, &alerte, carton.as_deref(), &trigramme)
 }
 
 #[cfg(test)]
@@ -240,6 +269,21 @@ mod tests {
         conn.execute("UPDATE caisse SET longueur_mm = 1500 WHERE id = 10", []).unwrap();
         assert_eq!(lister(&conn, 1).unwrap()[0].longueur_mm, 1000.0);
 
+        // Nouvelle copie : seules les caisses pas encore copiées sont ajoutées.
+        copier(&conn, 1, "AJC").unwrap();
+        assert_eq!(lister(&conn, 1).unwrap().len(), 2);
+        conn.execute(
+            "INSERT INTO caisse (id, affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm, couleur, ordre) VALUES (12, 1, 'C3', 900, 700, 500, '#e0f2e9', 2)",
+            [],
+        )
+        .unwrap();
+        copier(&conn, 1, "AJC").unwrap();
+        let apres = lister(&conn, 1).unwrap();
+        assert_eq!(apres.len(), 3);
+        assert_eq!(apres[2].source_caisse_id, Some(12));
+        conn.execute("DELETE FROM caisse_colisage WHERE source_caisse_id = 12", []).unwrap();
+        conn.execute("DELETE FROM caisse WHERE id = 12", []).unwrap();
+
         // Rangement : choisi, « non rangé », retour au proposé ; caisse supprimée → proposé.
         let c2 = caisses[1].id;
         ranger(&conn, 1, "A", false, Some(c2), "AJC").unwrap();
@@ -252,13 +296,26 @@ mod tests {
         assert_eq!(n, 0);
         // Pièce acceptée : enregistrée, remplacée, annulée.
         conn.execute("INSERT INTO article (id, affaire_id, ar, reference, designation, dim1_mm, dim2_mm, dim3_mm, poids_unitaire_kg, quantite, ordre) VALUES (99, 1, 'AR_X', '', '', 500, 10, 10, 1, 1, 0)", []).unwrap();
-        accepter(&conn, 99, Some("conso:1"), "AJC").unwrap();
-        accepter(&conn, 99, Some("libre:300x200x100"), "AJC").unwrap();
+        accepter(&conn, 99, "dimensions", Some("conso:1"), "AJC").unwrap();
+        accepter(&conn, 99, "dimensions", Some("libre:300x200x100"), "AJC").unwrap();
         let carton: String = conn.query_row("SELECT carton FROM piece_acceptee WHERE article_id = 99", [], |r| r.get(0)).unwrap();
         assert_eq!(carton, "libre:300x200x100");
-        accepter(&conn, 99, None, "AJC").unwrap();
+        // Volume : acceptation à part, indépendante de celle des dimensions.
+        accepter(&conn, 99, "volume", Some("conso:1"), "AJC").unwrap();
+        let alertes: Vec<String> = conn
+            .prepare("SELECT 'dimensions' FROM piece_acceptee UNION ALL SELECT 'volume' FROM piece_acceptee_volume")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(alertes, vec!["dimensions", "volume"]);
+        assert!(accepter(&conn, 99, "autre", Some("conso:1"), "AJC").is_err());
+        accepter(&conn, 99, "dimensions", None, "AJC").unwrap();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM piece_acceptee", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0);
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM piece_acceptee_volume", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
 
         // Originale supprimée : la copie reste, sans source.
         conn.execute("DELETE FROM caisse WHERE id = 10", []).unwrap();

@@ -8,15 +8,37 @@ import type { Article } from "../domain/types";
 
 // Import / vérification de mise à jour des articles d'une affaire depuis l'intranet (2026-10-07).
 // `tousArticles` inclut les lignes supprimées dans l'intranet (hors tableau).
-export function useImportIntranet(affaireId: number, nomAffaire: string | undefined, tousArticles: Article[], trigramme: string, reload: () => Promise<void>) {
+// Lancé automatiquement une fois à l'ouverture de l'affaire (2026-10-27), dès que `peutEcrire`
+// (on a la main) et que l'affaire est chargée (`pret`) : résumé à valider gardé, mais ni fenêtre
+// « Aucune mise à jour » ni fenêtre d'erreur — l'erreur est rendue dans `erreurAuto`.
+export function useImportIntranet(
+  affaireId: number,
+  nomAffaire: string | undefined,
+  tousArticles: Article[],
+  trigramme: string,
+  reload: () => Promise<void>,
+  peutEcrire: boolean,
+  pret: boolean,
+) {
   const [info, setInfo] = useState<ImportIntranetInfo | null>(null);
+  // Sans ça, `premierImport` vaudrait vrai avant la lecture de `info` et le lancement automatique
+  // remplacerait à tort les articles collés.
+  const [infoChargee, setInfoChargee] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [identifiants, setIdentifiants] = useState<{ message?: string } | null>(null);
   const [resultat, setResultat] = useState<ResultatImport | null>(null);
   const [application, setApplication] = useState(false);
+  const [autoLance, setAutoLance] = useState(false);
+  const [erreurAuto, setErreurAuto] = useState<string | null>(null);
 
   const rechargerInfo = useCallback(() => {
-    intranetApi.getImport(affaireId).then(setInfo).catch(() => {});
+    intranetApi
+      .getImport(affaireId)
+      .then((i) => {
+        setInfo(i);
+        setInfoChargee(true);
+      })
+      .catch(() => {});
   }, [affaireId]);
   useEffect(() => {
     rechargerInfo();
@@ -30,9 +52,10 @@ export function useImportIntranet(affaireId: number, nomAffaire: string | undefi
     rechargerInfo();
   }
 
-  async function lancer() {
+  async function lancer(auto = false) {
     if (!nomAffaire) return;
     setEnCours(true);
+    setErreurAuto(null);
     try {
       let lignes;
       try {
@@ -49,22 +72,32 @@ export function useImportIntranet(affaireId: number, nomAffaire: string | undefi
       }
       const r = comparerPicking(tousArticles, lignes, premierImport);
       if (premierImport && r.ajoutes.length === 0) {
-        await confirmerAction("Aucun article AR à importer pour cette affaire dans l'intranet.", "Importer");
+        if (auto) setErreurAuto("aucun article AR pour cette affaire dans l'intranet.");
+        else await confirmerAction("Aucun article AR à importer pour cette affaire dans l'intranet.", "Importer");
         return;
       }
       if (aucunChangement(r)) {
         // Rien à montrer, mais on enregistre la vérification (date, lignes sans numéro de besoin).
         await appliquer(r);
-        await confirmerAction("Aucune mise à jour : l'affaire est identique à l'intranet.", "Vérifier mise à jour");
+        if (!auto) await confirmerAction("Aucune mise à jour : l'affaire est identique à l'intranet.", "Vérifier la mise à jour du picking");
         return;
       }
       setResultat(r);
     } catch (e) {
-      await confirmerAction(String(e), "Import impossible");
+      if (auto) setErreurAuto(String(e));
+      else await confirmerAction(String(e), "Import impossible");
     } finally {
       setEnCours(false);
     }
   }
+
+  // Une seule fois par ouverture de l'affaire ; si un autre poste a la main, attend de l'avoir.
+  useEffect(() => {
+    if (autoLance || !peutEcrire || !pret || !infoChargee || !nomAffaire) return;
+    setAutoLance(true);
+    lancer(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLance, peutEcrire, pret, infoChargee, nomAffaire]);
 
   const dialogues = (
     <>
@@ -101,10 +134,14 @@ export function useImportIntranet(affaireId: number, nomAffaire: string | undefi
   );
 
   return {
-    libelle: premierImport ? "Importer" : "Vérifier mise à jour",
+    libelle: premierImport ? "Importer le picking" : "Vérifier la mise à jour du picking",
     enCours,
-    lancer,
+    lancer: () => lancer(),
     anomalies: info?.anomalies ?? [],
+    // Date (UTC, datetime('now')) de la dernière vérification enregistrée, null si jamais importée.
+    derniereMaj: info?.importe_le ?? null,
+    autoLance,
+    erreurAuto,
     dialogues,
   };
 }

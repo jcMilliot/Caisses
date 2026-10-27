@@ -9,6 +9,7 @@ import { optionsListeApi } from "../data/optionsListe";
 import type { OptionListe } from "../domain/types";
 import { intranetApi } from "../data/intranet";
 import { useImportIntranet } from "../hooks/useImportIntranet";
+import EtapesSimulation from "../components/EtapesSimulation";
 import { articlesNonCollesApi, type ArticleNonColle } from "../data/articlesNonColles";
 import { useSessionAdmin } from "../hooks/useSessionAdmin";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -25,7 +26,8 @@ import {
   synchroCdeSelonStock,
 } from "../domain/demandeOptions";
 import { suggererCaisseStock } from "../domain/suggestionCaisse";
-import type { Article, Caisse, CaisseCalculee, CaisseStock, Demande, DemandeCaisse, NewDemandeCaisse } from "../domain/types";
+import type { Article, Caisse, CaisseCalculee, CaisseColisage, CaisseStock, Demande, DemandeCaisse, NewDemandeCaisse } from "../domain/types";
+import { colisAffaireApi } from "../data/colisAffaire";
 import { usePointerDrag } from "../hooks/usePointerDrag";
 import { useSectionLock } from "../hooks/useSectionLock";
 import ArticlesTable from "../components/ArticlesTable";
@@ -73,8 +75,24 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
   // Plus aucun article colisé (après une mise à jour) : retour à Informations générales.
   const ongletVue = aDesColis ? ongletArticles : "infos";
   // Onglet Colisage (2026-10-14) : état partagé entre la liste des colis et les caisses colisage.
-  const colisage = useColisage(affaireId, articles, caissesCalculees, affaire?.seuil_defaut ?? 70, trigramme, ongletVue === "colisage");
-  const importIntranet = useImportIntranet(affaireId, affaire?.nom, tousArticles, trigramme, reload);
+  const colisage = useColisage(
+    affaireId,
+    articles,
+    caissesCalculees,
+    affaire?.seuil_defaut ?? 70,
+    trigramme,
+    ongletVue === "colisage",
+    lock.status === "held",
+  );
+  const importIntranet = useImportIntranet(
+    affaireId,
+    affaire?.nom,
+    tousArticles,
+    trigramme,
+    reload,
+    lock.status === "held",
+    !loading && affaire !== null,
+  );
   const [anomaliesOuvertes, setAnomaliesOuvertes] = useState(false);
   // Bouton « Coller depuis Excel » : réservé à AJC (2026-10-14), masquable dans Admin ›
   // Paramètres (en attendant son retrait).
@@ -294,6 +312,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
     };
     await caissesApi.setCaisseStock(c.id, cs.id, trigramme);
     await modifierCaisse(c.id, c.nom, cs.longueur_mm, cs.largeur_mm, cs.hauteur_mm, c.seuil_pct, c.couleur, c.type_envoi_caisse);
+    await reporterSurColisage(c, [cs.longueur_mm, cs.largeur_mm, cs.hauteur_mm]);
     if (!ligneModifiable) return;
     try {
       if ("sous" in ligneModifiable) {
@@ -363,6 +382,100 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
     );
   }
 
+  // Enregistrement d'une caisse du Picking (carte de caisse, ou report depuis une caisse colisage) :
+  // caisse en stock désélectionnée et ligne de Gestion des caisses mise à jour si les dimensions
+  // changent. Depuis le Picking, les nouvelles dimensions sont aussi proposées aux caisses colisage
+  // copiées de cette caisse (2026-10-27).
+  async function enregistrerCaisse(
+    c: CaisseCalculee,
+    nom: string,
+    l: number,
+    w: number,
+    h: number,
+    seuil: number | null,
+    couleur: string,
+    depuisColisage = false,
+  ) {
+    const dimsChangees = l !== c.longueur_mm || w !== c.largeur_mm || h !== c.hauteur_mm;
+    if (dimsChangees && c.caisse_stock_id !== null) {
+      // Dimensions qui ne correspondent plus à la caisse en stock : on la désélectionne.
+      const nomStock = caissesStock.find((cs) => cs.id === c.caisse_stock_id)?.nom ?? "sélectionnée";
+      const confirme = await confirmerAction(
+        `Les dimensions ne correspondront plus à la caisse en stock « ${nomStock} » : elle sera désélectionnée. Continuer ?`,
+        "Caisse en stock",
+      );
+      if (!confirme) return;
+      await caissesApi.setCaisseStock(c.id, null, trigramme);
+    }
+    if (dimsChangees) {
+      const lien = ligneLiee(c);
+      const dims = { longueur_mm: l, largeur_mm: w, hauteur_mm: h };
+      if (lien && "sous" in lien) {
+        const confirme = await confirmerAction(
+          `Répercuter ces nouvelles dimensions sur la demande d'origine « ${c.nom} » ?`,
+          "Synchroniser avec Demandes",
+        );
+        if (confirme) {
+          const { id: _id, ordre: _ordre, ...base } = lien.sous;
+          // Même règle que dans Gestion des caisses : dimensions modifiées → caisse en
+          // stock désélectionnée sur la ligne.
+          const patch = synchroCdeSelonStock(lien.sous, detacherStockSiDimsModifiees(lien.sous, dims));
+          await demandeCaisseApi.update(lien.sous.id, { ...base, ...patch }, trigramme);
+          setDemandeCaissesLiees((prev) => prev.map((sl) => (sl.id === lien.sous.id ? { ...sl, ...patch } : sl)));
+        }
+      } else if (lien) {
+        const confirme = await confirmerAction(
+          `Répercuter ces nouvelles dimensions sur la demande « ${lien.mere.affaire} » ?`,
+          "Synchroniser avec Demandes",
+        );
+        if (confirme) {
+          const { id: _id, ordre: _ordre, validee: _v, ...base } = lien.mere;
+          const patch = synchroCdeSelonStock(lien.mere, detacherStockSiDimsModifiees(lien.mere, dims));
+          await demandesApi.update(lien.mere.id, { ...base, ...patch }, trigramme);
+          setToutesDemandes((prev) => prev.map((d) => (d.id === lien.mere.id ? { ...d, ...patch } : d)));
+        }
+      }
+    }
+    await modifierCaisse(c.id, nom, l, w, h, seuil, couleur, c.type_envoi_caisse);
+    if (dimsChangees && !depuisColisage) await reporterSurColisage(c, [l, w, h]);
+  }
+
+  // Dimensions d'une caisse du Picking modifiées → proposées à ses copies du Colisage en cours.
+  async function reporterSurColisage(c: CaisseCalculee, dims: [number, number, number]) {
+    try {
+      const copies = (await colisAffaireApi.listCaisses(affaireId)).filter(
+        (cc) => cc.source_caisse_id === c.id && (cc.longueur_mm !== dims[0] || cc.largeur_mm !== dims[1] || cc.hauteur_mm !== dims[2]),
+      );
+      let modifiee = false;
+      for (const cc of copies) {
+        const confirme = await confirmerAction(
+          `Reporter aussi ces dimensions sur la caisse « ${cc.nom || "(sans nom)"} » du colisage en cours ?`,
+          "Colisage en cours",
+        );
+        if (!confirme) continue;
+        await colisAffaireApi.modifierCaisse(cc.id, cc.nom, dims, trigramme);
+        modifiee = true;
+      }
+      if (modifiee) await colisage.recharger();
+    } catch (e) {
+      await confirmerAction(String(e), "Colisage en cours");
+    }
+  }
+
+  // Dimensions d'une caisse colisage modifiées → proposées à la caisse du Picking dont elle est
+  // copiée, enregistrée comme depuis sa carte (caisse en stock, Gestion des caisses).
+  async function reporterSurPicking(cc: CaisseColisage, dims: [number, number, number]) {
+    const source = caissesCalculees.find((c) => c.id === cc.source_caisse_id);
+    if (!source || (source.longueur_mm === dims[0] && source.largeur_mm === dims[1] && source.hauteur_mm === dims[2])) return;
+    const confirme = await confirmerAction(`Reporter aussi ces dimensions sur la caisse « ${source.nom} » du picking ?`, "Picking");
+    if (!confirme) return;
+    try {
+      await enregistrerCaisse(source, source.nom, dims[0], dims[1], dims[2], source.seuil_pct, source.couleur, true);
+    } catch (e) {
+      await confirmerAction(String(e), "Picking");
+    }
+  }
+
   const panneauCaisses = (
     <section
       style={
@@ -376,7 +489,12 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
           <h2 style={{ ...sectionTitleStyle, marginBottom: 14 }}>
             Caisses colisage <span style={sectionCountStyle}>{colisage.caisses.length}</span>
           </h2>
-          <PanneauCaissesColisage colisage={colisage} nbCaissesInfos={caissesCalculees.length} readOnly={readOnly} />
+          <PanneauCaissesColisage
+            colisage={colisage}
+            nbCaissesInfos={caissesCalculees.length}
+            readOnly={readOnly}
+            onDimsModifiees={reporterSurPicking}
+          />
         </>
       ) : (
       <>
@@ -477,49 +595,9 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
               key={c.id}
               caisse={c}
               autoEdit={c.id === caisseRecenteId}
-              onUpdate={async (nom, l, w, h, seuil, couleur) => {
+              onUpdate={(nom, l, w, h, seuil, couleur) => {
                 setCaisseRecenteId(null);
-                const dimsChangees = l !== c.longueur_mm || w !== c.largeur_mm || h !== c.hauteur_mm;
-                if (dimsChangees && c.caisse_stock_id !== null) {
-                  // Dimensions qui ne correspondent plus à la caisse en stock : on la désélectionne.
-                  const nomStock = caissesStock.find((cs) => cs.id === c.caisse_stock_id)?.nom ?? "sélectionnée";
-                  const confirme = await confirmerAction(
-                    `Les dimensions ne correspondront plus à la caisse en stock « ${nomStock} » : elle sera désélectionnée. Continuer ?`,
-                    "Caisse en stock",
-                  );
-                  if (!confirme) return;
-                  await caissesApi.setCaisseStock(c.id, null, trigramme);
-                }
-                if (dimsChangees) {
-                  const lien = ligneLiee(c);
-                  const dims = { longueur_mm: l, largeur_mm: w, hauteur_mm: h };
-                  if (lien && "sous" in lien) {
-                    const confirme = await confirmerAction(
-                      `Répercuter ces nouvelles dimensions sur la demande d'origine « ${c.nom} » ?`,
-                      "Synchroniser avec Demandes",
-                    );
-                    if (confirme) {
-                      const { id: _id, ordre: _ordre, ...base } = lien.sous;
-                      // Même règle que dans Gestion des caisses : dimensions modifiées → caisse en
-                      // stock désélectionnée sur la ligne.
-                      const patch = synchroCdeSelonStock(lien.sous, detacherStockSiDimsModifiees(lien.sous, dims));
-                      await demandeCaisseApi.update(lien.sous.id, { ...base, ...patch }, trigramme);
-                      setDemandeCaissesLiees((prev) => prev.map((sl) => (sl.id === lien.sous.id ? { ...sl, ...patch } : sl)));
-                    }
-                  } else if (lien) {
-                    const confirme = await confirmerAction(
-                      `Répercuter ces nouvelles dimensions sur la demande « ${lien.mere.affaire} » ?`,
-                      "Synchroniser avec Demandes",
-                    );
-                    if (confirme) {
-                      const { id: _id, ordre: _ordre, validee: _v, ...base } = lien.mere;
-                      const patch = synchroCdeSelonStock(lien.mere, detacherStockSiDimsModifiees(lien.mere, dims));
-                      await demandesApi.update(lien.mere.id, { ...base, ...patch }, trigramme);
-                      setToutesDemandes((prev) => prev.map((d) => (d.id === lien.mere.id ? { ...d, ...patch } : d)));
-                    }
-                  }
-                }
-                return modifierCaisse(c.id, nom, l, w, h, seuil, couleur, c.type_envoi_caisse);
+                return enregistrerCaisse(c, nom, l, w, h, seuil, couleur);
               }}
               onDelete={async () => {
                 if (readOnly) return;
@@ -553,20 +631,29 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
 
   const panneauArticles = (
     <section style={{ flex: 1, minWidth: 0 }}>
-      {/* Onglets (2026-10-14, renommés le 2026-10-16) : « Colisage détaillé » (tableau des articles)
-          et « Colisage réel », cliquable seulement si au moins un article est colisé. */}
+      <EtapesSimulation
+        onglet={ongletVue}
+        maj={{
+          enCours: importIntranet.enCours,
+          derniereMaj: importIntranet.derniereMaj,
+          erreur: importIntranet.erreurAuto,
+          attenteMain: !importIntranet.autoLance && !lock.lectureSeule && lock.status !== "held" && lock.status !== "acquiring",
+        }}
+      />
+      {/* Onglets (2026-10-14, renommés le 2026-10-16 puis le 2026-10-27) : « Picking » (tableau des
+          articles) et « Colisage en cours », cliquable seulement si au moins un article est colisé. */}
       <div className="tabs" style={{ marginBottom: 14 }}>
         <button className={ongletVue === "infos" ? "tab actif" : "tab"} onClick={() => setOngletArticles("infos")}>
-          Colisage détaillé
+          Picking
         </button>
         <button
           className={ongletVue === "colisage" ? "tab actif" : "tab"}
           onClick={() => setOngletArticles("colisage")}
           disabled={!aDesColis}
-          title={aDesColis ? undefined : "Aucune référence colisée dans l'intranet (« Vérifier mise à jour » pour récupérer le colisage)"}
+          title={aDesColis ? undefined : "Aucune référence colisée dans l'intranet (« Vérifier la mise à jour du picking » pour récupérer le colisage)"}
           style={aDesColis ? undefined : { opacity: 0.45, cursor: "not-allowed" }}
         >
-          Colisage réel
+          Colisage en cours
         </button>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -593,14 +680,18 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
               ⚠ Pas de numéro de besoin ({importIntranet.anomalies.length})
             </button>
           )}
-          <button
-            className="btn btn-success"
-            onClick={importIntranet.lancer}
-            disabled={readOnly || importIntranet.enCours}
-            title="Articles de l'affaire dans l'intranet (picking)"
-          >
-            {importIntranet.enCours ? "Recherche…" : importIntranet.libelle}
-          </button>
+          {/* Dans « Colisage en cours » seulement (2026-10-27) ; dans « Picking » tant qu'aucun
+              article n'a de colis (l'autre onglet est alors grisé). */}
+          {(ongletVue === "colisage" || !aDesColis) && (
+            <button
+              className="btn btn-success"
+              onClick={importIntranet.lancer}
+              disabled={readOnly || importIntranet.enCours}
+              title="Articles de l'affaire dans l'intranet (picking)"
+            >
+              {importIntranet.enCours ? "Recherche…" : importIntranet.libelle}
+            </button>
+          )}
           {collageVisible && (
             <button className="btn btn-sm" onClick={() => setShowPaste(true)} disabled={readOnly}>
               Coller depuis Excel

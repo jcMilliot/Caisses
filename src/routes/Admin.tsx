@@ -462,7 +462,7 @@ function IntranetParametres({ trigramme }: { trigramme: string }) {
             style={{ width: 300 }}
           />
         </label>
-        <p style={aideStyle}>Utilisée par le bouton « Importer » des affaires de Simulations.</p>
+        <p style={aideStyle}>Utilisée par l'import et la mise à jour du picking des affaires de Simulations.</p>
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button className="btn btn-primary" onClick={enregistrerUrl} disabled={busy || saisie.trim() === url}>
             Enregistrer

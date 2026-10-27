@@ -26,10 +26,13 @@ export interface ControleColis {
   piecesTropGrandes: Article[];
   // Pièces qui ne rentrent pas sur les 3 axes mais acceptées pour ce carton (en diagonale).
   piecesAcceptees: Article[];
+  // Lignes dont le volume (unitaire × quantité) dépasse à lui seul celui du carton : souvent des
+  // dimensions de boîte saisies dans l'intranet à la place de celles de la pièce (2026-10-27).
+  // Hors lignes acceptées pour ce carton (pièce en sachet : dimensions du sachet, pièce + air).
+  lignesTropVolumineuses: Article[];
+  // Lignes acceptées : seule leur alerte disparaît, leur volume compte toujours dans le colis.
+  lignesVolumeAcceptees: Article[];
 }
-
-// Tolérance d'arrondi, comme l'alerte « article plus grand que sa caisse ».
-const TOLERANCE_MM = 0.5;
 
 // Groupes des articles colisés : lettres d'abord (A, B, C…), puis colis par numéro (1, 2, 10…).
 export function grouperColis(articles: Article[]): GroupeColis[] {
@@ -59,11 +62,11 @@ function dimsTriees(d1: number, d2: number, d3: number): number[] {
 
 // Une pièce rentre si, dimensions triées de part et d'autre, chacune tient dans celle du carton
 // (rotation libre, décision du 2026-10-14). Comparée à l'intérieur du carton : une pièce doit
-// tenir dedans.
+// tenir dedans. Cote égale acceptée, sans tolérance au-delà (décision du 2026-10-27).
 export function pieceRentre(a: Pick<Article, "dim1_mm" | "dim2_mm" | "dim3_mm">, carton: CartonConso): boolean {
   const p = dimsTriees(a.dim1_mm, a.dim2_mm, a.dim3_mm);
   const c = dimsTriees(carton.longueur_mm, carton.largeur_mm, carton.hauteur_mm);
-  return p.every((d, i) => d <= c[i] + TOLERANCE_MM);
+  return p.every((d, i) => d <= c[i]);
 }
 
 // Clé du carton d'un colis, pour les pièces acceptées : une acceptation ne vaut que pour le carton
@@ -72,16 +75,25 @@ export function cleCarton(c: CartonConso): string {
   return c.id === 0 ? `libre:${c.ext_longueur_mm}x${c.ext_largeur_mm}x${c.ext_hauteur_mm}` : `conso:${c.id}`;
 }
 
-// `acceptees` : article → clé du carton pour lequel la pièce a été acceptée.
-export function controlerColis(groupe: GroupeColis, carton: CartonConso, acceptees: Map<number, string> = new Map()): ControleColis {
+// `acceptees` / `accepteesVolume` : article → clé du carton pour lequel l'alerte de dimensions /
+// de volume de la pièce a été acceptée.
+export function controlerColis(
+  groupe: GroupeColis,
+  carton: CartonConso,
+  acceptees: Map<number, string> = new Map(),
+  accepteesVolume: Map<number, string> = new Map(),
+): ControleColis {
   const volumeCartonM3 = (carton.ext_longueur_mm * carton.ext_largeur_mm * carton.ext_hauteur_mm) / 1e9;
   const cle = cleCarton(carton);
   const horsDimensions = groupe.articles.filter((a) => !pieceRentre(a, carton));
+  const tropVolumineuses = groupe.articles.filter((a) => volumeUnitaireM3(a) * a.quantite > volumeCartonM3);
   return {
     volumeCartonM3,
     depasseVolume: groupe.volumePiecesM3 > volumeCartonM3,
     piecesTropGrandes: horsDimensions.filter((a) => acceptees.get(a.id) !== cle),
     piecesAcceptees: horsDimensions.filter((a) => acceptees.get(a.id) === cle),
+    lignesTropVolumineuses: tropVolumineuses.filter((a) => accepteesVolume.get(a.id) !== cle),
+    lignesVolumeAcceptees: tropVolumineuses.filter((a) => accepteesVolume.get(a.id) === cle),
   };
 }
 

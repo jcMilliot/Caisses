@@ -87,7 +87,7 @@ export const SECTIONS_DOC_TECHNIQUE: SectionDocTechnique[] = [
       li("Volume d'un article = Dim1 × Dim2 × Dim3 ; volume d'une caisse = L × l × H ; remplissage = volume des articles ÷ volume de la caisse, comparé au seuil de l'affaire."),
       li("Alertes de caisse : volume dépassé, article plus grand que la caisse (axes comparés un à un), charge au m² (articles + poids estimé de la caisse) au-delà de la limite réglée dans l'Admin."),
       li("Poids d'une caisse : tare si elle est connue (caisse en stock), sinon estimation d'après les dimensions et la matière (panneaux, pieds, tasseaux, mousse et bâche pour les 4C), calée sur des caisses pesées (Admin › Caisses › Poids)."),
-      li("Colisage : volume d'un colis = volume extérieur de son carton ; une pièce doit rentrer dans l'intérieur du carton, dans n'importe quelle orientation ; carton libre = intérieur 2 mm plus petit que l'extérieur sur chaque axe."),
+      li("Colisage : volume d'un colis = volume extérieur de son carton ; une pièce doit rentrer dans l'intérieur du carton, dans n'importe quelle orientation (cote égale acceptée, rien au-delà) ; carton libre = intérieur 2 mm plus petit que l'extérieur sur chaque axe."),
     ],
   },
   {
@@ -115,7 +115,7 @@ export const SECTIONS_DOC_TECHNIQUE: SectionDocTechnique[] = [
     titre: "Intranet",
     blocs: [
       li("L'adresse de l'API est un réglage (Admin › Paramètres), jamais écrite dans le code : le dépôt est public."),
-      li("Import d'une affaire : le picking est lu par le cœur Rust, puis comparé aux articles de l'affaire. Chaque ligne est reconnue par son **numéro de besoin** ; une ligne supprimée dans l'intranet sort du tableau ; une quantité modifiée garde la trace de la quantité initiale ; le colis (lettre = caisse, chiffre = colis) est repris quand la ligne est colisée."),
+      li("Import d'une affaire : le picking est lu par le cœur Rust, puis comparé aux articles de l'affaire. Chaque ligne est reconnue par son **numéro de besoin** ; une ligne supprimée dans l'intranet sort du tableau ; une quantité modifiée garde la trace de la quantité initiale ; le colis (lettre = caisse, chiffre = colis) est repris quand la ligne est colisée. La vérification se lance d'elle-même à l'ouverture d'une affaire, une fois qu'on a la main ; le résumé des changements reste à valider."),
       li("Les réponses de l'intranet ne sont jamais enregistrées telles quelles : seul le résultat de la comparaison est écrit, en une transaction."),
     ],
   },

@@ -181,9 +181,10 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-10-19 : migrations `0001` à `0046` (dernière :
-`0046_add_demande_alerte.sql` ; pas de `0019_reorder` — supprimé avant
-publication, cf. journal des listes).
+État au 2026-10-27 : migrations `0001` à `0046` publiées ; `0048_add_piece_acceptee_volume.sql`
+sur `main`, pas encore publiée — **`0047` est réservé** à la branche `vue-3d`
+(`0047_add_placement_3d.sql`), pas de trou à combler. Pas de `0019_reorder` — supprimé avant
+publication, cf. journal des listes.
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
 triées côté frontend par `demandeOptions.ts::comparerOption` (quantité de tête puis n° de
 référence, ex. `1 MOTEUR` < `2 MOTEURS` < `10 MOTEURS` ; `1 FESTO 426` < `1 FESTO 485` <
@@ -286,7 +287,9 @@ colis_affaire (affaire_id REFERENCES affaire ON DELETE CASCADE, tag,  -- 0042, P
 caisse_colisage (id, affaire_id REFERENCES affaire ON DELETE CASCADE, nom,  -- 0043
          longueur_mm, largeur_mm, hauteur_mm, couleur,
          source_caisse_id NULL REFERENCES caisse ON DELETE SET NULL, ordre)
-         -- caisses de l'onglet Colisage : copies indépendantes des caisses de l'affaire.
+         -- caisses de l'onglet Colisage : copies des caisses de l'affaire (copiées d'office à
+         -- l'arrivée sur l'onglet, dimensions reportées dans les deux sens après confirmation —
+         -- 2026-10-27).
 
 colis_rangement (affaire_id, tag, caisse_colisage_id NULL  -- 0043, PK (affaire_id, tag)
          REFERENCES caisse_colisage ON DELETE CASCADE)
@@ -296,6 +299,10 @@ colis_rangement (affaire_id, tag, caisse_colisage_id NULL  -- 0043, PK (affaire_
 piece_acceptee (article_id PK REFERENCES article ON DELETE CASCADE, carton TEXT)  -- 0045
          -- pièce acceptée malgré « ne rentre pas dans le carton » (en diagonale), pour le carton
          -- `carton` (« conso:<id> » / « libre:<L>x<l>x<H> ») ; autre carton → alerte revient.
+
+piece_acceptee_volume (article_id PK REFERENCES article ON DELETE CASCADE, carton TEXT)  -- 0048
+         -- ligne acceptée malgré « plus volumineuse que le carton » (pièce en sachet), même clé de
+         -- carton ; retire seulement l'alerte de la ligne, son volume compte toujours.
 
 demande_alerte (demande_id PK REFERENCES demande ON DELETE CASCADE,  -- 0046, page Alertes
          date_anticipee TEXT,  -- AAAA-MM-JJ, '' = aucune ; remplace date_picking dans
@@ -2207,6 +2214,86 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   `AffaireDetail::toggleSelectAll(ids)`. Sur `main` (hors branche `vue-3d`).
 - Validation : `npx tsc --noEmit`, `npx vite build`. Validé par l'utilisateur le 2026-10-26.
 
+### 2026-10-27 — Colisage réel : alerte « ligne plus volumineuse que le carton »
+
+- Constat sur une affaire de test : une ligne (douille, 10 pièces) portait dans l'intranet les
+  dimensions de sa **boîte** (240 × 160 × 49 au lieu de 65 × 42 × 42 mm) et faisait à elle seule
+  160 % du carton. Vérifié au passage : la mise à jour du picking réécrit bien dimensions / qté
+  et le colisage se recalcule (le taux n'avait bougé que de 1 % parce que la pièce modifiée
+  pesait peu).
+- `controlerColis` → `lignesTropVolumineuses` : ligne dont volume unitaire × quantité > volume
+  **extérieur** du carton (même base que l'alerte de volume du colis). Message sous l'en-tête du
+  colis (« … à elle seule, plus que le carton — dimensions à vérifier dans l'intranet (celles de
+  la boîte ?) ») et ligne en rouge dans le bloc déplié.
+- **« Accepter »** (retour du même jour : pièce livrée en sachet, dont on a relevé les dimensions
+  du sachet — petite pièce + air, ex. cellules) : décisions de l'utilisateur, **seule l'alerte de
+  la ligne disparaît** (son volume compte toujours dans le taux et l'alerte de volume du colis),
+  et l'acceptation vaut **pour le carton choisi** (changer de carton la fait revenir), comme
+  celle des dimensions. Liste « ✓ … acceptée » + « Annuler », ligne en orange pâle. Le sachet
+  n'est qu'un exemple : **aucun texte de l'app ne parle de sachet** (demande de l'utilisateur).
+  Table à part `piece_acceptee_volume` (migration **`0048`** — `0047` est pris par la branche
+  `vue-3d` ; à la fusion, garder les deux dans `MIGRATIONS`, l'ordre d'application ne compte pas,
+  les tables sont indépendantes). `set_piece_acceptee` prend un paramètre `alerte`
+  (« dimensions » | « volume ») ; `list_pieces_acceptees` renvoie les deux avec `alerte`.
+- Rappel confirmé à l'utilisateur : dans une caisse colisage, un colis avec carton compte
+  toujours pour le **volume extérieur du carton**, même si son taux dépasse 100 %.
+- Validation : `npx tsc --noEmit`, `npx vite build`, `cargo test --lib` (16, + acceptation de
+  volume indépendante de celle des dimensions, alerte inconnue refusée), cas vérifiés (fichier
+  jetable : seule la ligne 240 × 160 × 49 × 10 est signalée ; acceptée pour ce carton → plus
+  signalée, alerte de volume du colis maintenue ; autre carton → signalée). **Non vu à l'écran**.
+
+### 2026-10-27 — Simulations : picking mis à jour à l'ouverture, onglets Picking / Colisage en cours
+
+- **Décisions de l'utilisateur** : à l'ouverture d'une affaire, import (1re fois) ou vérification
+  du picking **automatique**, **résumé à valider gardé** ; affaire tenue par un autre poste (ou
+  lecteur) → **rien tant qu'on n'a pas la main** ; intranet injoignable / affaire introuvable →
+  **texte discret** orange, pas de fenêtre (la fenêtre des identifiants intranet s'ouvre quand
+  même s'ils sont demandés) ; repère d'étapes **non cliquable**.
+- `useImportIntranet` : paramètres `peutEcrire` (verrou tenu) et `pret` (affaire chargée) ; un
+  seul lancement automatique par ouverture (`autoLance`), **après lecture de
+  `affaire_import_intranet`** (`infoChargee` — sinon `premierImport` serait vrai un instant et
+  remplacerait les articles collés). En automatique : pas de fenêtre « Aucune mise à jour » ni
+  d'erreur (`erreurAuto`). Prise de main ensuite (bouton « Prendre la main », demande d'écriture
+  acceptée) → le lancement se fait à ce moment. La date affichée est `importe_le`, réécrite à
+  chaque vérification enregistrée (y compris sans changement) ; un résumé annulé ne la change pas.
+- `components/EtapesSimulation.tsx` au-dessus des onglets : 1 « Picking » (onglet du tableau),
+  2 « Mise à jour » (en cours / ✓ / ⚠), 3 « Colisage en cours » (onglet) ; dessous : « Mise à
+  jour faite le JJ/MM/AAAA à HH:MM. », « Mise à jour impossible : … », « en attente : un autre
+  poste a la main » ou « en cours… ».
+- Onglets « Colisage détaillé » → **« Picking »**, « Colisage réel » → **« Colisage en cours »**
+  (aussi dans le récap, le panneau des caisses colisage et leurs colonnes ; noms internes
+  inchangés). Bouton **« Vérifier la mise à jour du picking »** (« Importer le picking » si jamais
+  importée, choix de l'assistant), affiché dans Colisage en cours, ou dans Picking **tant
+  qu'aucun article n'a de colis** (l'autre onglet est alors grisé — décision de l'utilisateur).
+- **Cote égale** : `pieceRentre` sans tolérance (pièce aux cotes de l'intérieur du carton
+  acceptée, 0,3 mm de plus → alerte).
+- Documentation technique complétée (import automatique, cote égale). Documentation utilisateur
+  à revoir lors du point prévu avec l'utilisateur.
+- Validation : `npx tsc --noEmit`, `npx vite build`, `pieceRentre` vérifié sur 4 cas (fichier
+  jetable). **Non vu à l'écran, non testé contre le vrai intranet** — à vérifier : lancement à
+  l'ouverture, affaire tenue par un autre poste puis « Prendre la main », intranet coupé.
+
+### 2026-10-27 — Colisage en cours : caisses du Picking reprises d'office, dimensions synchronisées
+
+- **Décisions de l'utilisateur** : à l'arrivée sur Colisage en cours, les caisses du Picking sont
+  copiées automatiquement, **y compris une caisse ajoutée ensuite** dans le Picking (les caisses
+  colisage existantes ne sont pas touchées ; une caisse colisage supprimée revient tant que sa
+  caisse existe dans le Picking — dit dans la confirmation de suppression) ; une modification de
+  **dimensions** d'un côté est **reportée sur l'autre après confirmation**, dans les deux sens.
+  Revient sur « copies indépendantes » (2026-10-14) pour les dimensions seulement (nom non
+  reporté).
+- `colisage.rs::copier` ne copie plus que les caisses absentes (`source_caisse_id`) ; le bouton
+  « Copier les caisses du picking » reste en secours (onglet ouvert sans la main).
+  `useColisage` (paramètre `peutEcrire`) copie une fois par arrivée sur l'onglet, ou à la prise
+  de main.
+- `AffaireDetail::enregistrerCaisse` (extrait de la carte de caisse du Picking, mêmes
+  confirmations caisse en stock / Gestion des caisses) puis `reporterSurColisage` ; aussi après
+  « Utiliser » une caisse en stock suggérée. Caisse colisage modifiée →
+  `PanneauCaissesColisage` prop `onDimsModifiees` → `reporterSurPicking` →
+  `enregistrerCaisse(…, depuisColisage)` (pas de renvoi vers le colisage, donc pas de boucle).
+- Validation : `cargo test --lib` (16, copie des seules caisses manquantes), `npx tsc --noEmit`,
+  `npx vite build`. **Non vu à l'écran**.
+
 ## Prochaines étapes
 
 ### Fait
@@ -2746,6 +2833,18 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 > (`src/routes/AdminFeuilleDeRoute.tsx`, 2026-09-30) — Reste à faire / À vérifier / À réfléchir,
 > **sans termes techniques**. Texte statique : **le mettre à jour en même temps que cette section
 > et « À réfléchir plus tard »** (ajout d'un point, point terminé → le retirer).
+
+*Retours utilisateur 2026-10-27 — Simulations : import du picking et colisage* — mise à jour
+automatique, bouton, onglets, repère d'étapes et cote égale **faits le même jour** (cf. journal).
+Restent :
+
+- **Colis rangés automatiquement** : l'utilisateur vérifie si l'intranet indique la caisse
+  (lettre) d'un colis (numéro). Sinon : affaire à **une seule caisse colisage** → colis rangés
+  d'office dans cette caisse (aujourd'hui rangés à la main, `colis_rangement`). En attente de sa
+  réponse.
+- **Tablette Samsung sous Windows** : voir si l'app s'y installe et s'utilise (tactile,
+  WebView2, accès au dossier réseau de la base, connexion intranet) — utile pour choisir les
+  cartons dans Colisage en cours. Glisser-déposer et vue 3D au tactile non prévus à ce jour.
 
 *Retours utilisateur 2026-10-09 / 12 / 13* — **tous traités le 2026-10-13**, voir le journal du
 même jour (verrous, accueil, colonne Affaire, Cde affaire / stock, cases de sélection).

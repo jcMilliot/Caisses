@@ -282,11 +282,14 @@ pub struct CaisseColisage {
     pub ordre: i64,
 }
 
-/// 0045 — pièce acceptée malgré l'alerte de dimensions, pour le carton `carton`.
+/// 0045 / 0048 — pièce acceptée malgré une alerte du colis, pour le carton `carton`.
+/// `alerte` : "dimensions" (ne rentre pas sur les 3 axes) ou "volume" (ligne plus volumineuse
+/// que le carton, ex. sachet).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PieceAcceptee {
     pub article_id: i64,
     pub carton: String,
+    pub alerte: String,
 }
 
 /// 0043 — rangement choisi à la main d'un colis / d'une lettre (None = non rangé).

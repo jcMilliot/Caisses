@@ -3,37 +3,40 @@ import { lettreCaisse, type CaisseColisageCalculee } from "../domain/colisage";
 import { formaterVolumeM3 } from "../domain/calculs";
 import { confirmerSuppression } from "../data/confirm";
 import type { Colisage } from "../hooks/useColisage";
+import type { CaisseColisage } from "../domain/types";
 import PastilleColis from "./PastilleColis";
 
 interface Props {
   colisage: Colisage;
-  // Nombre de caisses des Informations générales (copiables).
+  // Nombre de caisses du Picking (copiables).
   nbCaissesInfos: number;
   readOnly: boolean;
+  // Dimensions d'une caisse colisage modifiées : report proposé sur sa caisse du Picking (2026-10-27).
+  onDimsModifiees: (caisse: CaisseColisage, dims: [number, number, number]) => Promise<void>;
 }
 
 // Caisses de l'onglet Colisage (2026-10-14) : copies indépendantes des caisses de l'affaire, où
 // sont rangés colis et lettres. Chaque carte compare son remplissage à celui de la caisse copiée
-// dans les Informations générales.
-export default function PanneauCaissesColisage({ colisage, nbCaissesInfos, readOnly }: Props) {
+// dans le Picking.
+export default function PanneauCaissesColisage({ colisage, nbCaissesInfos, readOnly, onDimsModifiees }: Props) {
   // Pas de « + Nouvelle caisse » ici (retiré le 2026-10-19) : les caisses colisage viennent de la
-  // copie des caisses du colisage détaillé.
+  // copie des caisses du picking.
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {colisage.caisses.length === 0 && nbCaissesInfos > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <button className="btn btn-sm btn-pastel-blue" disabled={readOnly} onClick={colisage.copierCaisses}>
-            Copier les caisses du colisage détaillé
+            Copier les caisses du picking
           </button>
         </div>
       )}
 
       {colisage.caisses.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
-          Aucune caisse colisage. Copiez celles du colisage détaillé (modifiables ensuite sans toucher aux originales).
+          Aucune caisse colisage. Celles du picking sont copiées à l'arrivée sur l'onglet quand on a la main (sinon : bouton ci-dessus).
         </p>
       ) : (
-        colisage.caisses.map((c, rang) => <CarteCaisse key={c.caisse.id} calc={c} rang={rang} colisage={colisage} readOnly={readOnly} />)
+        colisage.caisses.map((c, rang) => <CarteCaisse key={c.caisse.id} calc={c} rang={rang} colisage={colisage} readOnly={readOnly} onDimsModifiees={onDimsModifiees} />)
       )}
     </div>
   );
@@ -45,7 +48,19 @@ const COULEUR_NIVEAU = {
   alerte: "var(--danger-text)",
 };
 
-function CarteCaisse({ calc, rang, colisage, readOnly }: { calc: CaisseColisageCalculee; rang: number; colisage: Colisage; readOnly: boolean }) {
+function CarteCaisse({
+  calc,
+  rang,
+  colisage,
+  readOnly,
+  onDimsModifiees,
+}: {
+  calc: CaisseColisageCalculee;
+  rang: number;
+  colisage: Colisage;
+  readOnly: boolean;
+  onDimsModifiees: Props["onDimsModifiees"];
+}) {
   const [edition, setEdition] = useState(false);
   const { caisse, source } = calc;
   const pct = (t: number) => `${Math.round(t * 100)}%`;
@@ -53,7 +68,7 @@ function CarteCaisse({ calc, rang, colisage, readOnly }: { calc: CaisseColisageC
   const autresGroupes = calc.groupes.filter((g) => g.tag !== lettreCaisse(rang));
 
   async function supprimer() {
-    if (await confirmerSuppression(`Supprimer la caisse colisage « ${caisse.nom || "(sans nom)"} » ? Ce qui y est rangé redevient non rangé (ou proposé).`)) {
+    if (await confirmerSuppression(`Supprimer la caisse colisage « ${caisse.nom || "(sans nom)"} » ? Ce qui y est rangé redevient non rangé (ou proposé).${caisse.source_caisse_id !== null ? " Elle sera recopiée du picking à la prochaine ouverture de l'onglet tant que sa caisse y existe." : ""}`)) {
       await colisage.supprimerCaisse(caisse.id);
     }
   }
@@ -76,8 +91,10 @@ function CarteCaisse({ calc, rang, colisage, readOnly }: { calc: CaisseColisageC
           nom={caisse.nom}
           dims={[caisse.longueur_mm, caisse.largeur_mm, caisse.hauteur_mm]}
           onValider={async (nom, dims) => {
+            const dimsChangees = dims[0] !== caisse.longueur_mm || dims[1] !== caisse.largeur_mm || dims[2] !== caisse.hauteur_mm;
             await colisage.modifierCaisse(caisse.id, nom, dims);
             setEdition(false);
+            if (dimsChangees) await onDimsModifiees(caisse, dims);
           }}
           onAnnuler={() => setEdition(false)}
         />
@@ -129,8 +146,8 @@ function CarteCaisse({ calc, rang, colisage, readOnly }: { calc: CaisseColisageC
         <thead>
           <tr>
             <th style={thStyle} />
-            <th style={{ ...thStyle, textAlign: "right" }}>Colisage détaillé</th>
-            <th style={{ ...thStyle, textAlign: "right" }}>Colisage réel</th>
+            <th style={{ ...thStyle, textAlign: "right" }}>Picking</th>
+            <th style={{ ...thStyle, textAlign: "right" }}>Colisage en cours</th>
           </tr>
         </thead>
         <tbody>
@@ -164,7 +181,7 @@ function CarteCaisse({ calc, rang, colisage, readOnly }: { calc: CaisseColisageC
           </span>
         </div>
       )}
-      {!source && <div style={{ color: "var(--text-faint)", fontSize: 12 }}>Pas de caisse correspondante dans le colisage détaillé.</div>}
+      {!source && <div style={{ color: "var(--text-faint)", fontSize: 12 }}>Pas de caisse correspondante dans le picking.</div>}
       {calc.niveau === "alerte" && (
         <div style={{ color: "var(--danger-text)", fontWeight: 600 }}>⚠ Le contenu dépasse le volume de la caisse.</div>
       )}

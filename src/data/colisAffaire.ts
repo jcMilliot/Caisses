@@ -18,6 +18,10 @@ export interface ColisRangement {
   caisse_colisage_id: number | null;
 }
 
+// Alerte d'une pièce qu'on peut accepter pour un carton : ne rentre pas sur les 3 axes
+// (« dimensions », 0045) ou ligne plus volumineuse que le carton, ex. sachet (« volume », 0048).
+export type AlerteAcceptable = "dimensions" | "volume";
+
 // Onglet Colisage d'une affaire : carton de chaque colis (pack_tag chiffré), caisses colisage
 // (copies indépendantes des caisses de l'affaire) et rangement des colis / lettres dedans.
 export const colisAffaireApi = {
@@ -36,9 +40,10 @@ export const colisAffaireApi = {
       trigramme,
     }),
   // Pièces acceptées malgré l'alerte de dimensions (carton = clé du carton, cf. domain/colisage.ts).
-  listPiecesAcceptees: (affaireId: number) => call<{ article_id: number; carton: string }[]>("list_pieces_acceptees", { affaireId }),
-  setPieceAcceptee: (articleId: number, carton: string | null, trigramme: string) =>
-    call<void>("set_piece_acceptee", { articleId, carton, trigramme }),
+  listPiecesAcceptees: (affaireId: number) =>
+    call<{ article_id: number; carton: string; alerte: AlerteAcceptable }[]>("list_pieces_acceptees", { affaireId }),
+  setPieceAcceptee: (articleId: number, alerte: AlerteAcceptable, carton: string | null, trigramme: string) =>
+    call<void>("set_piece_acceptee", { articleId, alerte, carton, trigramme }),
   listCaisses: (affaireId: number) => call<CaisseColisage[]>("list_caisses_colisage", { affaireId }),
   copierCaisses: (affaireId: number, trigramme: string) => call<void>("copier_caisses_colisage", { affaireId, trigramme }),
   creerCaisse: (affaireId: number, nom: string, dims: [number, number, number], trigramme: string) =>

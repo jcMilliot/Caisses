@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Article, CaisseCalculee, CaisseColisage, CartonConso } from "../domain/types";
 import { cartonConsoApi } from "../data/cartonConso";
 import { colisAffaireApi } from "../data/colisAffaire";
 import { calculerColisage, cartonLibre, grouperColis } from "../domain/colisage";
-import type { ColisAffaire } from "../data/colisAffaire";
+import type { AlerteAcceptable, ColisAffaire } from "../data/colisAffaire";
 
 // État de l'onglet Colisage d'une affaire (2026-10-14) : cartons des colis, caisses colisage
 // (copies indépendantes) et rangement des colis / lettres, partagé entre la liste des colis et le
@@ -15,12 +15,14 @@ export function useColisage(
   seuilPct: number,
   trigramme: string,
   actif: boolean,
+  peutEcrire: boolean,
 ) {
   const [cartons, setCartons] = useState<CartonConso[]>([]);
   const [choixCarton, setChoixCarton] = useState<ColisAffaire[]>([]);
   const [caisses, setCaisses] = useState<CaisseColisage[]>([]);
   const [rangements, setRangements] = useState<Map<string, number | null>>(new Map());
   const [acceptees, setAcceptees] = useState<Map<number, string>>(new Map());
+  const [accepteesVolume, setAccepteesVolume] = useState<Map<number, string>>(new Map());
   const [erreur, setErreur] = useState<string | null>(null);
 
   const recharger = useCallback(async () => {
@@ -32,7 +34,8 @@ export function useColisage(
         colisAffaireApi.listRangements(affaireId),
         colisAffaireApi.listPiecesAcceptees(affaireId),
       ]);
-      setAcceptees(new Map(pa.map((p) => [p.article_id, p.carton])));
+      setAcceptees(new Map(pa.filter((p) => p.alerte === "dimensions").map((p) => [p.article_id, p.carton])));
+      setAccepteesVolume(new Map(pa.filter((p) => p.alerte === "volume").map((p) => [p.article_id, p.carton])));
       setCartons(c);
       setChoixCarton(ch);
       setCaisses(cc);
@@ -42,9 +45,28 @@ export function useColisage(
     }
   }, [affaireId]);
 
+  // À l'arrivée sur l'onglet (2026-10-27) : les caisses du Picking pas encore copiées le sont
+  // d'office, une fois par arrivée, dès qu'on a la main (sinon au moment où on la prend).
+  const copieFaite = useRef(false);
   useEffect(() => {
-    if (actif) recharger();
-  }, [actif, recharger]);
+    if (!actif) {
+      copieFaite.current = false;
+      return;
+    }
+    (async () => {
+      if (peutEcrire && !copieFaite.current && caissesInfos.length > 0) {
+        copieFaite.current = true;
+        try {
+          const sources = new Set((await colisAffaireApi.listCaisses(affaireId)).map((c) => c.source_caisse_id));
+          if (caissesInfos.some((c) => !sources.has(c.id))) await colisAffaireApi.copierCaisses(affaireId, trigramme);
+        } catch (e) {
+          setErreur(String(e));
+        }
+      }
+      await recharger();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actif, peutEcrire, recharger]);
 
   async function executer(action: () => Promise<void>) {
     setErreur(null);
@@ -80,13 +102,15 @@ export function useColisage(
   return {
     cartons,
     erreur,
+    recharger,
     ...calcul,
     // Rangements choisis à la main (absent = rangement proposé).
     rangementsChoisis: rangements,
-    // Pièces acceptées malgré l'alerte de dimensions : article → clé du carton.
+    // Pièces acceptées malgré l'alerte de dimensions / de volume : article → clé du carton.
     acceptees,
-    accepterPiece: (articleId: number, carton: string | null) =>
-      executer(() => colisAffaireApi.setPieceAcceptee(articleId, carton, trigramme)),
+    accepteesVolume,
+    accepterPiece: (articleId: number, alerte: AlerteAcceptable, carton: string | null) =>
+      executer(() => colisAffaireApi.setPieceAcceptee(articleId, alerte, carton, trigramme)),
     choisirCarton: (tag: string, id: number | null) => executer(() => colisAffaireApi.setCarton(affaireId, tag, id, trigramme)),
     choisirCartonLibre: (tag: string, dims: [number, number, number], poidsKg: number) =>
       executer(() => colisAffaireApi.setCartonLibre(affaireId, tag, dims, poidsKg, trigramme)),
