@@ -182,8 +182,8 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-10-28 : migrations `0001` à `0046` et `0048` publiées (0.18.0) ;
-`0049_add_colis_caisse_intranet.sql` sur `main`, pas encore publiée — **`0047` est réservé** à la branche `vue-3d`
+État au 2026-10-28 : migrations `0001` à `0046`, `0048` et `0049` publiées (0.19.0) —
+**`0047` est réservé** à la branche `vue-3d`
 (`0047_add_placement_3d.sql`), pas de trou à combler. Pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes.
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
@@ -2349,6 +2349,21 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   **lignes** (lecture de l'assistant : « qté de lignes restantes »), pas en quantités. Filtré,
   il passe en grand (16 px, pastille pleine `--accent`, texte blanc) pour être bien visible.
   Validation : `npx tsc --noEmit`, `npx vite build`. **Non vu à l'écran**.
+
+### 2026-10-28 — Release 0.19.0
+
+- Contenu : caisse des colis donnée par la liste de colisage de l'intranet (imposée, prioritaire
+  sur le rangement à la main, changements dans le résumé de mise à jour ; lignes d'articles de la
+  liste ignorées) ; colis rangés d'office dans la seule caisse colisage d'une affaire ; compteur
+  « lignes affichées / total » bien visible quand un filtre est actif dans le Picking. Migration
+  `0049` (appliquée sur la base partagée au premier lancement). Toujours **sans la vue 3D**.
+- Essayé par l'utilisateur en dev contre le vrai intranet : route corrigée en
+  `customer-client/contracts/picking/packing/list`, puis lignes d'articles écartées ; **résultat
+  après cette dernière correction pas encore confirmé** (rangement des colis à vérifier sur la
+  version installée). Compteur filtré validé à l'écran.
+- Validation avant tag : `npx tsc --noEmit`, `npx vite build`, `cargo check`, `cargo test --lib`
+  (17), `npm run tauri build -- --debug` (dossier de compilation à part). Soumission Microsoft
+  Defender à faire dès publication si l'installeur est bloqué.
 
 ## Prochaines étapes
 
