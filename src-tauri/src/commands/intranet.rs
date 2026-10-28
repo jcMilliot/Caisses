@@ -11,6 +11,9 @@
 //! - Picking : `POST {url}customer-client/contracts/picking/get`
 //!   (`{ fake_header: { Authorization: "Bearer …" }, business }`), corps JSON envoyé en
 //!   `text/plain` comme le fait l'intranet. Affaire inconnue → 400 « Affaire introuvable ».
+//! - Liste de colisage (2026-10-28) : `POST {url}customer-client/contracts/picking/packing/list`,
+//!   même corps → tableau
+//!   d'objets, `tag` = colis, `father` = lettre de la caisse où il est rangé.
 //! - Le calcul de ce qui change (ajouts, modifications, suppressions) est fait côté frontend
 //!   (`domain/importIntranet.ts`) ; `appliquer_import_intranet` exécute ce plan en une transaction.
 
@@ -349,25 +352,20 @@ fn lire_ligne(l: &Value) -> LignePicking {
     }
 }
 
-/// Lit le picking de l'affaire `business` sur l'intranet (toutes les lignes, sans filtre).
-#[tauri::command]
-pub async fn fetch_picking_intranet(
-    db: State<'_, Db>,
-    session: State<'_, IntranetSession>,
-    business: String,
-) -> Result<Vec<LignePicking>, String> {
-    let url = url_api(&db)?;
-    let business = business.trim().to_string();
+/// `POST {url}{chemin}` avec `{ fake_header, business }` (jeton dans le corps, comme l'intranet),
+/// renouvelle le jeton une fois sur un 401. Renvoie le JSON de la réponse.
+async fn post_affaire(db: &Db, session: &IntranetSession, chemin: &str, business: &str) -> Result<Value, String> {
+    let url = url_api(db)?;
     let mut forcer = false;
     loop {
-        let j = jeton(&url, &session, forcer).await?;
+        let j = jeton(&url, session, forcer).await?;
         let corps = serde_json::json!({
             "fake_header": { "Authorization": format!("Bearer {j}") },
             "business": business,
         })
         .to_string();
         let rep = client()?
-            .post(format!("{url}customer-client/contracts/picking/get"))
+            .post(format!("{url}{chemin}"))
             .header("Content-Type", "text/plain")
             .body(corps)
             .send()
@@ -376,23 +374,97 @@ pub async fn fetch_picking_intranet(
         let statut = rep.status();
         if statut == reqwest::StatusCode::UNAUTHORIZED {
             if forcer {
-                return Err("L'intranet refuse l'accès au picking (401).".to_string());
+                return Err("L'intranet refuse l'accès (401).".to_string());
             }
             // Jeton expiré (une demi-journée) : nouvelle connexion puis nouvel essai.
             forcer = true;
             continue;
         }
-        let json: Value = rep.json().await.unwrap_or(Value::Null);
+        let brut = rep.text().await.unwrap_or_default();
+        let json: Value = serde_json::from_str(&brut).unwrap_or(Value::Null);
         if !statut.is_success() {
             let message = json.get("message").and_then(Value::as_str).unwrap_or("");
             if message.to_lowercase().contains("introuvable") {
                 return Err(format!("Affaire « {business} » introuvable dans l'intranet."));
             }
-            return Err(format!("Erreur de l'intranet ({statut}) {message}").trim().to_string());
+            // Pas de message exploitable (ex. 404 d'une route inconnue) : adresse appelée et début de
+            // la réponse, pour diagnostiquer (2026-10-28).
+            let detail = if message.is_empty() {
+                let extrait: String = brut.trim().chars().take(200).collect();
+                format!("— {chemin} : {extrait}")
+            } else {
+                message.to_string()
+            };
+            return Err(format!("Erreur de l'intranet ({statut}) {detail}").trim().to_string());
         }
-        let lignes = json.get("picking").and_then(Value::as_array).ok_or("Réponse de l'intranet sans « picking »")?;
-        return Ok(lignes.iter().map(lire_ligne).collect());
+        return Ok(json);
     }
+}
+
+/// Lit le picking de l'affaire `business` sur l'intranet (toutes les lignes, sans filtre).
+#[tauri::command]
+pub async fn fetch_picking_intranet(
+    db: State<'_, Db>,
+    session: State<'_, IntranetSession>,
+    business: String,
+) -> Result<Vec<LignePicking>, String> {
+    let json = post_affaire(&db, &session, "customer-client/contracts/picking/get", business.trim()).await?;
+    let lignes = json.get("picking").and_then(Value::as_array).ok_or("Réponse de l'intranet sans « picking »")?;
+    Ok(lignes.iter().map(lire_ligne).collect())
+}
+
+/// Caisse d'un colis d'après la liste de colisage de l'intranet (2026-10-28).
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct ColisCaisse {
+    pub tag: String,
+    pub lettre: String,
+}
+
+/// Réponse de `picking/packing/list` : tableau d'objets. `article` vide = un colis : `tag` = colis,
+/// `father` = lettre de la caisse. `article` renseigné (un AR) = une ligne d'article (`tag` =
+/// identifiant, `father` = son colis ou sa lettre) : ignorée, le picking donne déjà le colis d'un
+/// article (décision du 2026-10-28). Entrées sans tag ou sans caisse ignorées ; un même colis cité
+/// deux fois : dernière valeur.
+fn lire_packing(json: &Value) -> Result<Vec<ColisCaisse>, String> {
+    let entrees = json.as_array().ok_or("Réponse de la liste de colisage illisible")?;
+    let mut res: Vec<ColisCaisse> = Vec::new();
+    for e in entrees {
+        if !texte(e.get("article")).is_empty() {
+            continue;
+        }
+        let tag = texte(e.get("tag"));
+        let lettre = texte(e.get("father")).to_uppercase();
+        if tag.is_empty() || lettre.is_empty() {
+            continue;
+        }
+        res.retain(|c| c.tag != tag);
+        res.push(ColisCaisse { tag, lettre });
+    }
+    Ok(res)
+}
+
+/// Liste de colisage de l'affaire : caisse (lettre) de chaque colis (2026-10-28).
+#[tauri::command]
+pub async fn fetch_packing_intranet(
+    db: State<'_, Db>,
+    session: State<'_, IntranetSession>,
+    business: String,
+) -> Result<Vec<ColisCaisse>, String> {
+    let json = post_affaire(&db, &session, "customer-client/contracts/picking/packing/list", business.trim()).await?;
+    lire_packing(&json)
+}
+
+#[tauri::command]
+pub fn list_colis_caisse_intranet(db: State<Db>, affaire_id: i64) -> Result<Vec<ColisCaisse>, String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    let mut stmt = conn
+        .prepare("SELECT tag, lettre FROM colis_caisse_intranet WHERE affaire_id = ?1 ORDER BY tag")
+        .map_err(|e| e.to_string())?;
+    let lignes = stmt
+        .query_map([affaire_id], |r| Ok(ColisCaisse { tag: r.get(0)?, lettre: r.get(1)? }))
+        .map_err(|e| e.to_string())?;
+    lignes.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
 #[derive(Debug, Deserialize)]
@@ -427,6 +499,10 @@ pub struct PlanImport {
     pub modifs: Vec<ModifIntranet>,
     /// AR des lignes sans numéro de besoin (non importées).
     pub anomalies: Vec<String>,
+    /// Caisses des colis d'après l'intranet : remplacent toutes celles de l'affaire ; absent =
+    /// liste de colisage non lue (laissée telle quelle).
+    #[serde(default)]
+    pub caisses_colis: Option<Vec<ColisCaisse>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -490,6 +566,17 @@ fn appliquer(conn: &mut rusqlite::Connection, affaire_id: i64, plan: &PlanImport
             ],
         )
         .map_err(|e| e.to_string())?;
+    }
+    if let Some(caisses) = &plan.caisses_colis {
+        tx.execute("DELETE FROM colis_caisse_intranet WHERE affaire_id = ?1", [affaire_id])
+            .map_err(|e| e.to_string())?;
+        for c in caisses {
+            tx.execute(
+                "INSERT OR REPLACE INTO colis_caisse_intranet (affaire_id, tag, lettre) VALUES (?1, ?2, ?3)",
+                rusqlite::params![affaire_id, c.tag, c.lettre],
+            )
+            .map_err(|e| e.to_string())?;
+        }
     }
     let anomalies = serde_json::to_string(&plan.anomalies).map_err(|e| e.to_string())?;
     tx.execute(
@@ -619,6 +706,7 @@ mod tests {
             ajouts: vec![art(10, 1, false), art(11, 3, false)],
             modifs: vec![],
             anomalies: vec!["AR_SANS_BESOIN".into()],
+            caisses_colis: Some(vec![ColisCaisse { tag: "3".into(), lettre: "A".into() }]),
         };
         appliquer(&mut conn, 1, &plan).unwrap();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM article WHERE normm IS NOT NULL", [], |r| r.get(0)).unwrap();
@@ -636,6 +724,7 @@ mod tests {
             ajouts: vec![],
             modifs: vec![ModifIntranet { id: id11, article: art(11, 3, true) }],
             anomalies: vec![],
+            caisses_colis: None,
         };
         appliquer(&mut conn, 1, &plan).unwrap();
         let (caisse, supprime): (Option<i64>, bool) = conn
@@ -645,5 +734,52 @@ mod tests {
         assert!(supprime);
         let anomalies: String = conn.query_row("SELECT anomalies FROM affaire_import_intranet", [], |r| r.get(0)).unwrap();
         assert_eq!(anomalies, "[]");
+        // Liste de colisage non lue (None) : caisses des colis inchangées.
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM colis_caisse_intranet", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
+
+        // Liste lue : remplace tout (colis 3 retiré, colis 4 → B).
+        let plan = PlanImport {
+            supprimer_ids: vec![],
+            ajouts: vec![],
+            modifs: vec![],
+            anomalies: vec![],
+            caisses_colis: Some(vec![ColisCaisse { tag: "4".into(), lettre: "B".into() }]),
+        };
+        appliquer(&mut conn, 1, &plan).unwrap();
+        let lignes: Vec<(String, String)> = conn
+            .prepare("SELECT tag, lettre FROM colis_caisse_intranet WHERE affaire_id = 1")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(lignes, vec![("4".to_string(), "B".to_string())]);
+
+        // Suppression de l'affaire : en cascade.
+        conn.execute("DELETE FROM affaire WHERE id = 1", []).unwrap();
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM colis_caisse_intranet", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn lecture_liste_colisage() {
+        let json: Value = serde_json::from_str(
+            r#"[{"id":1,"business":"AFFAIRE1","father":"A","tag":"3","length":null},
+                {"id":2,"father":" b ","tag":" 4 "},
+                {"id":3,"father":null,"tag":"5"},
+                {"id":4,"father":"C","tag":""},
+                {"id":5,"father":"C","tag":"3"},
+                {"id":6,"father":"7","tag":"0a8f6976-2263-4452","article":"AR_TEST_00001"}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            lire_packing(&json).unwrap(),
+            vec![
+                ColisCaisse { tag: "4".into(), lettre: "B".into() },
+                ColisCaisse { tag: "3".into(), lettre: "C".into() },
+            ]
+        );
+        assert!(lire_packing(&Value::Null).is_err());
     }
 }

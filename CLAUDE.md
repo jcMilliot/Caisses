@@ -167,7 +167,8 @@ src-tauri/src/
     intranet.rs       → compte intranet : connexion_auto (démarrage) / connexion_intranet /
                         admin_unlock_intranet (adresse saisie à la connexion), identifiants dans le
                         gestionnaire d'identifiants Windows (keyring) ; import du picking
-                        (fetch_picking_intranet, get/appliquer_import_intranet) ; réglages
+                        (fetch_picking_intranet, get/appliquer_import_intranet) + liste de colisage
+                        (fetch_packing_intranet, list_colis_caisse_intranet) ; réglages
                         intranet_api_url / collage_excel_visible
 ```
 
@@ -181,8 +182,8 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-10-27 : migrations `0001` à `0046` publiées ; `0048_add_piece_acceptee_volume.sql`
-sur `main`, pas encore publiée — **`0047` est réservé** à la branche `vue-3d`
+État au 2026-10-28 : migrations `0001` à `0046` et `0048` publiées (0.18.0) ;
+`0049_add_colis_caisse_intranet.sql` sur `main`, pas encore publiée — **`0047` est réservé** à la branche `vue-3d`
 (`0047_add_placement_3d.sql`), pas de trou à combler. Pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes.
 Note : `option_liste.ordre` n'est plus un ordre d'affichage — les listes déroulantes sont
@@ -303,6 +304,11 @@ piece_acceptee (article_id PK REFERENCES article ON DELETE CASCADE, carton TEXT)
 piece_acceptee_volume (article_id PK REFERENCES article ON DELETE CASCADE, carton TEXT)  -- 0048
          -- ligne acceptée malgré « plus volumineuse que le carton » (pièce en sachet), même clé de
          -- carton ; retire seulement l'alerte de la ligne, son volume compte toujours.
+
+colis_caisse_intranet (affaire_id REFERENCES affaire ON DELETE CASCADE, tag, lettre)  -- 0049
+         -- PK (affaire_id, tag) : caisse (lettre) d'un colis d'après la liste de colisage de
+         -- l'intranet, imposée dans Colisage en cours, prioritaire sur colis_rangement (gardé à
+         -- part). Réécrite en entier à chaque mise à jour du picking validée.
 
 demande_alerte (demande_id PK REFERENCES demande ON DELETE CASCADE,  -- 0046, page Alertes
          date_anticipee TEXT,  -- AAAA-MM-JJ, '' = aucune ; remplace date_picking dans
@@ -2307,6 +2313,43 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   `npm run tauri build -- --debug` (dossier de compilation à part). Soumission Microsoft Defender
   à faire dès publication si l'installeur est bloqué.
 
+### 2026-10-28 — Colisage en cours : caisse des colis donnée par l'intranet
+
+- **Source** (trouvée par l'utilisateur) : liste de colisage de l'affaire, `POST {url}customer-
+  client/contracts/picking/packing/list` (même préfixe et même corps que le picking, jeton dans
+  `fake_header` — une première version sans le préfixe renvoyait 404) → tableau d'objets, `tag` =
+  colis, `father` = lettre de la caisse ; les entrées dont `article` contient un AR sont des lignes
+  d'articles (`tag` = identifiant, `father` = colis) et sont **ignorées** (décision de
+  l'utilisateur : le colis d'un article vient déjà du picking). Détails et exemple de réponse dans
+  `docs/prive/intranet-api.md` › « Caisse d'un colis ».
+- **Décisions de l'utilisateur** : caisse donnée par l'intranet **imposée** (comme les lettres,
+  pas de menu) et **prioritaire sur le rangement fait à la main** ; liste lue **avec le picking**
+  (ouverture de l'affaire + bouton) et changements montrés dans le **résumé à valider** (« Colis 3
+  → caisse A », « caisse A → B », « plus de caisse dans l'intranet ») ; colis sans caisse dans
+  l'intranet : affaire à **une seule caisse colisage** → rangé d'office dedans, sinon choix à la
+  main comme avant.
+- **Choix de l'assistant** : table à part `colis_caisse_intranet` (migration `0049`), le choix à
+  la main (`colis_rangement`) n'est pas écrasé et revient si l'intranet ne donne plus de caisse ;
+  liste de colisage lue seulement si le picking a des colis (chiffres) ; si elle échoue, le
+  picking est mis à jour quand même, caisses des colis inchangées (`plan.caisses_colis` = null),
+  texte orange sous le repère d'étapes. Lettre de l'intranet sans caisse colisage correspondante :
+  « pas de caisse C », comme pour les lettres.
+- Code : `intranet.rs` (`post_affaire` mis en commun avec le picking, `lire_packing`,
+  `fetch_packing_intranet`, `list_colis_caisse_intranet`, `appliquer` réécrit la liste) ;
+  `importIntranet.ts::comparerCaissesColis` ; `colisage.ts::calculerColisage` (champs
+  `imposee` / `lettreImposee` à la place de `propose`, inutilisé) ; `useImportIntranet`,
+  `useColisage`, `ImportIntranetDialog`, `ColisageVue::ChoixCaisse`, `EtapesSimulation`.
+- Validation : `cargo test --lib` (17, + lecture de la liste de colisage, remplacement / non-lecture
+  / cascade), `npx tsc --noEmit`, `npx vite build`, `calculerColisage` et `comparerCaissesColis`
+  vérifiés sur 6 cas (fichier jetable). **Non testé contre le vrai intranet ni vu à l'écran** — à
+  vérifier sur une affaire colisée dans l'intranet (exemple réel dans `docs/prive/`).
+- **Même jour — compteur filtré** (demande de l'utilisateur) : avec un filtre actif dans le tableau
+  du Picking, le compteur du titre « Articles » affiche « lignes affichées / lignes de l'affaire »
+  (`ArticlesTable` prop `onNbAffiches`) ; sans filtre, le total seul comme avant. Compte en
+  **lignes** (lecture de l'assistant : « qté de lignes restantes »), pas en quantités. Filtré,
+  il passe en grand (16 px, pastille pleine `--accent`, texte blanc) pour être bien visible.
+  Validation : `npx tsc --noEmit`, `npx vite build`. **Non vu à l'écran**.
+
 ## Prochaines étapes
 
 ### Fait
@@ -2851,10 +2894,20 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 automatique, bouton, onglets, repère d'étapes et cote égale **faits le même jour** (cf. journal).
 Restent :
 
-- **Colis rangés automatiquement** : l'utilisateur vérifie si l'intranet indique la caisse
+- **Colis rangés automatiquement** — **codé le 2026-10-28** (cf. journal), reste à vérifier sur
+  le vrai intranet. Historique : l'utilisateur vérifie si l'intranet indique la caisse
   (lettre) d'un colis (numéro). Sinon : affaire à **une seule caisse colisage** → colis rangés
-  d'office dans cette caisse (aujourd'hui rangés à la main, `colis_rangement`). En attente de sa
-  réponse.
+  d'office dans cette caisse (aujourd'hui rangés à la main, `colis_rangement`). **Piste du
+  2026-10-28** : l'utilisateur va essayer de récupérer cette info par une autre route de
+  l'intranet (liste de colisage par affaire — détails dans `docs/prive/intranet-api.md` ›
+  « Caisse d'un colis ») ; **réponse obtenue le 2026-10-28** : une entrée par colis, `tag`
+  (colis) + `father` (lettre de la caisse). **Décisions de l'utilisateur (2026-10-28)** :
+  caisse donnée par l'intranet = **imposée** (comme les lettres, pas de menu) et **remplace** un
+  rangement fait à la main ; liste lue **avec le picking** (ouverture de l'affaire + bouton) et
+  montrée dans le résumé à valider ; colis sans caisse dans l'intranet : affaire à **une seule
+  caisse colisage** → rangé d'office dedans, sinon choix à la main comme aujourd'hui. Reste à
+  savoir : jeton dans `fake_header` ou en en-tête, et forme exacte de la réponse (liste à la
+  racine ou sous une clé).
 - **Tablette Samsung sous Windows** : voir si l'app s'y installe et s'utilise (tactile,
   WebView2, accès au dossier réseau de la base, connexion intranet) — utile pour choisir les
   cartons dans Colisage en cours. Glisser-déposer et vue 3D au tactile non prévus à ce jour.

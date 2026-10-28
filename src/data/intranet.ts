@@ -1,5 +1,5 @@
 import { call } from "./client";
-import type { LignePicking, PlanImport } from "../domain/importIntranet";
+import type { ColisCaisse, LignePicking, PlanImport } from "../domain/importIntranet";
 
 export interface ImportIntranetInfo {
   importe_le: string;
@@ -14,6 +14,9 @@ export const ERR_IDENTIFIANTS_REFUSES = "IDENTIFIANTS_REFUSES";
 export const intranetApi = {
   getIdentifiant: () => call<string | null>("get_intranet_identifiant"),
   fetchPicking: (business: string) => call<LignePicking[]>("fetch_picking_intranet", { business }),
+  // Liste de colisage : caisse (lettre) de chaque colis (2026-10-28).
+  fetchPacking: (business: string) => call<ColisCaisse[]>("fetch_packing_intranet", { business }),
+  listColisCaisse: (affaireId: number) => call<ColisCaisse[]>("list_colis_caisse_intranet", { affaireId }),
   getImport: (affaireId: number) => call<ImportIntranetInfo | null>("get_import_intranet", { affaireId }),
   appliquerImport: (affaireId: number, plan: PlanImport, trigramme: string) =>
     call<void>("appliquer_import_intranet", { affaireId, plan, trigramme }),

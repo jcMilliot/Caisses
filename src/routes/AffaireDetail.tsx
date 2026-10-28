@@ -71,6 +71,8 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
 
   const conteneurArticlesRef = useRef<HTMLDivElement>(null);
   const [ongletArticles, setOngletArticles] = useState<"infos" | "colisage">("infos");
+  // Lignes affichées par le tableau après filtres (null = tableau non affiché).
+  const [nbArticlesAffiches, setNbArticlesAffiches] = useState<number | null>(null);
   const aDesColis = articles.some((a) => a.colis.trim() !== "");
   // Plus aucun article colisé (après une mise à jour) : retour à Informations générales.
   const ongletVue = aDesColis ? ongletArticles : "infos";
@@ -89,7 +91,11 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
     affaire?.nom,
     tousArticles,
     trigramme,
-    reload,
+    // Les caisses des colis (intranet) changent aussi avec la mise à jour du picking.
+    async () => {
+      await reload();
+      await colisage.recharger();
+    },
     lock.status === "held",
     !loading && affaire !== null,
   );
@@ -637,6 +643,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
           enCours: importIntranet.enCours,
           derniereMaj: importIntranet.derniereMaj,
           erreur: importIntranet.erreurAuto,
+          erreurColisage: importIntranet.erreurColisage,
           attenteMain: !importIntranet.autoLance && !lock.lectureSeule && lock.status !== "held" && lock.status !== "acquiring",
         }}
       />
@@ -657,7 +664,18 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
         </button>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <h2 style={sectionTitleStyle}>Articles <span style={sectionCountStyle}>{articles.length}</span></h2>
+        <h2 style={sectionTitleStyle}>
+          Articles{" "}
+          {nbArticlesAffiches !== null && nbArticlesAffiches !== articles.length ? (
+            // Filtre actif : compteur bien visible, aux couleurs du filtre actif des en-têtes.
+            <span style={sectionCountFiltreStyle} title="Lignes affichées après filtre / lignes de l'affaire">
+              {nbArticlesAffiches}
+              <span style={{ fontWeight: 500, opacity: 0.85 }}> / {articles.length}</span>
+            </span>
+          ) : (
+            <span style={sectionCountStyle}>{articles.length}</span>
+          )}
+        </h2>
         <div style={{ display: "flex", gap: 8 }}>
           {selectedIds.size > 0 && !readOnly && (
             <>
@@ -723,6 +741,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
           }
           readOnly={readOnly}
           champsManquantsParArticle={surlignerManques ? articlesAvecManque : undefined}
+          onNbAffiches={setNbArticlesAffiches}
         />
       </div>
       )}
@@ -1038,6 +1057,15 @@ const sectionTitleStyle: React.CSSProperties = {
   gap: 8,
 };
 
+const sectionCountFiltreStyle: React.CSSProperties = {
+  fontSize: 16,
+  fontWeight: 800,
+  background: "var(--accent)",
+  color: "#fff",
+  borderRadius: 999,
+  padding: "3px 14px",
+  fontVariantNumeric: "tabular-nums",
+};
 const sectionCountStyle: React.CSSProperties = {
   fontSize: 11.5,
   fontWeight: 700,

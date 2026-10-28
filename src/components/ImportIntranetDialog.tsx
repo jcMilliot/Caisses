@@ -53,6 +53,11 @@ export default function ImportIntranetDialog({ resultat: r, premierImport, busy,
             note="Elles reviennent dans le tableau, sans caisse."
             lignes={r.revenus.map((a) => a.ar)}
           />
+          <Bloc
+            titre={`${r.caissesColis.length} colis changé(s) de caisse dans l'intranet`}
+            note="La caisse donnée par l'intranet s'impose dans Colisage en cours."
+            lignes={r.caissesColis}
+          />
           {anomalies > 0 && (
             <p style={avertissementStyle}>⚠ {anomalies} ligne(s) sans numéro de besoin ne seront pas importée(s).</p>
           )}

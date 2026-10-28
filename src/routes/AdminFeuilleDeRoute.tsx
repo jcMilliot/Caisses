@@ -10,11 +10,6 @@ interface Point {
 
 const A_FAIRE: Point[] = [
   {
-    titre: "Colisage : rangement des colis",
-    detail:
-      "Si l'intranet indique dans quelle caisse va un colis, le reprendre. Sinon, quand l'affaire n'a qu'une caisse, y ranger les colis d'office.",
-  },
-  {
     titre: "Tablette Samsung sous Windows",
     detail:
       "Essayer d'installer l'application sur la tablette, pour choisir les cartons pendant le colisage.",
@@ -27,6 +22,11 @@ const A_FAIRE: Point[] = [
 ];
 
 const A_VERIFIER: Point[] = [
+  {
+    titre: "Colisage : caisse des colis donnée par l'intranet",
+    detail:
+      "Sur une affaire colisée dans l'intranet, la mise à jour du picking annonce « Colis 3 → caisse A » ; après validation, le colis est rangé dans la caisse A de Colisage en cours, sans choix possible. Sur une affaire à une seule caisse, les colis y sont rangés d'office.",
+  },
   {
     titre: "Dossier de la base",
     detail:

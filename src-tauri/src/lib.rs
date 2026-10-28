@@ -50,9 +50,9 @@ use commands::poids_caisse::{
     update_caisse_pesee,
 };
 use commands::intranet::{
-    admin_unlock_intranet, appliquer_import_intranet, connexion_auto, connexion_intranet, fetch_picking_intranet,
-    get_collage_excel_visible, get_import_intranet, get_intranet_identifiant, get_intranet_url, set_collage_excel_visible,
-    set_intranet_url, IntranetSession,
+    admin_unlock_intranet, appliquer_import_intranet, connexion_auto, connexion_intranet, fetch_packing_intranet,
+    fetch_picking_intranet, get_collage_excel_visible, get_import_intranet, get_intranet_identifiant, get_intranet_url,
+    list_colis_caisse_intranet, set_collage_excel_visible, set_intranet_url, IntranetSession,
 };
 use commands::journal::list_journal;
 use commands::locks::{
@@ -220,6 +220,8 @@ pub fn run() {
             connexion_auto,
             admin_unlock_intranet,
             fetch_picking_intranet,
+            fetch_packing_intranet,
+            list_colis_caisse_intranet,
             get_import_intranet,
             appliquer_import_intranet,
             get_intranet_url,

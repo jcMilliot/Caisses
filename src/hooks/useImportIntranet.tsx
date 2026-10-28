@@ -3,7 +3,8 @@ import IdentifiantsIntranetDialog from "../components/IdentifiantsIntranetDialog
 import ImportIntranetDialog from "../components/ImportIntranetDialog";
 import { confirmerAction } from "../data/confirm";
 import { intranetApi, ERR_IDENTIFIANTS_REFUSES, ERR_IDENTIFIANTS_REQUIS, type ImportIntranetInfo } from "../data/intranet";
-import { aucunChangement, comparerPicking, type ResultatImport } from "../domain/importIntranet";
+import { aucunChangement, comparerPicking, type ColisCaisse, type ResultatImport } from "../domain/importIntranet";
+import { estColisChiffre } from "../domain/colisage";
 import type { Article } from "../domain/types";
 
 // Import / vérification de mise à jour des articles d'une affaire depuis l'intranet (2026-10-07).
@@ -30,6 +31,8 @@ export function useImportIntranet(
   const [application, setApplication] = useState(false);
   const [autoLance, setAutoLance] = useState(false);
   const [erreurAuto, setErreurAuto] = useState<string | null>(null);
+  // Échec de la liste de colisage seule : le picking est mis à jour quand même (2026-10-28).
+  const [erreurColisage, setErreurColisage] = useState<string | null>(null);
 
   const rechargerInfo = useCallback(() => {
     intranetApi
@@ -56,6 +59,7 @@ export function useImportIntranet(
     if (!nomAffaire) return;
     setEnCours(true);
     setErreurAuto(null);
+    setErreurColisage(null);
     try {
       let lignes;
       try {
@@ -70,7 +74,21 @@ export function useImportIntranet(
         }
         throw e;
       }
-      const r = comparerPicking(tousArticles, lignes, premierImport);
+      // Caisses des colis : liste de colisage lue seulement s'il y a des colis (chiffres).
+      let caissesIntranet: ColisCaisse[] | null = null;
+      let caissesAvant: ColisCaisse[] = [];
+      if (lignes.some((l) => estColisChiffre(l.colis.trim()))) {
+        try {
+          [caissesIntranet, caissesAvant] = await Promise.all([
+            intranetApi.fetchPacking(nomAffaire),
+            intranetApi.listColisCaisse(affaireId),
+          ]);
+        } catch (e) {
+          caissesIntranet = null;
+          setErreurColisage(String(e));
+        }
+      }
+      const r = comparerPicking(tousArticles, lignes, premierImport, caissesAvant, caissesIntranet);
       if (premierImport && r.ajoutes.length === 0) {
         if (auto) setErreurAuto("aucun article AR pour cette affaire dans l'intranet.");
         else await confirmerAction("Aucun article AR à importer pour cette affaire dans l'intranet.", "Importer");
@@ -142,6 +160,7 @@ export function useImportIntranet(
     derniereMaj: info?.importe_le ?? null,
     autoLance,
     erreurAuto,
+    erreurColisage,
     dialogues,
   };
 }

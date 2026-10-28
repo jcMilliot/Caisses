@@ -149,8 +149,11 @@ export interface GroupeRange extends GroupeColis {
   // Pièces + poids du carton (s'il est saisi).
   poidsKg: number;
   caisseId: number | null;
-  // Lettre rangée d'office dans la caisse de même rang.
-  propose: boolean;
+  // Caisse imposée (pas de choix à la main) et pourquoi : lettre (caisse de même rang), colis dont
+  // l'intranet donne la caisse, ou colis d'une affaire à une seule caisse colisage (2026-10-28).
+  imposee: "lettre" | "intranet" | "seule" | null;
+  // Lettre de la caisse imposée (« A »…), même si cette caisse n'existe pas (encore) au colisage.
+  lettreImposee: string | null;
 }
 
 export interface CaisseColisageCalculee {
@@ -180,28 +183,42 @@ export function calculerColisage(params: {
   cartonParTag: Map<string, CartonConso>;
   // Rangements choisis à la main (tag → caisse colisage, null = non rangé).
   rangements: Map<string, number | null>;
+  // Caisse (lettre) de chaque colis d'après l'intranet (tag → lettre).
+  caissesIntranet: Map<string, string>;
   caisses: CaisseColisage[];
   seuilPct: number;
   caissesInfos: CaisseCalculee[];
   // Articles de l'affaire (hors supprimés dans l'intranet), base du total des Informations générales.
   articles: Article[];
 }): { groupes: GroupeRange[]; caisses: CaisseColisageCalculee[]; totaux: TotauxColisage } {
-  const { cartonParTag, rangements, caisses, seuilPct, caissesInfos, articles } = params;
+  const { cartonParTag, rangements, caissesIntranet, caisses, seuilPct, caissesInfos, articles } = params;
   const idsCaisses = new Set(caisses.map((c) => c.id));
 
   const groupes: GroupeRange[] = params.groupes.map((g) => {
     const carton = g.estColis ? cartonParTag.get(g.tag) : undefined;
     const volumeCarton = carton ? (carton.ext_longueur_mm * carton.ext_largeur_mm * carton.ext_hauteur_mm) / 1e9 : 0;
     let caisseId: number | null = null;
-    let propose = false;
+    let imposee: GroupeRange["imposee"] = null;
+    let lettreImposee: string | null = null;
+    // Caisse imposée par une lettre : celle de même rang (A → 1re caisse colisage…).
+    const imposer = (lettre: string, motif: "lettre" | "intranet") => {
+      imposee = motif;
+      lettreImposee = lettre.toUpperCase();
+      const rang = rangPropose(lettre);
+      if (rang !== null && rang < caisses.length) caisseId = caisses[rang].id;
+    };
+    const lettreIntranet = g.estColis ? caissesIntranet.get(g.tag) : undefined;
     if (!g.estColis) {
-      // Lettre : caisse imposée par son rang (A → 1re caisse colisage…), non modifiable
-      // (2026-10-15) — un rangement enregistré auparavant pour une lettre est ignoré.
-      const rang = rangPropose(g.tag);
-      if (rang !== null && rang < caisses.length) {
-        caisseId = caisses[rang].id;
-        propose = true;
-      }
+      // Lettre : non modifiable (2026-10-15) — un rangement enregistré auparavant est ignoré.
+      imposer(g.tag, "lettre");
+    } else if (lettreIntranet) {
+      // Colis rangé dans une caisse dans l'intranet : imposé, prioritaire sur le choix à la main.
+      imposer(lettreIntranet, "intranet");
+    } else if (caisses.length === 1) {
+      // Une seule caisse colisage : le colis y va d'office.
+      caisseId = caisses[0].id;
+      imposee = "seule";
+      lettreImposee = lettreCaisse(0);
     } else if (rangements.has(g.tag)) {
       const choisi = rangements.get(g.tag)!;
       caisseId = choisi !== null && idsCaisses.has(choisi) ? choisi : null;
@@ -212,7 +229,8 @@ export function calculerColisage(params: {
       volumeM3: carton ? volumeCarton : g.volumePiecesM3,
       poidsKg: g.poidsPiecesKg + (carton?.poids_kg ?? 0),
       caisseId,
-      propose,
+      imposee,
+      lettreImposee,
     };
   });
 

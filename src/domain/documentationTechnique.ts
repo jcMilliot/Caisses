@@ -74,7 +74,7 @@ export const SECTIONS_DOC_TECHNIQUE: SectionDocTechnique[] = [
         "`demande`, `demande_caisse` : Gestion des caisses (indépendantes des affaires, liées par le nom et par des liens explicites) ;",
         "`demande_alerte` : page Alertes (date d'expédition anticipée, qui remplace le picking dans le calcul des alertes, et commentaire) — table à part pour que l'enregistrement de Gestion des caisses, qui réécrit toute la ligne `demande`, ne l'écrase pas ;",
         "`caisse_stock`, `carton_conso` : Consommable ;",
-        "`colis_affaire`, `caisse_colisage`, `colis_rangement` : onglet Colisage d'une affaire ;",
+        "`colis_affaire`, `caisse_colisage`, `colis_rangement` : onglet Colisage d'une affaire ; `colis_caisse_intranet` : caisse (lettre) de chaque colis d'après l'intranet ;",
         "`section_lock`, `poste_actif` : verrous et postes ouverts ;",
         "`utilisateur`, `journal`, `parametre` : rôles, journal d'audit, réglages partagés.",
       ]),
@@ -116,6 +116,7 @@ export const SECTIONS_DOC_TECHNIQUE: SectionDocTechnique[] = [
     blocs: [
       li("L'adresse de l'API est un réglage (Admin › Paramètres), jamais écrite dans le code : le dépôt est public."),
       li("Import d'une affaire : le picking est lu par le cœur Rust, puis comparé aux articles de l'affaire. Chaque ligne est reconnue par son **numéro de besoin** ; une ligne supprimée dans l'intranet sort du tableau ; une quantité modifiée garde la trace de la quantité initiale ; le colis (lettre = caisse, chiffre = colis) est repris quand la ligne est colisée. La vérification se lance d'elle-même à l'ouverture d'une affaire, une fois qu'on a la main ; le résumé des changements reste à valider."),
+      li("Caisse des colis : quand l'affaire a des colis, la **liste de colisage** de l'intranet est lue avec le picking ; elle donne la caisse (lettre) de chaque colis. Cette caisse s'impose dans Colisage en cours, avant le choix fait à la main (gardé à part, il revient si l'intranet ne donne plus de caisse). Sans caisse dans l'intranet, une affaire à une seule caisse colisage y range ses colis d'office. Si la liste de colisage ne répond pas, le picking est mis à jour quand même."),
       li("Les réponses de l'intranet ne sont jamais enregistrées telles quelles : seul le résultat de la comparaison est écrit, en une transaction."),
     ],
   },

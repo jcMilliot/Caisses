@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Article, CaisseCalculee, CaisseColisage, CartonConso } from "../domain/types";
 import { cartonConsoApi } from "../data/cartonConso";
 import { colisAffaireApi } from "../data/colisAffaire";
+import { intranetApi } from "../data/intranet";
 import { calculerColisage, cartonLibre, grouperColis } from "../domain/colisage";
 import type { AlerteAcceptable, ColisAffaire } from "../data/colisAffaire";
 
@@ -21,19 +22,23 @@ export function useColisage(
   const [choixCarton, setChoixCarton] = useState<ColisAffaire[]>([]);
   const [caisses, setCaisses] = useState<CaisseColisage[]>([]);
   const [rangements, setRangements] = useState<Map<string, number | null>>(new Map());
+  // Caisse (lettre) des colis d'après l'intranet, imposée (2026-10-28).
+  const [caissesIntranet, setCaissesIntranet] = useState<Map<string, string>>(new Map());
   const [acceptees, setAcceptees] = useState<Map<number, string>>(new Map());
   const [accepteesVolume, setAccepteesVolume] = useState<Map<number, string>>(new Map());
   const [erreur, setErreur] = useState<string | null>(null);
 
   const recharger = useCallback(async () => {
     try {
-      const [c, ch, cc, r, pa] = await Promise.all([
+      const [c, ch, cc, r, pa, ci] = await Promise.all([
         cartonConsoApi.list(),
         colisAffaireApi.list(affaireId),
         colisAffaireApi.listCaisses(affaireId),
         colisAffaireApi.listRangements(affaireId),
         colisAffaireApi.listPiecesAcceptees(affaireId),
+        intranetApi.listColisCaisse(affaireId),
       ]);
+      setCaissesIntranet(new Map(ci.map((x) => [x.tag, x.lettre])));
       setAcceptees(new Map(pa.filter((p) => p.alerte === "dimensions").map((p) => [p.article_id, p.carton])));
       setAccepteesVolume(new Map(pa.filter((p) => p.alerte === "volume").map((p) => [p.article_id, p.carton])));
       setCartons(c);
@@ -92,12 +97,13 @@ export function useColisage(
       groupes: grouperColis(articles),
       cartonParTag,
       rangements,
+      caissesIntranet,
       caisses,
       seuilPct,
       caissesInfos,
       articles,
     });
-  }, [articles, cartons, choixCarton, rangements, caisses, seuilPct, caissesInfos]);
+  }, [articles, cartons, choixCarton, rangements, caissesIntranet, caisses, seuilPct, caissesInfos]);
 
   return {
     cartons,

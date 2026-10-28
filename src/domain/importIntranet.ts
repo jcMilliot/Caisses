@@ -32,11 +32,20 @@ export interface ArticleIntranet {
   colis: string;
 }
 
+// Caisse d'un colis d'après la liste de colisage de l'intranet (2026-10-28) : `tag` = colis,
+// `lettre` = caisse (A = 1re caisse colisage…).
+export interface ColisCaisse {
+  tag: string;
+  lettre: string;
+}
+
 export interface PlanImport {
   supprimer_ids: number[];
   ajouts: ArticleIntranet[];
   modifs: (ArticleIntranet & { id: number })[];
   anomalies: string[];
+  // Remplace toutes les caisses des colis de l'affaire ; null = liste de colisage non lue.
+  caisses_colis: ColisCaisse[] | null;
 }
 
 export interface Modification {
@@ -54,6 +63,8 @@ export interface ResultatImport {
   modifies: Modification[];
   supprimes: Article[];
   revenus: Article[];
+  // Caisses des colis changées : « Colis 3 → caisse A »…
+  caissesColis: string[];
 }
 
 // Seules les lignes AR sont importées : « ZR » = pièces à assembler par un autre service, et les
@@ -123,7 +134,14 @@ function versArticle(l: LigneAvecBesoin, quantite: number, supprime: boolean): A
  *   sa caisse ; il revient s'il réapparaît avec une quantité.
  * - Les articles collés après l'import (sans numéro de besoin) ne sont pas touchés.
  */
-export function comparerPicking(articles: Article[], lignes: LignePicking[], premierImport: boolean): ResultatImport {
+export function comparerPicking(
+  articles: Article[],
+  lignes: LignePicking[],
+  premierImport: boolean,
+  // Caisses des colis : enregistrées / lues dans l'intranet (null = liste non lue, inchangées).
+  caissesAvant: ColisCaisse[] = [],
+  caissesIntranet: ColisCaisse[] | null = null,
+): ResultatImport {
   const lignesAR = lignes.filter((l) => estLigneAR(l.ar));
   const anomalies = lignesAR.filter((l) => l.normm === null).map((l) => l.ar);
   const parBesoin = new Map<number, LigneAvecBesoin>();
@@ -182,10 +200,39 @@ export function comparerPicking(articles: Article[], lignes: LignePicking[], pre
       ...revenus.map((a) => versModif(a, false)),
     ],
     anomalies,
+    caisses_colis: caissesIntranet,
   };
-  return { plan, remplaces, ajoutes, modifies: modifies.filter((m) => m.changements.length > 0), supprimes, revenus };
+  return {
+    plan,
+    remplaces,
+    ajoutes,
+    modifies: modifies.filter((m) => m.changements.length > 0),
+    supprimes,
+    revenus,
+    caissesColis: caissesIntranet ? comparerCaissesColis(caissesAvant, caissesIntranet) : [],
+  };
+}
+
+// Changements de caisse des colis, triés par numéro de colis.
+export function comparerCaissesColis(avant: ColisCaisse[], apres: ColisCaisse[]): string[] {
+  const a = new Map(avant.map((c) => [c.tag, c.lettre]));
+  const b = new Map(apres.map((c) => [c.tag, c.lettre]));
+  const tags = [...new Set([...a.keys(), ...b.keys()])].sort((x, y) => x.localeCompare(y, undefined, { numeric: true }));
+  const res: string[] = [];
+  for (const tag of tags) {
+    const av = a.get(tag);
+    const ap = b.get(tag);
+    if (av === ap) continue;
+    if (!av) res.push(`Colis ${tag} → caisse ${ap}`);
+    else if (!ap) res.push(`Colis ${tag} : plus de caisse dans l'intranet`);
+    else res.push(`Colis ${tag} : caisse ${av} → ${ap}`);
+  }
+  return res;
 }
 
 export function aucunChangement(r: ResultatImport): boolean {
-  return r.remplaces.length + r.ajoutes.length + r.modifies.length + r.supprimes.length + r.revenus.length === 0;
+  return (
+    r.remplaces.length + r.ajoutes.length + r.modifies.length + r.supprimes.length + r.revenus.length + r.caissesColis.length ===
+    0
+  );
 }

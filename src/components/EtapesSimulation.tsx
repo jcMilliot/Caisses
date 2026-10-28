@@ -9,6 +9,8 @@ export interface EtatMiseAJour {
   // Dernière vérification enregistrée (UTC), null si le picking n'a jamais été importé.
   derniereMaj: string | null;
   erreur: string | null;
+  // Liste de colisage illisible (2026-10-28) : picking mis à jour, caisses des colis inchangées.
+  erreurColisage: string | null;
   // Mise à jour automatique pas encore lancée parce qu'un autre poste a la main.
   attenteMain: boolean;
 }
@@ -82,6 +84,11 @@ export default function EtapesSimulation({
         <Etape numero={3} libelle="Colisage en cours" statut={onglet === "colisage" ? "actif" : "inactif"} />
       </ol>
       {texte && <div style={{ fontSize: 12, color: texte.couleur, marginTop: 6 }}>{texte.contenu}</div>}
+      {maj.erreurColisage && !maj.enCours && (
+        <div style={{ fontSize: 12, color: "var(--warn-text)", marginTop: 4 }}>
+          Caisses des colis non mises à jour (liste de colisage de l'intranet illisible) : {maj.erreurColisage}
+        </div>
+      )}
     </div>
   );
 }

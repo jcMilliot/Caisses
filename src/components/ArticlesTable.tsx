@@ -1,5 +1,5 @@
 import PastilleColis from "./PastilleColis";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import IconeFiltre from "./IconeFiltre";
 import { volumeUnitaireM3, formaterVolumeM3, champsManquants, type ChampArticleManquant } from "../domain/calculs";
 import type { Article, Caisse, NewArticle } from "../domain/types";
@@ -24,6 +24,9 @@ interface Props {
   // cellules de dimension/poids manquantes des articles listés — undefined/vide = pas de
   // surlignage (bascule désactivée).
   champsManquantsParArticle?: Map<number, ChampArticleManquant[]>;
+  // Nombre de lignes affichées après filtres (null quand le tableau est démonté), pour le
+  // compteur « N/total » du titre (2026-10-28).
+  onNbAffiches?: (n: number | null) => void;
 }
 
 type Champ = "ar" | "reference" | "designation" | "dim1_mm" | "dim2_mm" | "dim3_mm" | "poids_unitaire_kg" | "quantite";
@@ -112,6 +115,7 @@ export default function ArticlesTable({
   onCollageMultiCellules,
   readOnly,
   champsManquantsParArticle,
+  onNbAffiches,
 }: Props) {
   const [cellEnEdition, setCellEnEdition] = useState<{ id: number; champ: Champ } | null>(null);
   const [tri, setTri] = useState<Tri | null>(() => chargerTri(affaireId));
@@ -166,6 +170,11 @@ export default function ArticlesTable({
       return colonnesFiltrees.every(([colonne, valeurs]) => valeurs.includes(valeurTexte(a, colonne)));
     });
   }, [articles, filtres, caisseById, filtreInfos]);
+
+  useEffect(() => {
+    onNbAffiches?.(articlesFiltres.length);
+  }, [articlesFiltres.length, onNbAffiches]);
+  useEffect(() => () => onNbAffiches?.(null), [onNbAffiches]);
 
   const articlesTries = useMemo(() => {
     if (!tri) return articlesFiltres;

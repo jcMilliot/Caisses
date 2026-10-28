@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { CartonConso } from "../domain/types";
-import { cleCarton, controlerColis, estCartonLibre, lettreCaisse, libelleCaisseColisage, rangPropose, type GroupeRange } from "../domain/colisage";
+import { cleCarton, controlerColis, estCartonLibre, lettreCaisse, libelleCaisseColisage, type GroupeRange } from "../domain/colisage";
 import { cm, mmDepuisCm, texteCm } from "../domain/cartonConso";
 import { formaterVolumeM3, volumeUnitaireM3 } from "../domain/calculs";
 import type { Colisage } from "../hooks/useColisage";
@@ -421,23 +421,33 @@ function FormulaireCartonLibre({
   );
 }
 
-// Caisse colisage du colis / de la lettre. Lettre : caisse de même rang imposée (A → 1re caisse,
-// B → 2e…), affichée sans choix (2026-10-15). Colis : choisi à la main, non rangé par défaut.
+const MOTIF_CAISSE_IMPOSEE = {
+  lettre: "Caisse imposée par la lettre (A → 1re caisse colisage, B → 2e…)",
+  intranet: "Caisse donnée par l'intranet (liste de colisage de l'affaire)",
+  seule: "Seule caisse colisage de l'affaire : le colis y est rangé d'office",
+} as const;
+
+// Caisse colisage du colis / de la lettre, affichée sans choix quand elle est imposée : lettre
+// (caisse de même rang, 2026-10-15), colis rangé dans l'intranet ou affaire à une seule caisse
+// (2026-10-28). Sinon colis choisi à la main, non rangé par défaut.
 function ChoixCaisse({ groupe, colisage, readOnly }: { groupe: GroupeRange; colisage: Colisage; readOnly: boolean }) {
-  if (!groupe.estColis) {
-    const rang = rangPropose(groupe.tag);
-    const caisse = rang !== null ? colisage.caisses[rang]?.caisse : undefined;
+  if (groupe.imposee) {
+    const caisse = colisage.caisses.find((c) => c.caisse.id === groupe.caisseId)?.caisse;
+    const rang = caisse ? colisage.caisses.findIndex((c) => c.caisse.id === caisse.id) : -1;
     return (
-      <span style={{ fontSize: 13 }} title="Caisse imposée par la lettre (A → 1re caisse colisage, B → 2e…)">
+      <span style={{ fontSize: 13 }} title={MOTIF_CAISSE_IMPOSEE[groupe.imposee]}>
         Caisse :{" "}
         {caisse ? (
           // Lettre seule : le nom est toujours celui de l'affaire (retour du 2026-10-16).
           <span style={{ fontWeight: 700 }} title={caisse.nom}>
-            {lettreCaisse(rang!)}
+            {lettreCaisse(rang)}
           </span>
         ) : (
-          <span style={{ color: "var(--warn-text)", fontWeight: 600 }}>pas de caisse {groupe.tag} (à créer dans le panneau Caisses)</span>
+          <span style={{ color: "var(--warn-text)", fontWeight: 600 }}>
+            pas de caisse {groupe.lettreImposee} (à créer dans le panneau Caisses)
+          </span>
         )}
+        {groupe.imposee === "intranet" && <span style={{ fontSize: 11, color: "var(--text-muted)" }}> (intranet)</span>}
       </span>
     );
   }
