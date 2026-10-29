@@ -252,7 +252,13 @@ export function calculerColisage(params: {
     };
   });
 
-  const totaux: TotauxColisage = {
+  return { groupes, caisses: caissesCalculees, totaux: calculerTotaux(groupes, articles) };
+}
+
+// Comparatif colisage / picking sur un ensemble de colis et lettres et les articles du picking
+// correspondants (toute l'affaire, ou un envoi — envoi en partiel, 2026-10-29).
+export function calculerTotaux(groupes: GroupeRange[], articles: Article[]): TotauxColisage {
+  return {
     volumeColisageM3: groupes.reduce((s, g) => s + g.volumeM3, 0),
     poidsColisageKg: groupes.reduce((s, g) => s + g.poidsKg, 0),
     volumeInfosM3: articles.reduce((s, a) => s + volumeUnitaireM3(a) * a.quantite, 0),
@@ -261,5 +267,4 @@ export function calculerColisage(params: {
     nbColisSansCarton: groupes.filter((g) => g.estColis && !g.carton).length,
     nbNonRanges: groupes.filter((g) => g.caisseId === null).length,
   };
-  return { groupes, caisses: caissesCalculees, totaux };
 }

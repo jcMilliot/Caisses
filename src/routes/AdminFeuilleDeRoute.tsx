@@ -10,6 +10,11 @@ interface Point {
 
 const A_FAIRE: Point[] = [
   {
+    titre: "Envoi en partiel : mise à jour du picking",
+    detail:
+      "Décider quoi faire quand la mise à jour du picking modifie ou supprime un article déjà parti dans une caisse livrée (aujourd'hui, la modification s'applique).",
+  },
+  {
     titre: "Tablette Samsung sous Windows",
     detail:
       "Essayer d'installer l'application sur la tablette, pour choisir les cartons pendant le colisage.",
@@ -23,9 +28,9 @@ const A_FAIRE: Point[] = [
 
 const A_VERIFIER: Point[] = [
   {
-    titre: "Colisage : caisse des colis donnée par l'intranet",
+    titre: "Envoi en partiel : commande des caisses détaillées",
     detail:
-      "Sur une affaire colisée dans l'intranet, la mise à jour du picking annonce « Colis 3 → caisse A » ; après validation, le colis est rangé dans la caisse A de Colisage en cours, sans choix possible. Sur une affaire à une seule caisse, les colis y sont rangés d'office.",
+      "Dans Gestion des caisses, chaque caisse détaillée a sa case « OK pour être commandée » et son bouton « Livré ». Cocher la caisse principale seule ne génère que son affiche. « Livré » sur la caisse principale livre aussi les caisses détaillées cochées ; une caisse détaillée non cochée reste à livrer, garde sa date de picking (modifiable) et a sa propre alerte « À commander ». Dans la simulation : les articles d'une caisse livrée sont verrouillés (🔒) et la caisse ne reçoit plus rien ; Colisage en cours affiche un onglet par livraison (« 1er envoi »…) puis un onglet pour ce qui reste.",
   },
   {
     titre: "Dossier de la base",

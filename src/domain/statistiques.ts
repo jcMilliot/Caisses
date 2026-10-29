@@ -125,7 +125,8 @@ export function lignesUtilisees(
       });
     }
     for (const sc of demandeCaisses) {
-      if (sc.demande_id !== d.id || !(mereLivree || estDemandeCaisseValidee(sc))) continue;
+      // Livrée par sa propre observation seulement (envoi en partiel, 2026-10-29).
+      if (sc.demande_id !== d.id || !estDemandeCaisseValidee(sc)) continue;
       ajouter(sc.date_picking.trim() ? sc.date_picking : d.date_picking, {
         quantite: Math.max(0, sc.quantite),
         typeEnvoi: libelleCategorie(sc.type_envoi_caisse || d.type_envoi_caisse),

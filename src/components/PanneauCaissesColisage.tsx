@@ -13,12 +13,23 @@ interface Props {
   readOnly: boolean;
   // Dimensions d'une caisse colisage modifiées : report proposé sur sa caisse du Picking (2026-10-27).
   onDimsModifiees: (caisse: CaisseColisage, dims: [number, number, number]) => Promise<void>;
+  // Envoi en partiel (2026-10-29) : caisses de l'envoi affiché (null = toutes) ; caisses livrées
+  // (id → libellé « Livrée le … »), ni modifiables ni supprimables.
+  caisseIdsVisibles: Set<number> | null;
+  caissesLivrees: Map<number, string>;
 }
 
 // Caisses de l'onglet Colisage (2026-10-14) : copies indépendantes des caisses de l'affaire, où
 // sont rangés colis et lettres. Chaque carte compare son remplissage à celui de la caisse copiée
 // dans le Picking.
-export default function PanneauCaissesColisage({ colisage, nbCaissesInfos, readOnly, onDimsModifiees }: Props) {
+export default function PanneauCaissesColisage({
+  colisage,
+  nbCaissesInfos,
+  readOnly,
+  onDimsModifiees,
+  caisseIdsVisibles,
+  caissesLivrees,
+}: Props) {
   // Pas de « + Nouvelle caisse » ici (retiré le 2026-10-19) : les caisses colisage viennent de la
   // copie des caisses du picking.
   return (
@@ -36,7 +47,20 @@ export default function PanneauCaissesColisage({ colisage, nbCaissesInfos, readO
           Aucune caisse colisage. Celles du picking sont copiées à l'arrivée sur l'onglet quand on a la main (sinon : bouton ci-dessus).
         </p>
       ) : (
-        colisage.caisses.map((c, rang) => <CarteCaisse key={c.caisse.id} calc={c} rang={rang} colisage={colisage} readOnly={readOnly} onDimsModifiees={onDimsModifiees} />)
+        // Rang pris sur toutes les caisses (lettre A, B…), même quand seules celles d'un envoi sont affichées.
+        colisage.caisses.map((c, rang) =>
+          caisseIdsVisibles && !caisseIdsVisibles.has(c.caisse.id) ? null : (
+            <CarteCaisse
+              key={c.caisse.id}
+              calc={c}
+              rang={rang}
+              colisage={colisage}
+              readOnly={readOnly || caissesLivrees.has(c.caisse.id)}
+              livree={caissesLivrees.get(c.caisse.id) ?? null}
+              onDimsModifiees={onDimsModifiees}
+            />
+          ),
+        )
       )}
     </div>
   );
@@ -53,12 +77,14 @@ function CarteCaisse({
   rang,
   colisage,
   readOnly,
+  livree,
   onDimsModifiees,
 }: {
   calc: CaisseColisageCalculee;
   rang: number;
   colisage: Colisage;
   readOnly: boolean;
+  livree: string | null;
   onDimsModifiees: Props["onDimsModifiees"];
 }) {
   const [edition, setEdition] = useState(false);
@@ -88,11 +114,10 @@ function CarteCaisse({
     >
       {edition ? (
         <FormulaireCaisse
-          nom={caisse.nom}
           dims={[caisse.longueur_mm, caisse.largeur_mm, caisse.hauteur_mm]}
-          onValider={async (nom, dims) => {
+          onValider={async (dims) => {
             const dimsChangees = dims[0] !== caisse.longueur_mm || dims[1] !== caisse.largeur_mm || dims[2] !== caisse.hauteur_mm;
-            await colisage.modifierCaisse(caisse.id, nom, dims);
+            await colisage.modifierCaisse(caisse.id, caisse.nom, dims);
             setEdition(false);
             if (dimsChangees) await onDimsModifiees(caisse, dims);
           }}
@@ -111,6 +136,11 @@ function CarteCaisse({
               </span>
               {caisse.nom || "(sans nom)"}
             </div>
+            {livree && (
+              <div style={{ display: "inline-block", fontSize: 12, fontWeight: 650, margin: "3px 0", padding: "1px 8px", borderRadius: 999, background: "var(--ok-bg)", color: "var(--ok-text)", border: "1px solid var(--ok-border)" }}>
+                {livree}
+              </div>
+            )}
             <div className="mono" style={{ color: "var(--text-muted)" }}>
               {(caisse.longueur_mm / 1000).toFixed(2)} × {(caisse.largeur_mm / 1000).toFixed(2)} × {(caisse.hauteur_mm / 1000).toFixed(2)} m
             </div>
@@ -189,19 +219,17 @@ function CarteCaisse({
   );
 }
 
-// Nom + dimensions intérieures en mètres (texte local, « 0.5 » ne doit pas être bloqué).
+// Dimensions intérieures en mètres (texte local, « 0.5 » ne doit pas être bloqué). Le nom n'est
+// pas modifiable : une caisse porte le nom de son affaire (retour du 2026-10-29).
 function FormulaireCaisse({
-  nom,
   dims,
   onValider,
   onAnnuler,
 }: {
-  nom: string;
   dims: [number, number, number];
-  onValider: (nom: string, dims: [number, number, number]) => Promise<void>;
+  onValider: (dims: [number, number, number]) => Promise<void>;
   onAnnuler: () => void;
 }) {
-  const [saisieNom, setSaisieNom] = useState(nom);
   const [saisieDims, setSaisieDims] = useState(dims.map((d) => (d === 0 ? "" : String(d / 1000))));
   const mm = (t: string) => {
     const n = Number(t.replace(",", "."));
@@ -214,14 +242,14 @@ function FormulaireCaisse({
     <div
       style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}
       onKeyDown={(e) => {
-        if (e.key === "Enter" && complet) onValider(saisieNom, valeurs);
+        if (e.key === "Enter" && complet) onValider(valeurs);
         if (e.key === "Escape") onAnnuler();
       }}
     >
-      <input autoFocus value={saisieNom} onChange={(e) => setSaisieNom(e.target.value)} placeholder="Nom" style={{ font: "inherit", width: 140 }} />
       {["L", "l", "H"].map((libelle, i) => (
         <input
           key={libelle}
+          autoFocus={i === 0}
           value={saisieDims[i]}
           inputMode="decimal"
           onChange={(e) => setSaisieDims((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))}
@@ -230,7 +258,7 @@ function FormulaireCaisse({
           style={{ font: "inherit", width: 62, background: valeurs[i] > 0 ? undefined : "var(--warn-bg)" }}
         />
       ))}
-      <button className="btn btn-sm btn-primary" disabled={!complet} onClick={() => onValider(saisieNom, valeurs)}>
+      <button className="btn btn-sm btn-primary" disabled={!complet} onClick={() => onValider(valeurs)}>
         OK
       </button>
       <button className="btn btn-sm" onClick={onAnnuler}>

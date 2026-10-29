@@ -10,6 +10,7 @@ import {
   MESSAGE_ALERTE_COMMANDE,
   dateReference,
   estACommanderUrgent,
+  estSousCaisseACommanderUrgente,
   libelleDateModifiee,
   type DatesAnticipees,
 } from "../domain/caissesACommander";
@@ -33,6 +34,7 @@ import {
   stockAutorisePourEnvoi,
   appliquerReglesCaisse,
   champsManquantsPourCommande,
+  champsManquantsPourCommandeSousCaisse,
 } from "../domain/demandeOptions";
 import { PALETTE_CAISSES } from "../domain/palette";
 import { confirmerAction } from "../data/confirm";
@@ -57,6 +59,8 @@ interface Props {
   onEdit: (id: number, patch: Partial<Demande>) => void;
   onDelete: (id: number, affaire: string) => void;
   onValider: (id: number, validee: boolean) => void;
+  // « Livré » / « Non livré » d'une sous-caisse seule (envoi en partiel, 2026-10-29).
+  onValiderSousCaisse: (id: number, validee: boolean) => void;
   onSimulerAffaire: (demande: Demande) => void;
   optionsPersonnalisees: OptionListe[];
   // Nœud DOM (dans l'en-tête de DemandesList) où porter le bouton « Options » via un portail,
@@ -373,6 +377,7 @@ export default function DemandesTable({
   onEdit,
   onDelete,
   onValider,
+  onValiderSousCaisse,
   onSimulerAffaire,
   optionsPersonnalisees,
   slotOptions,
@@ -559,7 +564,12 @@ export default function DemandesTable({
     return champsEditablesOrdre[prochainIndex] ?? null;
   }
 
-  const demandesVisibles = masquerValidees ? demandes.filter((d) => !estDemandeValidee(d)) : demandes;
+  // Une mère livrée reste visible tant qu'une de ses sous-caisses est à livrer (envoi en partiel).
+  const demandesVisibles = masquerValidees
+    ? demandes.filter(
+        (d) => !estDemandeValidee(d) || demandeCaisses.some((c) => c.demande_id === d.id && !estDemandeCaisseValidee(c)),
+      )
+    : demandes;
 
   // Colonne Stock : nom de la caisse choisie dans le menu, à défaut le nom écrit dans la colonne
   // `stock` (lignes anciennes reprises de l'Excel, sans caisse liée). Filtre et tri utilisent
@@ -1064,7 +1074,12 @@ export default function DemandesTable({
                           <button className="btn btn-sm btn-pastel-orange" onClick={() => onSimulerAffaire(d)}>
                             Simuler
                           </button>
-                          <button className="btn btn-sm btn-pastel-blue" onClick={() => onCreerDemandeCaisse(d)} disabled={readOnly || estValidee}>
+                          <button
+                            className="btn btn-sm btn-pastel-blue"
+                            onClick={() => onCreerDemandeCaisse(d)}
+                            disabled={readOnly}
+                            title={estValidee ? "Ajouter une caisse détaillée envoyée plus tard" : undefined}
+                          >
                             + Caisse
                           </button>
                           <button className="btn btn-sm btn-danger" onClick={() => onDelete(d.id, d.affaire)} disabled={readOnly || estValidee}>
@@ -1083,9 +1098,13 @@ export default function DemandesTable({
                           caissesStock={caissesStock}
                           optionsParChamp={optionsParChampSousLigne}
                           td={td}
-                          readOnly={readOnly || estValidee || estDemandeCaisseValidee(sc, d)}
+                          mere={d}
+                          lectureSeule={readOnly}
+                          readOnly={readOnly || estDemandeCaisseValidee(sc)}
+                          alerteCommande={estSousCaisseACommanderUrgente(sc, d, datesAnticipees)}
+                          onValider={(validee) => onValiderSousCaisse(sc.id, validee)}
                           coloredBackground={
-                            estDemandeCaisseValidee(sc, d)
+                            estDemandeCaisseValidee(sc)
                               ? "var(--success-bg, #d4f4dd)"
                               : PALETTE_CAISSES[index % PALETTE_CAISSES.length]
                           }
@@ -1131,19 +1150,25 @@ const CHAMP_SOUS_LIGNE: Partial<Record<Colonne, keyof DemandeCaisse>> = {
   hauteur_mm: "hauteur_mm",
   cde_passee_affaire: "cde_passee_affaire",
   cde_passee_achat_stock: "cde_passee_achat_stock",
+  ok_pour_passer_cde: "ok_pour_passer_cde",
 };
 
 const CHAMPS_DIM_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["longueur_mm", "largeur_mm", "hauteur_mm"]);
 const CHAMPS_NOMBRE_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["quantite"]);
-const CHAMPS_BOOL_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["cde_passee_affaire", "cde_passee_achat_stock"]);
+const CHAMPS_BOOL_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["cde_passee_affaire", "cde_passee_achat_stock", "ok_pour_passer_cde"]);
 const CHAMPS_DATE_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["date_picking", "date_demandee_s2c"]);
 // Champs copiés depuis la demande mère à la création et jamais modifiables sur la sous-ligne —
-// seule la mère fait foi pour ces informations, la sous-ligne ne détaille que dims/traitement/cde.
-const CHAMPS_VERROUILLES_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["nom", "type_envoi_caisse", "date_picking"]);
+// seule la mère fait foi pour ces informations. La date de picking est modifiable depuis l'envoi
+// en partiel (2026-10-29) : une sous-caisse peut partir plus tard que sa mère.
+const CHAMPS_VERROUILLES_SOUS_LIGNE: ReadonlySet<keyof DemandeCaisse> = new Set(["nom", "type_envoi_caisse"]);
 
 function SousLigneCaisse({
   ouvertureChangee,
   caisse,
+  mere,
+  lectureSeule,
+  alerteCommande,
+  onValider,
   colonnesAffichees,
   caissesStock,
   optionsParChamp,
@@ -1157,6 +1182,11 @@ function SousLigneCaisse({
 }: {
   ouvertureChangee?: boolean;
   caisse: DemandeCaisse;
+  mere: Demande;
+  // Écran en lecture seule (verrou) ; `readOnly` vaut aussi pour une sous-caisse livrée.
+  lectureSeule?: boolean;
+  alerteCommande?: boolean;
+  onValider: (validee: boolean) => void;
   colonnesAffichees: { champ: Colonne; label: string; align?: "left" | "center"; largeur: number }[];
   caissesStock: CaisseStock[];
   optionsParChamp: Partial<Record<keyof DemandeCaisse, string[]>>;
@@ -1169,6 +1199,7 @@ function SousLigneCaisse({
   taux: TauxLigne | null;
 }) {
   const [champEnEdition, setChampEnEdition] = useState<keyof DemandeCaisse | null>(null);
+  const livree = estDemandeCaisseValidee(caisse);
 
   // Même logique de parcours Tab que la ligne mère (cell()) : uniquement les colonnes visibles
   // qui passent par EditableCellInput, en respectant l'ordre d'affichage des colonnes.
@@ -1189,8 +1220,15 @@ function SousLigneCaisse({
     return champsSousLigneEditablesOrdre[prochainIndex] ?? null;
   }
 
-  function toggleCdePassee(champ: "cde_passee_affaire" | "cde_passee_achat_stock") {
+  async function toggleCdePassee(champ: "cde_passee_affaire" | "cde_passee_achat_stock" | "ok_pour_passer_cde") {
     const nouvelle = !caisse[champ];
+    if (champ === "ok_pour_passer_cde" && nouvelle) {
+      const manquants = champsManquantsPourCommandeSousCaisse(caisse, mere);
+      if (manquants.length > 0) {
+        await confirmerAction(`Champ(s) manquant(s) : ${manquants.join(", ")}.`, "Impossible de cocher « OK pour être commandée »");
+        return;
+      }
+    }
     if (champ === "cde_passee_affaire" && nouvelle) {
       onEdit({ cde_passee_affaire: true, cde_passee_achat_stock: false });
     } else if (champ === "cde_passee_achat_stock" && nouvelle) {
@@ -1257,7 +1295,7 @@ function SousLigneCaisse({
             type="checkbox"
             checked={caisse[champSousLigne] as boolean}
             disabled={readOnly}
-            onChange={() => toggleCdePassee(champSousLigne as "cde_passee_affaire" | "cde_passee_achat_stock")}
+            onChange={() => toggleCdePassee(champSousLigne as "cde_passee_affaire" | "cde_passee_achat_stock" | "ok_pour_passer_cde")}
           />
         </td>
       );
@@ -1361,14 +1399,19 @@ function SousLigneCaisse({
 
   return (
     <tr style={{ background: coloredBackground ?? "var(--bg-panel-alt)" }}>
-      <td style={td} />
+      <td style={{ ...td, textAlign: "center" }}>{alerteCommande && <PastilleAlerte titre={MESSAGE_ALERTE_COMMANDE} />}</td>
       {colonnesAffichees.map((c) => (
         <Fragment key={c.champ}>{cellulePourColonne(c)}</Fragment>
       ))}
-      <td style={td}>
-        <button className="btn btn-sm btn-danger" onClick={onDelete} disabled={readOnly}>
-          Suppr.
-        </button>
+      <td style={{ ...td, whiteSpace: "nowrap" }}>
+        <div style={actionsLigneStyle}>
+          <button className="btn btn-sm btn-pastel-green" onClick={() => onValider(!livree)} disabled={lectureSeule}>
+            {livree ? "Non livré" : "Livré"}
+          </button>
+          <button className="btn btn-sm btn-danger" onClick={onDelete} disabled={readOnly}>
+            Suppr.
+          </button>
+        </div>
       </td>
     </tr>
   );

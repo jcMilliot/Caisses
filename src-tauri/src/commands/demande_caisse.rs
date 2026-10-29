@@ -10,7 +10,8 @@ fn dims(l: f64, w: f64, h: f64) -> String {
 
 const SELECT_COLS: &str = "id, demande_id, nom, type_envoi_caisse, type_ouverture, stock, date_picking, date_demandee_s2c,
     traitement, quantite, moteurs, module_lineaire, terminaux, informations_supp, observations,
-    cde_passee_affaire, cde_passee_achat_stock, longueur_mm, largeur_mm, hauteur_mm, poids_kg, contre_plaque, ordre, caisse_stock_id";
+    cde_passee_affaire, cde_passee_achat_stock, longueur_mm, largeur_mm, hauteur_mm, poids_kg, contre_plaque, ordre, caisse_stock_id,
+    ok_pour_passer_cde, ok_cde_par";
 
 fn map_row(row: &rusqlite::Row) -> rusqlite::Result<DemandeCaisse> {
     Ok(DemandeCaisse {
@@ -38,6 +39,8 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<DemandeCaisse> {
         contre_plaque: row.get(21)?,
         ordre: row.get(22)?,
         caisse_stock_id: row.get(23)?,
+        ok_pour_passer_cde: row.get(24)?,
+        ok_cde_par: row.get(25)?,
     })
 }
 
@@ -66,8 +69,9 @@ pub fn create_demande_caisse(db: State<Db>, caisse: NewDemandeCaisse, trigramme:
     conn.execute(
         "INSERT INTO demande_caisse (demande_id, nom, type_envoi_caisse, type_ouverture, stock, date_picking, date_demandee_s2c,
             traitement, quantite, moteurs, module_lineaire, terminaux, informations_supp, observations,
-            cde_passee_affaire, cde_passee_achat_stock, longueur_mm, largeur_mm, hauteur_mm, poids_kg, contre_plaque, ordre, caisse_stock_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+            cde_passee_affaire, cde_passee_achat_stock, longueur_mm, largeur_mm, hauteur_mm, poids_kg, contre_plaque, ordre, caisse_stock_id,
+            ok_pour_passer_cde, ok_cde_par)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
         rusqlite::params![
             caisse.demande_id,
             caisse.nom,
@@ -92,6 +96,8 @@ pub fn create_demande_caisse(db: State<Db>, caisse: NewDemandeCaisse, trigramme:
             caisse.contre_plaque,
             ordre,
             caisse.caisse_stock_id,
+            caisse.ok_pour_passer_cde,
+            caisse.ok_cde_par,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -131,7 +137,8 @@ pub fn update_demande_caisse(db: State<Db>, id: i64, caisse: NewDemandeCaisse, t
             date_picking = ?5, date_demandee_s2c = ?6, traitement = ?7, quantite = ?8, moteurs = ?9,
             module_lineaire = ?10, terminaux = ?11, informations_supp = ?12, observations = ?13,
             cde_passee_affaire = ?14, cde_passee_achat_stock = ?15, longueur_mm = ?16, largeur_mm = ?17,
-            hauteur_mm = ?18, poids_kg = ?19, contre_plaque = ?20, caisse_stock_id = ?21 WHERE id = ?22",
+            hauteur_mm = ?18, poids_kg = ?19, contre_plaque = ?20, caisse_stock_id = ?21,
+            ok_pour_passer_cde = ?22, ok_cde_par = ?23 WHERE id = ?24",
         rusqlite::params![
             caisse.nom,
             caisse.type_envoi_caisse,
@@ -154,6 +161,8 @@ pub fn update_demande_caisse(db: State<Db>, id: i64, caisse: NewDemandeCaisse, t
             caisse.poids_kg,
             caisse.contre_plaque,
             caisse.caisse_stock_id,
+            caisse.ok_pour_passer_cde,
+            caisse.ok_cde_par,
             id,
         ],
     )
@@ -200,4 +209,43 @@ pub fn delete_demande_caisse(db: State<Db>, id: i64, trigramme: String) -> Resul
         &format!("Sous-caisse « {} »", nom.unwrap_or_default()),
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn migration_0050_reprend_l_etat_de_la_mere() {
+        let dir = std::env::temp_dir().join(format!("caisses-test-0050-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let conn = crate::db::open_at(&dir);
+        conn.execute_batch(
+            "INSERT INTO demande (id, affaire, ok_pour_passer_cde, ok_cde_par, observations, validee, cde_passee_achat_stock) VALUES
+                 (10, 'COMMANDE', 1, 'AJC', '', 0, 0),
+                 (11, 'LIVREE', 1, 'FBA', 'Livré', 1, 0),
+                 (12, 'RAPATRIE', 0, '', 'Rapatriée', 0, 1),
+                 (13, 'A_FAIRE', 0, '', '', 0, 0);
+             INSERT INTO demande_caisse (id, demande_id, observations, cde_passee_achat_stock) VALUES
+                 (20, 10, '', 0), (21, 11, '', 0), (22, 11, 'Livré', 0), (23, 12, '', 1), (24, 13, '', 0);",
+        )
+        .unwrap();
+        // Rejoue les mises à jour de la migration (les colonnes existent déjà sur une base neuve).
+        let sql = include_str!("../../../migrations/0050_add_demande_caisse_ok_cde.sql");
+        let mises_a_jour: String = sql.lines().filter(|l| !l.starts_with("ALTER TABLE")).collect::<Vec<_>>().join("\n");
+        conn.execute_batch(&mises_a_jour).unwrap();
+
+        let ligne = |id: i64| -> (bool, String, String) {
+            conn.query_row(
+                "SELECT ok_pour_passer_cde, ok_cde_par, observations FROM demande_caisse WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap()
+        };
+        assert_eq!(ligne(20), (true, "AJC".into(), "".into()));
+        assert_eq!(ligne(21), (true, "FBA".into(), "Livré".into()));
+        assert_eq!(ligne(22), (true, "FBA".into(), "Livré".into()));
+        assert_eq!(ligne(23), (false, "".into(), "Rapatriée".into()));
+        assert_eq!(ligne(24), (false, "".into(), "".into()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

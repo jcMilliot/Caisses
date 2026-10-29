@@ -1,6 +1,16 @@
 import { useState } from "react";
 import type { CartonConso } from "../domain/types";
-import { cleCarton, controlerColis, estCartonLibre, lettreCaisse, libelleCaisseColisage, type GroupeRange } from "../domain/colisage";
+import {
+  calculerTotaux,
+  cleCarton,
+  controlerColis,
+  estCartonLibre,
+  lettreCaisse,
+  libelleCaisseColisage,
+  type GroupeRange,
+  type TotauxColisage,
+} from "../domain/colisage";
+import { CLE_ENVOI_RESTANT, envoiDuGroupe, type Envoi } from "../domain/envois";
 import { cm, mmDepuisCm, texteCm } from "../domain/cartonConso";
 import { formaterVolumeM3, volumeUnitaireM3 } from "../domain/calculs";
 import type { Colisage } from "../hooks/useColisage";
@@ -9,6 +19,11 @@ import PastilleColis from "./PastilleColis";
 interface Props {
   colisage: Colisage;
   readOnly: boolean;
+  // Envoi en partiel (2026-10-29) : envois de l'affaire (null = pas de découpage) et envoi affiché.
+  envois: Envoi[] | null;
+  envoi: Envoi | null;
+  // Caisses colisage livrées : ce qui y est rangé est figé.
+  caissesLivrees: Set<number>;
 }
 
 function libelleCarton(c: CartonConso): string {
@@ -21,7 +36,7 @@ function libelleCarton(c: CartonConso): string {
 // dépasse le volume extérieur du carton, ou si une pièce ne rentre pas dans le carton (intérieur,
 // toutes orientations). Chaque colis / lettre se range dans une caisse colisage (lettre : caisse
 // de même rang proposée). Récapitulatif en tête : total colisage vs Informations générales.
-export default function ColisageVue({ colisage, readOnly }: Props) {
+export default function ColisageVue({ colisage, readOnly, envois, envoi, caissesLivrees }: Props) {
   const [ouverts, setOuverts] = useState<Set<string>>(new Set());
 
   function basculer(tag: string) {
@@ -37,18 +52,36 @@ export default function ColisageVue({ colisage, readOnly }: Props) {
     return <p style={{ color: "var(--text-muted)", padding: "20px 0" }}>Aucun article colisé.</p>;
   }
 
+  // Envoi affiché : ses colis / lettres, et les articles du picking correspondants (pour l'envoi
+  // restant, aussi les articles non colisés).
+  const groupes = envois && envoi ? colisage.groupes.filter((g) => envoiDuGroupe(g, envois).cle === envoi.cle) : colisage.groupes;
+  const totaux =
+    envois && envoi
+      ? calculerTotaux(groupes, [
+          ...groupes.flatMap((g) => g.articles),
+          ...(envoi.cle === CLE_ENVOI_RESTANT ? colisage.articles.filter((a) => a.colis.trim() === "") : []),
+        ])
+      : colisage.totaux;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingBottom: 12 }}>
-      <RecapColisage colisage={colisage} />
+      {envoi?.livre && (
+        <p style={{ margin: 0, fontSize: 13, color: "var(--ok-text)", fontWeight: 600 }}>
+          Envoi livré : colis, lettres et caisses figés.
+        </p>
+      )}
+      <RecapColisage totaux={totaux} />
       {colisage.erreur && <p style={{ margin: 0, fontSize: 13, color: "var(--danger-text)" }}>{colisage.erreur}</p>}
-      {colisage.groupes.map((g) => (
+      {groupes.length === 0 && <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Aucun colis ni lettre dans cet envoi.</p>}
+      {groupes.map((g) => (
         <BlocColis
           key={g.tag}
           groupe={g}
           ouvert={ouverts.has(g.tag)}
           onBasculer={() => basculer(g.tag)}
           colisage={colisage}
-          readOnly={readOnly}
+          readOnly={readOnly || (g.caisseId !== null && caissesLivrees.has(g.caisseId))}
+          caissesLivrees={caissesLivrees}
         />
       ))}
     </div>
@@ -57,8 +90,7 @@ export default function ColisageVue({ colisage, readOnly }: Props) {
 
 // Comparatif de l'affaire : volume des cartons + pièces en lettres vs volume des articles des
 // Informations générales, et poids.
-function RecapColisage({ colisage }: { colisage: Colisage }) {
-  const t = colisage.totaux;
+function RecapColisage({ totaux: t }: { totaux: TotauxColisage }) {
   const ecart = t.volumeColisageM3 - t.volumeInfosM3;
   const ecartPct = t.volumeInfosM3 > 0 ? Math.round((ecart / t.volumeInfosM3) * 100) : null;
   const remarques = [
@@ -96,12 +128,14 @@ function BlocColis({
   onBasculer,
   colisage,
   readOnly,
+  caissesLivrees,
 }: {
   groupe: GroupeRange;
   ouvert: boolean;
   onBasculer: () => void;
   colisage: Colisage;
   readOnly: boolean;
+  caissesLivrees: Set<number>;
 }) {
   const carton = groupe.carton;
   const controle = carton ? controlerColis(groupe, carton, colisage.acceptees, colisage.accepteesVolume) : null;
@@ -198,7 +232,7 @@ function BlocColis({
               )}
             </>
           )}
-          <ChoixCaisse groupe={groupe} colisage={colisage} readOnly={readOnly} />
+          <ChoixCaisse groupe={groupe} colisage={colisage} readOnly={readOnly} caissesLivrees={caissesLivrees} />
         </div>
       </div>
 
@@ -430,7 +464,17 @@ const MOTIF_CAISSE_IMPOSEE = {
 // Caisse colisage du colis / de la lettre, affichée sans choix quand elle est imposée : lettre
 // (caisse de même rang, 2026-10-15), colis rangé dans l'intranet ou affaire à une seule caisse
 // (2026-10-28). Sinon colis choisi à la main, non rangé par défaut.
-function ChoixCaisse({ groupe, colisage, readOnly }: { groupe: GroupeRange; colisage: Colisage; readOnly: boolean }) {
+function ChoixCaisse({
+  groupe,
+  colisage,
+  readOnly,
+  caissesLivrees,
+}: {
+  groupe: GroupeRange;
+  colisage: Colisage;
+  readOnly: boolean;
+  caissesLivrees: Set<number>;
+}) {
   if (groupe.imposee) {
     const caisse = colisage.caisses.find((c) => c.caisse.id === groupe.caisseId)?.caisse;
     const rang = caisse ? colisage.caisses.findIndex((c) => c.caisse.id === caisse.id) : -1;
@@ -470,11 +514,14 @@ function ChoixCaisse({ groupe, colisage, readOnly }: { groupe: GroupeRange; coli
         style={{ font: "inherit", fontSize: 13, maxWidth: 240, background: groupe.caisseId === null ? "var(--warn-bg)" : undefined }}
       >
         <option value="aucune">— Non rangé —</option>
-        {colisage.caisses.map(({ caisse }, rangCaisse) => (
-          <option key={caisse.id} value={caisse.id}>
-            {libelleCaisseColisage(rangCaisse, caisse.nom)}
-          </option>
-        ))}
+        {colisage.caisses.map(({ caisse }, rangCaisse) =>
+          // Une caisse livrée ne reçoit plus rien (envoi en partiel, 2026-10-29).
+          caissesLivrees.has(caisse.id) && caisse.id !== groupe.caisseId ? null : (
+            <option key={caisse.id} value={caisse.id}>
+              {libelleCaisseColisage(rangCaisse, caisse.nom)}
+            </option>
+          ),
+        )}
       </select>
     </label>
   );

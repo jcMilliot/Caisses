@@ -56,6 +56,9 @@ export function useColisage(
   useEffect(() => {
     if (!actif) {
       copieFaite.current = false;
+      // Chargé aussi depuis le Picking : les pièces parties dans une caisse livrée y sont figées
+      // (envoi en partiel, 2026-10-29).
+      recharger();
       return;
     }
     (async () => {
@@ -106,6 +109,7 @@ export function useColisage(
   }, [articles, cartons, choixCarton, rangements, caissesIntranet, caisses, seuilPct, caissesInfos]);
 
   return {
+    articles,
     cartons,
     erreur,
     recharger,

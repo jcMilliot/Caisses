@@ -10,6 +10,19 @@ racine, le fix, et un lien vers l'entrée de journal correspondante pour le dét
 
 ---
 
+## Simulations : caisse de récup suggérée pour une caisse qui doit être traitée NIMP15
+
+- **Symptôme** : une caisse créée dans une affaire de Simulations (« + Nouvelle caisse ») affiche
+  « Suggestion : A5 … Utiliser » (caisse de récup) alors que l'affaire est en 4B / 4C (NIMP15).
+- **Cause** : `suggererCaisseStock` ne regardait que `caisse.type_envoi_caisse` de la caisse de
+  Simulations, **vide** pour une caisse créée là (c'est la ligne de Gestion des caisses qui porte
+  le type d'envoi et le traitement) ; `stockAutorisePourEnvoi("")` vaut vrai.
+- **Fix** (2026-10-29) : paramètre `ligne` (ligne liée, à défaut une ligne de la même affaire,
+  `AffaireDetail::ligneDeReference`) ; aucune suggestion si elle est en 4B / 4C ou a un traitement
+  NIMP15 (`suggestionCaisse.ts::exigeNimp15`).
+- **Piège** : le type d'envoi d'une caisse de Simulations n'est pas fiable, toujours remonter à la
+  ligne de Gestion des caisses ; et `demandeParente` est null quand la mère est livrée.
+
 ## Connexion : erreur 404, impossible de corriger l'adresse de l'intranet
 
 **Symptôme** (0.14.0, poste du bureau) : l'écran de connexion renvoie « erreur 404 » et il n'y a

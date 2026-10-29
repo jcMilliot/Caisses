@@ -202,6 +202,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0049_add_colis_caisse_intranet",
         include_str!("../../migrations/0049_add_colis_caisse_intranet.sql"),
     ),
+    (
+        "0050_add_demande_caisse_ok_cde",
+        include_str!("../../migrations/0050_add_demande_caisse_ok_cde.sql"),
+    ),
+    (
+        "0051_add_livraison_ligne",
+        include_str!("../../migrations/0051_add_livraison_ligne.sql"),
+    ),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { demandesApi } from "../data/demandes";
+import { demandeCaisseApi } from "../data/demandeCaisse";
 import { caisseStockApi } from "../data/caisseStock";
 import { caissesStockACommander } from "../domain/caisseStock";
 import PastilleAlerte from "../components/PastilleAlerte";
@@ -14,7 +15,7 @@ import {
   libelleDateModifiee,
   type AffaireACommander,
 } from "../domain/caissesACommander";
-import type { CaisseStock, Demande } from "../domain/types";
+import type { CaisseStock, Demande, DemandeCaisse } from "../domain/types";
 
 type Section = "demandes" | "simulations" | "stock" | "achats" | "alertes" | "admin" | "documentation";
 
@@ -67,6 +68,7 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
   const [demandes, setDemandes] = useState<Demande[] | null>(null);
   const [stockACommander, setStockACommander] = useState<CaisseStock[]>([]);
   const [anticipees, setAnticipees] = useState<Map<number, string>>(new Map());
+  const [sousCaisses, setSousCaisses] = useState<DemandeCaisse[]>([]);
 
   useEffect(() => {
     // Dates anticipées chargées avant les demandes : les blocs ne s'affichent qu'avec les deux.
@@ -74,15 +76,22 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
       .list()
       .then((a) => setAnticipees(datesAnticipees(a)))
       .catch((e) => console.warn("Dates anticipées :", e))
-      .finally(() => demandesApi.list().then(setDemandes));
+      .finally(() =>
+        // Sous-caisses avant les demandes, pour la même raison (envoi en partiel, 2026-10-29).
+        demandeCaisseApi
+          .listAll()
+          .then(setSousCaisses)
+          .catch((e) => console.warn("Sous-caisses :", e))
+          .finally(() => demandesApi.list().then(setDemandes)),
+      );
     caisseStockApi
       .list()
       .then((c) => setStockACommander(caissesStockACommander(c)))
       .catch((e) => console.warn("Caisses de stock à commander :", e));
   }, []);
 
-  const aCommander = demandes ? caissesACommanderCetteSemaine(demandes, anticipees) : [];
-  const aRapatrier = demandes ? caissesARapatrierCetteSemaine(demandes, anticipees) : [];
+  const aCommander = demandes ? caissesACommanderCetteSemaine(demandes, anticipees, new Date(), sousCaisses) : [];
+  const aRapatrier = demandes ? caissesARapatrierCetteSemaine(demandes, anticipees, new Date(), sousCaisses) : [];
 
   return (
     // Conteneur positionné : Admin est calé en haut à droite de l'écran d'accueil (et non de la
@@ -126,8 +135,8 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
         {stockACommander.length > 0 && (
           <StockACommander caisses={stockACommander} onOuvrir={() => onSelect("stock")} />
         )}
-        <ListeAffaires titre="Caisses à commander cette semaine" affaires={aCommander} chargement={demandes === null} />
-        <ListeAffaires titre="Caisses à rapatrier cette semaine" affaires={aRapatrier} chargement={demandes === null} />
+        <ListeAffaires titre="Caisses à commander cette semaine" affaires={aCommander} chargement={demandes === null} sousCaisses={sousCaisses} />
+        <ListeAffaires titre="Caisses à rapatrier cette semaine" affaires={aRapatrier} chargement={demandes === null} sousCaisses={sousCaisses} />
       </div>
     </div>
     </div>
@@ -138,11 +147,15 @@ function ListeAffaires({
   titre,
   affaires,
   chargement,
+  sousCaisses,
 }: {
   titre: string;
   affaires: AffaireACommander[];
   chargement: boolean;
+  sousCaisses: DemandeCaisse[];
 }) {
+  const numeroSousCaisse = (sc: DemandeCaisse) =>
+    sousCaisses.filter((c) => c.demande_id === sc.demande_id).findIndex((c) => c.id === sc.id) + 2;
   return (
     <div>
       <h2 style={titreBlocStyle}>{titre}</h2>
@@ -153,9 +166,9 @@ function ListeAffaires({
           <p style={{ margin: 0 }}>Aucune affaire pour l'instant.</p>
         ) : (
           <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-            {affaires.map(({ demande, datePickingAffichage, anticipee, urgent }) => (
+            {affaires.map(({ demande, sousCaisse, datePickingAffichage, anticipee, urgent }) => (
               <li
-                key={demande.id}
+                key={sousCaisse ? `c:${sousCaisse.id}` : demande.id}
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
@@ -167,11 +180,19 @@ function ListeAffaires({
               >
                 <span style={{ fontWeight: 600, color: "var(--text)" }}>
                   {demande.affaire}
+                  {/* Sous-caisse à part de sa mère (envoi en partiel, 2026-10-29). */}
+                  {/* Numéro de la caisse : la mère est la caisse 1, ses caisses détaillées 2, 3… (elles
+                      portent le nom de l'affaire, retour du 2026-10-29). */}
+                  {sousCaisse && (
+                    <span style={{ marginLeft: 8, fontSize: 12.5, fontWeight: 600, color: "var(--text-muted)" }}>
+                      caisse {numeroSousCaisse(sousCaisse)}
+                    </span>
+                  )}
                   {urgent && (
                     <span style={{ marginLeft: 10, fontSize: 12.5, fontWeight: 700, color: "var(--danger-text)" }}>À commander</span>
                   )}
                   {/* Cochée « OK pour être commandée » (demande de l'utilisateur du 2026-10-06). */}
-                  {demande.ok_pour_passer_cde && (
+                  {(sousCaisse ? sousCaisse.ok_pour_passer_cde : demande.ok_pour_passer_cde) && (
                     <span style={{ marginLeft: 10, fontSize: 12.5, fontWeight: 700, color: "var(--ok-text)" }}>En commande</span>
                   )}
                 </span>

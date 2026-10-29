@@ -105,7 +105,7 @@ export default function LierCaisseDialog({
                       key={sc.id}
                       cle={`sc:${sc.id}`}
                       titre={sc.nom || "Caisse détaillée"}
-                      detail={`Caisse détaillée · Qté ${sc.quantite}${estDemandeCaisseValidee(sc, d) || estDemandeValidee(d) ? " · livrée" : ""}`}
+                      detail={`Caisse détaillée · Qté ${sc.quantite}${estDemandeCaisseValidee(sc) ? " · livrée" : ""}`}
                       l={sc.longueur_mm}
                       w={sc.largeur_mm}
                       h={sc.hauteur_mm}

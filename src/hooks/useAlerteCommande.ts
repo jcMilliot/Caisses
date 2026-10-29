@@ -1,13 +1,14 @@
 import { useEffect } from "react";
 import { demandesApi } from "../data/demandes";
+import { demandeCaisseApi } from "../data/demandeCaisse";
 import { alerteApi } from "../data/alerte";
 import { caisseStockApi } from "../data/caisseStock";
 import { demandeAlertesApi } from "../data/demandeAlertes";
-import { affairesACommanderUrgentes, datesAnticipees } from "../domain/caissesACommander";
+import { alerteACommander, datesAnticipees } from "../domain/caissesACommander";
 import { caissesStockACommander } from "../domain/caisseStock";
 
 // Pastille rouge sur l'icône de la barre des tâches tant qu'au moins une affaire est en alerte
-// « à Commander » (cf. estACommanderUrgent) ou qu'une caisse AR_CAISS_ gérée est au seuil de
+// « à Commander » (mère ou sous-caisse, cf. alerteACommander) ou qu'une caisse AR_CAISS_ gérée est au seuil de
 // réappro (cf. estStockACommander, 2026-10-02). Recalculée au démarrage, à chaque changement
 // d'écran (ex. retour de Gestion des caisses après avoir coché la case) et toutes les 2 min
 // (modifications faites sur un autre poste, passage d'un jour à l'autre).
@@ -18,11 +19,11 @@ export function useAlerteCommande(pret: boolean, declencheur: unknown) {
     if (!pret) return;
     let annule = false;
     const verifier = () => {
-      Promise.all([demandesApi.list(), caisseStockApi.list(), demandeAlertesApi.list()])
-        .then(([demandes, caissesStock, alertes]) => {
+      Promise.all([demandesApi.list(), caisseStockApi.list(), demandeAlertesApi.list(), demandeCaisseApi.listAll()])
+        .then(([demandes, caissesStock, alertes, sousCaisses]) => {
           if (annule) return;
           const alerte =
-            affairesACommanderUrgentes(demandes, datesAnticipees(alertes)).length > 0 ||
+            alerteACommander(demandes, sousCaisses, datesAnticipees(alertes)) ||
             caissesStockACommander(caissesStock).length > 0;
           return alerteApi.definirBarreDesTaches(alerte);
         })

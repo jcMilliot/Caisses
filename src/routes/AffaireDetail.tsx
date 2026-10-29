@@ -26,6 +26,17 @@ import {
   synchroCdeSelonStock,
 } from "../domain/demandeOptions";
 import { suggererCaisseStock } from "../domain/suggestionCaisse";
+import {
+  CLE_ENVOI_RESTANT,
+  articlesFiges as calculerArticlesFiges,
+  construireEnvois,
+  datesLivraison,
+  etatLivraisonCaisse,
+  type EtatLivraison,
+} from "../domain/envois";
+import { livraisonsApi } from "../data/livraisons";
+import { dateIsoVersAffichage } from "../domain/dates";
+import type { LivraisonLigne } from "../domain/types";
 import type { Article, Caisse, CaisseCalculee, CaisseColisage, CaisseStock, Demande, DemandeCaisse, NewDemandeCaisse } from "../domain/types";
 import { colisAffaireApi } from "../data/colisAffaire";
 import { usePointerDrag } from "../hooks/usePointerDrag";
@@ -175,6 +186,44 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
     });
   }, [affaire?.nom]);
 
+  // --- Envoi en partiel (2026-10-29) ----------------------------------------------------------
+  // Caisses livrées (ligne de Gestion des caisses liée livrée) : leurs articles sont figés, et
+  // Colisage en cours est découpé en envois (un onglet par jour de livraison + ce qui reste).
+  const [livraisons, setLivraisons] = useState<LivraisonLigne[]>([]);
+  useEffect(() => {
+    livraisonsApi.list().then(setLivraisons).catch(() => {});
+  }, [affaireId]);
+  const etatParCaisse = useMemo(() => {
+    const dates = datesLivraison(livraisons);
+    return new Map<number, EtatLivraison>(
+      caissesCalculees.map((c) => [c.id, etatLivraisonCaisse(c, toutesDemandes, demandeCaissesLiees, dates)]),
+    );
+  }, [caissesCalculees, toutesDemandes, demandeCaissesLiees, livraisons]);
+  const libelleLivree = (e: EtatLivraison | undefined): string | null =>
+    !e?.livree ? null : e.date ? `Livrée le ${dateIsoVersAffichage(e.date.slice(0, 10))}` : "Livrée";
+  // Caisses colisage livrées (via la caisse du Picking copiée) → libellé.
+  const caissesColisageLivrees = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const { caisse } of colisage.caisses) {
+      const libelle = caisse.source_caisse_id !== null ? libelleLivree(etatParCaisse.get(caisse.source_caisse_id)) : null;
+      if (libelle) m.set(caisse.id, libelle);
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colisage.caisses, etatParCaisse]);
+  const idsColisageLivrees = useMemo(() => new Set(caissesColisageLivrees.keys()), [caissesColisageLivrees]);
+  const envois = useMemo(
+    () => construireEnvois(colisage.caisses.map((c) => c.caisse), etatParCaisse),
+    [colisage.caisses, etatParCaisse],
+  );
+  const [cleEnvoi, setCleEnvoi] = useState<string>(CLE_ENVOI_RESTANT);
+  const envoiAffiche = envois ? (envois.find((e) => e.cle === cleEnvoi) ?? envois[envois.length - 1]) : null;
+  const figes = useMemo(
+    () => calculerArticlesFiges(articles, etatParCaisse, colisage.groupes, idsColisageLivrees),
+    [articles, etatParCaisse, colisage.groupes, idsColisageLivrees],
+  );
+  const caisseLivree = (id: number) => etatParCaisse.get(id)?.livree ?? false;
+
   function togglePosition() {
     setCaissesPosition((prev) => {
       const next = prev === "droite" ? "haut" : "droite";
@@ -201,19 +250,24 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
     );
   }
 
+  // Sélection sans les articles figés (partis dans une caisse livrée).
+  function selectionAssignable(): number[] {
+    return Array.from(selectedIds).filter((id) => !figes.has(id));
+  }
+
   async function handleAssign(caisseId: number | null) {
-    await assignerArticles(Array.from(selectedIds), caisseId);
+    await assignerArticles(selectionAssignable(), caisseId);
     setSelectedIds(new Set());
   }
 
   async function handleUnassignSelection() {
-    await assignerArticles(Array.from(selectedIds), null);
+    await assignerArticles(selectionAssignable(), null);
     setSelectedIds(new Set());
   }
 
   async function handleCreateAndAssign(nom: string, l: number, w: number, h: number) {
     const caisse = await creerCaisse(nom, l, w, h, null);
-    await assignerArticles(Array.from(selectedIds), caisse.id);
+    await assignerArticles(selectionAssignable(), caisse.id);
     setSelectedIds(new Set());
   }
 
@@ -226,7 +280,11 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
 
   async function handleDropArticle(articleId: number, caisseCible: { id: number; nom: string }) {
     if (readOnly) return;
-    const glisses = articlesGlisses(articleId);
+    if (caisseLivree(caisseCible.id)) {
+      await confirmerAction(`La caisse « ${caisseCible.nom} » est livrée : on ne peut plus y ajouter d'article.`, "Caisse livrée");
+      return;
+    }
+    const glisses = articlesGlisses(articleId).filter((a) => !figes.has(a.id));
     const aAssigner = glisses.filter((a) => a.caisse_id !== caisseCible.id);
     if (aAssigner.length === 0) return;
     const aDeplacer = aAssigner.filter((a) => a.caisse_id !== null);
@@ -281,10 +339,20 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
     return caissesCalculees.length === 1 ? articles : articles.filter((a) => a.caisse_id === c.id);
   }
 
+  // Ligne de Gestion des caisses dont la caisse reprend le type d'envoi / le traitement : la
+  // ligne liée, à défaut une ligne de la même affaire (une caisse créée ici n'a pas de type
+  // d'envoi, et la mère peut être livrée — envoi en partiel).
+  function ligneDeReference(c: Caisse): { type_envoi_caisse: string; traitement: string } | null {
+    const lien = ligneLiee(c);
+    if (lien) return "sous" in lien ? lien.sous : lien.mere;
+    return affaire ? (toutesDemandes.find((d) => memeNomAffaire(d.affaire, affaire.nom)) ?? null) : null;
+  }
+
   function suggestionPour(c: CaisseCalculee): CaisseStock | null {
     if (c.caisse_stock_id !== null) return null;
     return suggererCaisseStock({
       caisse: c,
+      ligne: ligneDeReference(c),
       articles: articlesPourSuggestion(c),
       seuilPct: c.seuilEffectif,
       caissesStock,
@@ -500,6 +568,8 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
             nbCaissesInfos={caissesCalculees.length}
             readOnly={readOnly}
             onDimsModifiees={reporterSurPicking}
+            caisseIdsVisibles={envoiAffiche?.caisseIds ?? null}
+            caissesLivrees={caissesColisageLivrees}
           />
         </>
       ) : (
@@ -536,7 +606,8 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
             className="btn btn-sm btn-pastel-blue"
             disabled={readOnly}
             onClick={async () => {
-              const nom = `Caisse ${caissesCalculees.length + 1}`;
+              // Une caisse porte toujours le nom de l'affaire (retour du 2026-10-29, plus de « Caisse N »).
+              const nom = affaire?.nom ?? `Caisse ${caissesCalculees.length + 1}`;
               const caisse = await creerCaisse(nom, 0, 0, 0, null);
               setCaisseRecenteId(caisse.id);
               if (demandeParente) {
@@ -552,7 +623,8 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
                     type_ouverture: "",
                     stock: "",
                     date_picking: demandeParente.date_picking,
-                    date_demandee_s2c: demandeParente.date_demandee_s2c,
+                    // Pas reprise de la mère : commande éventuellement différée (2026-10-29).
+                    date_demandee_s2c: "",
                     traitement: demandeParente.traitement,
                     quantite: 1,
                     moteurs: "",
@@ -568,6 +640,8 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
                     poids_kg: 0,
                     contre_plaque: contrePlaqueParDefaut(demandeParente.type_envoi_caisse),
                     caisse_stock_id: null,
+                    ok_pour_passer_cde: false,
+                    ok_cde_par: "",
                   };
                   const sousLigneCreee = await demandeCaisseApi.create(nouvelle, trigramme);
                   await caissesApi.linkDemandeCaisse(caisse.id, sousLigneCreee.id, trigramme);
@@ -596,10 +670,11 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
               : { display: "flex", flexWrap: "wrap", gap: 14 }
           }
         >
-          {caissesCalculees.map((c) => (
+          {caissesCalculees.map((c, i) => (
             <CaisseCard
               key={c.id}
               caisse={c}
+              numero={i + 1}
               autoEdit={c.id === caisseRecenteId}
               onUpdate={(nom, l, w, h, seuil, couleur) => {
                 setCaisseRecenteId(null);
@@ -618,8 +693,9 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
                 await supprimerCaisse(c.id);
               }}
               dragActif={!!drag}
-              survolee={survolCaisseId === c.id}
-              readOnly={readOnly}
+              survolee={survolCaisseId === c.id && !caisseLivree(c.id)}
+              readOnly={readOnly || caisseLivree(c.id)}
+              livree={libelleLivree(etatParCaisse.get(c.id))}
               lien={{ libelle: libelleLien(c), onLier: () => ouvrirLien(c) }}
               caisseStockNom={c.caisse_stock_id !== null ? caissesStock.find((cs) => cs.id === c.caisse_stock_id)?.nom ?? null : null}
               suggestion={(() => {
@@ -719,7 +795,27 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
       </div>
 
       {ongletVue === "colisage" ? (
-        <ColisageVue colisage={colisage} readOnly={readOnly} />
+        <>
+          {envois && (
+            // Envoi en partiel (2026-10-29) : un onglet par livraison, puis ce qui reste.
+            <div className="segmented" style={{ marginBottom: 12 }}>
+              {envois.map((e) => (
+                <button
+                  key={e.cle}
+                  className={e.cle === envoiAffiche?.cle ? "actif" : undefined}
+                  onClick={() => setCleEnvoi(e.cle)}
+                  title={e.livre ? (e.jour ? `Livré le ${dateIsoVersAffichage(e.jour)}` : "Livré") : "Caisses non livrées et colis restants"}
+                >
+                  {e.libelle}
+                  <span style={{ marginLeft: 6, fontSize: 11.5, opacity: 0.8 }}>
+                    {e.livre ? (e.jour ? `livré le ${dateIsoVersAffichage(e.jour)}` : "livré") : "en cours"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          <ColisageVue colisage={colisage} readOnly={readOnly} envois={envois} envoi={envoiAffiche} caissesLivrees={idsColisageLivrees} />
+        </>
       ) : (
       <div ref={conteneurArticlesRef} className="panel" style={{ padding: "0 12px", overflow: "auto", maxHeight: "calc(100vh - 190px)" }}>
         <ArticlesTable
@@ -740,6 +836,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
                 }
           }
           readOnly={readOnly}
+          articlesFiges={figes}
           champsManquantsParArticle={surlignerManques ? articlesAvecManque : undefined}
           onNbAffiches={setNbArticlesAffiches}
         />
@@ -917,8 +1014,8 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
 
       {showAssign && (
         <AssignToDialog
-          caisses={caissesCalculees}
-          nbSelectionnes={selectedIds.size}
+          caisses={caissesCalculees.filter((c) => !caisseLivree(c.id))}
+          nbSelectionnes={selectionAssignable().length}
           onAssign={handleAssign}
           onCreateAndAssign={handleCreateAndAssign}
           onClose={() => setShowAssign(false)}

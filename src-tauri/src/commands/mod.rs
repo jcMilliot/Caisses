@@ -14,6 +14,7 @@ pub mod demandes;
 pub mod documentation;
 pub mod intranet;
 pub mod journal;
+pub mod livraison;
 pub mod locks;
 pub mod options_liste;
 pub mod poids_caisse;

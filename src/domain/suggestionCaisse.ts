@@ -1,10 +1,12 @@
 import { volumeInterneM3, volumeUnitaireM3 } from "./calculs";
 import { estArCaiss } from "./caisseStock";
-import { estDemandeCaisseValidee, estDemandeValidee, stockAutorisePourEnvoi } from "./demandeOptions";
+import { estDemandeCaisseValidee, estDemandeValidee, necessiteNimp15, stockAutorisePourEnvoi } from "./demandeOptions";
 import type { Article, Caisse, CaisseStock, Demande, DemandeCaisse } from "./types";
 
 // Suggestion de caisse en stock pour une caisse de Simulations (décisions 2026-10-01 / 2026-10-02) :
-//  - seulement pour un envoi STANDARD (pas de caisse en stock en 4B / 4C) ;
+//  - seulement pour un envoi STANDARD (pas de caisse en stock en 4B / 4C), ni si la ligne de
+//    Gestion des caisses demande un traitement NIMP15 (retour du 2026-10-29 : une caisse créée
+//    dans Simulations n'a pas de type d'envoi, c'est sa ligne qui le porte) ;
 //  - caisses candidates : AR_CAISS_ avec au moins 1 en stock (gérées ou non : une non gérée est
 //    une caisse qu'on écoule, décision 2026-10-02), et caisses de récup
 //    disponibles (pas livrées, pas déjà prises par une autre ligne de Gestion des caisses) ;
@@ -32,16 +34,22 @@ export function recupDisponible(
 ): boolean {
   if (cs.validee) return false;
   const prisParMere = demandes.some((d) => d.caisse_stock_id === cs.id && d.id !== liens.demandeId && !estDemandeValidee(d));
-  const prisParSousCaisse = demandeCaisses.some((sc) => {
-    if (sc.caisse_stock_id !== cs.id || sc.id === liens.demandeCaisseId) return false;
-    const mere = demandes.find((d) => d.id === sc.demande_id);
-    return !estDemandeCaisseValidee(sc) && !(mere && estDemandeValidee(mere));
-  });
+  const prisParSousCaisse = demandeCaisses.some(
+    (sc) => sc.caisse_stock_id === cs.id && sc.id !== liens.demandeCaisseId && !estDemandeCaisseValidee(sc),
+  );
   return !prisParMere && !prisParSousCaisse;
+}
+
+// Ligne de Gestion des caisses (mère ou sous-caisse) qui demande une caisse traitée NIMP15 :
+// 4B / 4C, ou traitement NIMP15 saisi. Aucune caisse en stock (récup ou AR_CAISS_) n'est proposée.
+export function exigeNimp15(ligne: { type_envoi_caisse: string; traitement: string }): boolean {
+  return necessiteNimp15(ligne.type_envoi_caisse) || /NIMP15/i.test(ligne.traitement);
 }
 
 export function suggererCaisseStock(params: {
   caisse: Pick<Caisse, "type_envoi_caisse">;
+  // Ligne de Gestion des caisses de la caisse (liée, à défaut une ligne de la même affaire).
+  ligne: { type_envoi_caisse: string; traitement: string } | null;
   articles: Article[];
   seuilPct: number;
   caissesStock: CaisseStock[];
@@ -49,8 +57,9 @@ export function suggererCaisseStock(params: {
   demandeCaisses: DemandeCaisse[];
   liens: LiensCaisse;
 }): CaisseStock | null {
-  const { caisse, articles, seuilPct, caissesStock, demandes, demandeCaisses, liens } = params;
+  const { caisse, ligne, articles, seuilPct, caissesStock, demandes, demandeCaisses, liens } = params;
   if (!stockAutorisePourEnvoi(caisse.type_envoi_caisse)) return null;
+  if (ligne && exigeNimp15(ligne)) return null;
   const volume = articles.reduce((s, a) => s + volumeUnitaireM3(a) * a.quantite, 0);
   if (volume <= 0) return null;
   const dim1 = Math.max(...articles.map((a) => a.dim1_mm));

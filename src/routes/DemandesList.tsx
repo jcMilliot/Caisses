@@ -16,6 +16,8 @@ import LockBanner from "../components/LockBanner";
 import { useSectionLock } from "../hooks/useSectionLock";
 import { confirmerSuppression, confirmerAction } from "../data/confirm";
 import { estArCaiss } from "../domain/caisseStock";
+import { livraisonsApi } from "../data/livraisons";
+import { horodatageLocal } from "../domain/dates";
 import {
   contrePlaqueParDefaut,
   demandesActivesPourAffaire,
@@ -25,6 +27,8 @@ import {
   synchroCdeSelonStock,
   stockAutorisePourEnvoi,
   champsManquantsPourCommande,
+  champsManquantsPourCommandeSousCaisse,
+  sousCaisseSuitLaMere,
   estDemandeValidee,
   estDemandeCaisseValidee,
 } from "../domain/demandeOptions";
@@ -60,7 +64,9 @@ function nouvelleSousCaisseBrouillon(demande: Demande, id: number): DemandeCaiss
     type_ouverture: "",
     stock: "",
     date_picking: demande.date_picking,
-    date_demandee_s2c: demande.date_demandee_s2c,
+    // Pas reprise de la mère : une caisse détaillée peut être commandée plus tard (envoi en
+    // partiel, retour du 2026-10-29).
+    date_demandee_s2c: "",
     traitement: demande.traitement,
     quantite: 1,
     moteurs: "",
@@ -77,6 +83,8 @@ function nouvelleSousCaisseBrouillon(demande: Demande, id: number): DemandeCaiss
     contre_plaque: contrePlaqueParDefaut(demande.type_envoi_caisse),
     ordre: 0,
     caisse_stock_id: null,
+    ok_pour_passer_cde: false,
+    ok_cde_par: "",
   };
 }
 
@@ -129,6 +137,8 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   brouillonRef.current = brouillon;
   const demandesRef = useRef(demandes);
   demandesRef.current = demandes;
+  const demandeCaissesRef = useRef(demandeCaisses);
+  demandeCaissesRef.current = demandeCaisses;
 
   // Sous-caisses supprimées localement (id > 0), à effacer en base au moment de l'enregistrement.
   const [sousCaissesSupprimees, setSousCaissesSupprimees] = useState<DemandeCaisse[]>([]);
@@ -285,17 +295,22 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     }
     setBrouillon((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
 
-    // Cascade vers les sous-caisses : la date de picking et le type d'envoi de la mère font
-    // foi — on les répercute, et pour le type d'envoi on ré-applique les règles (ouverture
-    // autorisée, NIMP15, contre-plaqué) sur chaque sous-caisse.
+    // Cascade vers les sous-caisses : le type d'envoi de la mère fait foi — on le répercute en
+    // ré-appliquant les règles (ouverture autorisée, NIMP15, contre-plaqué) sur chaque
+    // sous-caisse. La date de picking n'est répercutée que sur les sous-caisses qui avaient la
+    // date de la mère : une sous-caisse envoyée plus tard garde la sienne (envoi en partiel,
+    // 2026-10-29).
     const cascade: Partial<DemandeCaisse> = {};
     if ("date_picking" in patch) cascade.date_picking = patch.date_picking;
     if ("type_envoi_caisse" in patch) cascade.type_envoi_caisse = patch.type_envoi_caisse;
     if (Object.keys(cascade).length === 0) return true;
+    const ancienneDate = demandeActuelle?.date_picking;
 
     setDemandeCaisses((prev) =>
       prev.map((c) => {
         if (c.demande_id !== id) return c;
+        const cascadeLigne: Partial<DemandeCaisse> = { ...cascade };
+        if (c.date_picking !== ancienneDate) delete cascadeLigne.date_picking;
         const majEnvoi = cascade.type_envoi_caisse ?? c.type_envoi_caisse;
         const regles =
           "type_envoi_caisse" in cascade
@@ -306,7 +321,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
                 caisse_stock_id: c.caisse_stock_id,
               })
             : {};
-        return { ...c, ...cascade, ...synchroCdeSelonStock(c, regles) };
+        return { ...c, ...cascadeLigne, ...synchroCdeSelonStock(c, regles) };
       }),
     );
     return true;
@@ -453,14 +468,18 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
 
   async function handleValider(id: number, validee: boolean) {
     const demande = brouillonRef.current.find((d) => d.id === id);
+    // Envoi en partiel (2026-10-29) : sous-caisses livrées / dévalidées avec la mère.
+    const sousCaisses = demande
+      ? demandeCaissesRef.current.filter((c) => c.demande_id === id && sousCaisseSuitLaMere(c, demande))
+      : [];
     if (!validee) {
       // Dévalider : retirer aussi l'observation « Livré/Rapatriée » (sinon estDemandeValidee la
       // considère toujours validée via l'observation historique).
       const patch: Partial<Demande> = { validee: false };
       if (demande && estObservationValidation(demande.observations)) patch.observations = "";
       handleEditLocal(id, patch);
-      // Cascade : dévalider aussi les sous-caisses (leur observation de validation).
-      for (const sc of demandeCaisses.filter((c) => c.demande_id === id)) {
+      // Cascade : dévalider aussi les sous-caisses qui suivent la mère (cf. sousCaisseSuitLaMere).
+      for (const sc of sousCaisses) {
         if (estObservationValidation(sc.observations)) handleEditDemandeCaisse(sc.id, { observations: "" });
       }
       return;
@@ -468,9 +487,15 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     // Plus d'« Annuler » depuis l'enregistrement automatique : petite sécurité avant de livrer
     // (le stock des AR_CAISS_ est mis à jour tout de suite). Décision du 2026-10-20.
     const nomCaisse = caissesStock.find((c) => c.id === demande?.caisse_stock_id)?.nom;
+    const enAttente = demandeCaisses.filter(
+      (c) => c.demande_id === id && !estDemandeCaisseValidee(c) && demande && !sousCaisseSuitLaMere(c, demande),
+    );
     const ok = await confirmerAction(
       `Marquer « ${demande?.affaire ?? ""} » comme livrée ?` +
-        (nomCaisse && estArCaiss(nomCaisse) ? ` Le stock de ${nomCaisse} sera mis à jour.` : ""),
+        (nomCaisse && estArCaiss(nomCaisse) ? ` Le stock de ${nomCaisse} sera mis à jour.` : "") +
+        (enAttente.length > 0
+          ? ` Caisse(s) détaillée(s) pas encore « OK pour être commandée(s) », qui restent à livrer : ${enAttente.map((c) => `« ${c.nom} »`).join(", ")}.`
+          : ""),
       "Livré",
     );
     if (!ok) return;
@@ -485,9 +510,62 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     // observation "Livré"/"Rapatriée" que la mère, pour qu'elles disparaissent de la section
     // Demandes d'achats et s'affichent en vert pastel dans le tableau.
     const observationCascade = demande?.cde_passee_achat_stock ? "Rapatriée" : "Livré";
-    for (const sc of demandeCaisses.filter((c) => c.demande_id === id)) {
-      handleEditDemandeCaisse(sc.id, { observations: observationCascade });
+    for (const sc of sousCaisses) {
+      if (!estDemandeCaisseValidee(sc)) handleEditDemandeCaisse(sc.id, { observations: observationCascade });
     }
+  }
+
+  // « Livré » / « Non livré » d'une sous-caisse seule (envoi en partiel, 2026-10-29).
+  async function handleValiderSousCaisse(id: number, validee: boolean) {
+    const sc = demandeCaissesRef.current.find((c) => c.id === id);
+    if (!sc) return;
+    if (!validee) {
+      handleEditDemandeCaisse(id, { observations: "" });
+      return;
+    }
+    const mere = brouillonRef.current.find((d) => d.id === sc.demande_id);
+    const nomCaisse = caissesStock.find((c) => c.id === sc.caisse_stock_id)?.nom;
+    const ok = await confirmerAction(
+      `Marquer la caisse détaillée « ${sc.nom} » (${mere?.affaire ?? ""}) comme livrée ?` +
+        (nomCaisse && estArCaiss(nomCaisse) ? ` Le stock de ${nomCaisse} sera mis à jour.` : ""),
+      "Livré",
+    );
+    if (!ok) return;
+    handleEditDemandeCaisse(id, { observations: sc.cde_passee_achat_stock ? "Rapatriée" : "Livré" });
+  }
+
+  // Champs d'une sous-caisse dont la modification peut invalider « OK pour être commandée ».
+  const CHAMPS_CONDITIONNANT_OK_CDE_SOUS_LIGNE: (keyof DemandeCaisse)[] = [
+    "longueur_mm",
+    "largeur_mm",
+    "hauteur_mm",
+    "quantite",
+    "date_demandee_s2c",
+    "type_ouverture",
+  ];
+
+  // Édition d'une sous-caisse depuis le tableau : mêmes règles que la mère pour « OK pour être
+  // commandée » (envoi en partiel, 2026-10-29) — confirmation si un champ requis est vidé, et
+  // trigramme de qui coche. Renvoie false si l'utilisateur a refusé.
+  async function handleEditSousLigne(id: number, patch: Partial<DemandeCaisse>): Promise<boolean> {
+    const actuelle = demandeCaissesRef.current.find((c) => c.id === id);
+    if (actuelle?.ok_pour_passer_cde && CHAMPS_CONDITIONNANT_OK_CDE_SOUS_LIGNE.some((champ) => champ in patch)) {
+      const mere = brouillonRef.current.find((d) => d.id === actuelle.demande_id);
+      const manquants = champsManquantsPourCommandeSousCaisse({ ...actuelle, ...patch }, mere);
+      if (manquants.length > 0) {
+        const confirme = await confirmerAction(
+          `Cette modification videra le(s) champ(s) suivant(s), nécessaire(s) à la commande : ${manquants.join(", ")}. La caisse détaillée ne sera plus « OK pour être commandée ». Confirmer ce changement ?`,
+          "Modification bloquante pour la commande",
+        );
+        if (!confirme) return false;
+        patch = { ...patch, ok_pour_passer_cde: false };
+      }
+    }
+    if (patch.ok_pour_passer_cde !== undefined && patch.ok_pour_passer_cde !== actuelle?.ok_pour_passer_cde) {
+      patch = { ...patch, ok_cde_par: patch.ok_pour_passer_cde ? trigramme : "" };
+    }
+    handleEditDemandeCaisse(id, patch);
+    return true;
   }
 
   function handleCreerDemandeCaisse(demande: Demande) {
@@ -655,7 +733,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     if (!sousLigne) return;
     if (!(await confirmerEtDemanderReassignment(cs, sousLigne.demande_id))) return;
     noterOuverture(`c:${id}`, sousLigne.type_ouverture, cs.type_ouverture);
-    handleEditDemandeCaisse(id, {
+    await handleEditSousLigne(id, {
       caisse_stock_id: caisseStockId,
       longueur_mm: cs.longueur_mm,
       largeur_mm: cs.largeur_mm,
@@ -753,11 +831,9 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
         // disponibles (sinon elles restaient masquées de Caisses en stock et des menus Stock).
         const changement = validee && (!original || !original.validee) ? true : !validee && original?.validee ? false : null;
         if (changement !== null) {
-          const ids = [d.caisse_stock_id, ...demandeCaisses.filter((c) => c.demande_id === id).map((c) => c.caisse_stock_id)];
-          for (const csId of ids) {
-            if (csId === null) continue;
-            await caisseStockApi.setValidee(csId, changement, trigramme);
-            caissesStockValidation.set(csId, changement);
+          if (d.caisse_stock_id !== null) {
+            await caisseStockApi.setValidee(d.caisse_stock_id, changement, trigramme);
+            caissesStockValidation.set(d.caisse_stock_id, changement);
           }
         }
       }
@@ -776,6 +852,16 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
         await demandeCaisseApi.update(sc.id, base, trigramme);
       }
     }
+    // Sous-caisses livrées / dévalidées (seules ou avec leur mère) : leur caisse de stock suit.
+    for (const [liste, changement] of [[livrees, true], [devalidees, false]] as const) {
+      for (const l of liste) {
+        if (l.table !== "demande_caisse") continue;
+        const csId = demandeCaisses.find((c) => c.id === l.id)?.caisse_stock_id ?? null;
+        if (csId === null) continue;
+        await caisseStockApi.setValidee(csId, changement, trigramme);
+        caissesStockValidation.set(csId, changement);
+      }
+    }
     const idsSousCaissesSupprimees = new Set<number>();
     for (const sc of sousCaissesSupprimees) {
       const demandeParente = demandes.find((d) => d.id === sc.demande_id);
@@ -792,6 +878,11 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     for (const l of livrees) {
       if (await caisseStockApi.decompterLivraison(l.table, l.id, trigramme)) stockModifie = true;
     }
+    // Date de livraison (envoi en partiel, 2026-10-29) : regroupe les caisses par livraison dans
+    // Colisage en cours. Une même action « Livré » (mère + sous-caisses) partage la même date.
+    const livreeLe = horodatageLocal();
+    for (const l of livrees) await livraisonsApi.set(l.table, l.id, livreeLe, trigramme);
+    for (const l of devalidees) await livraisonsApi.set(l.table, l.id, null, trigramme);
     if (stockModifie) setCaissesStock(await caisseStockApi.list());
 
     // Répercussion des modifs de dimensions sur la simulation, si l'affaire existe.
@@ -831,7 +922,8 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
   }
 
   // Lignes enregistrées (id > 0) dont l'état livré change entre le serveur et le brouillon. Une
-  // sous-caisse est livrée si elle l'est elle-même ou si sa mère l'est (validation en cascade).
+  // sous-caisse n'est livrée que par sa propre observation (envoi en partiel, 2026-10-29 : la
+  // cascade de « Livré » sur la mère l'écrit sur les sous-caisses concernées).
   function transitionsLivraison(): { devalidees: { table: TableLigne; id: number }[]; livrees: { table: TableLigne; id: number }[] } {
     const devalidees: { table: TableLigne; id: number }[] = [];
     const livrees: { table: TableLigne; id: number }[] = [];
@@ -847,11 +939,7 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
     for (const sc of demandeCaisses) {
       const original = demandeCaissesServeur.find((o) => o.id === sc.id);
       if (sc.id < 0 || !original) continue;
-      const mereAvant = demandes.find((d) => d.id === sc.demande_id);
-      const mereApres = brouillon.find((d) => d.id === sc.demande_id);
-      const avant = estDemandeCaisseValidee(original) || (mereAvant !== undefined && estDemandeValidee(mereAvant));
-      const apres = estDemandeCaisseValidee(sc) || (mereApres !== undefined && estDemandeValidee(mereApres));
-      noter("demande_caisse", sc.id, avant, apres);
+      noter("demande_caisse", sc.id, estDemandeCaisseValidee(original), estDemandeCaisseValidee(sc));
     }
     return { devalidees, livrees };
   }
@@ -967,7 +1055,8 @@ export default function DemandesList({ onSimulerAffaire, trigramme, onDirtyChang
             lignesEtendues={lignesEtendues}
             onToggleEtendue={handleToggleEtendue}
             onCreerDemandeCaisse={handleCreerDemandeCaisse}
-            onEditDemandeCaisse={handleEditDemandeCaisse}
+            onEditDemandeCaisse={handleEditSousLigne}
+            onValiderSousCaisse={handleValiderSousCaisse}
             onDeleteDemandeCaisse={handleDeleteDemandeCaisse}
             onSelectStock={handleSelectStock}
             ouverturesChangees={ouverturesChangees}

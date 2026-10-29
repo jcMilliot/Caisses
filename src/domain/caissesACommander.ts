@@ -1,8 +1,10 @@
-import type { Demande, DemandeAlerte } from "./types";
-import { estDemandeValidee } from "./demandeOptions";
+import type { Demande, DemandeAlerte, DemandeCaisse } from "./types";
+import { estDemandeCaisseValidee, estDemandeValidee } from "./demandeOptions";
 
 export interface AffaireACommander {
   demande: Demande;
+  // Envoi en partiel (2026-10-29) : sous-caisse à commander / rapatrier à part de sa mère.
+  sousCaisse?: DemandeCaisse;
   // Date de référence (date anticipée si saisie, sinon picking), AAAA-MM-JJ.
   datePickingAffichage: string;
   // Vrai si datePickingAffichage est la date anticipée de la page Alertes.
@@ -31,8 +33,76 @@ export function libelleDateModifiee(datePicking: string, dateSaisie: string): "A
   return datePicking !== "" && dateSaisie > datePicking ? "Repoussée" : "Anticipée";
 }
 
-function versAffaire(d: Demande, anticipees: DatesAnticipees, urgent: boolean): AffaireACommander {
-  return { demande: d, datePickingAffichage: dateReference(d, anticipees), anticipee: anticipees.has(d.id), urgent };
+// --- Sous-caisses (envoi en partiel, 2026-10-29) --------------------------------------------
+// Une sous-caisse a sa propre date de picking, sa propre case « OK pour être commandée » et sa
+// propre livraison. Tant qu'elle a la date de sa mère, elle suit aussi la date modifiée dans
+// Alertes (qui n'existe que pour les lignes mères).
+export function dateReferenceSousCaisse(sc: DemandeCaisse, mere: Demande, anticipees: DatesAnticipees = new Map()): string {
+  return sc.date_picking === mere.date_picking ? dateReference(mere, anticipees) : sc.date_picking;
+}
+
+// Ligne de Gestion des caisses (mère ou sous-caisse) vue par les alertes.
+interface LigneAlerte {
+  mere: Demande;
+  sousCaisse?: DemandeCaisse;
+  date: string;
+  anticipee: boolean;
+  ok: boolean;
+  livree: boolean;
+  enStock: boolean;
+}
+
+function ligneMere(d: Demande, anticipees: DatesAnticipees): LigneAlerte {
+  return {
+    mere: d,
+    date: dateReference(d, anticipees),
+    anticipee: anticipees.has(d.id),
+    ok: d.ok_pour_passer_cde,
+    livree: estDemandeValidee(d),
+    enStock: estCaisseEnStock(d),
+  };
+}
+
+function ligneSousCaisse(sc: DemandeCaisse, mere: Demande, anticipees: DatesAnticipees): LigneAlerte {
+  return {
+    mere,
+    sousCaisse: sc,
+    date: dateReferenceSousCaisse(sc, mere, anticipees),
+    anticipee: sc.date_picking === mere.date_picking && anticipees.has(mere.id),
+    ok: sc.ok_pour_passer_cde,
+    livree: estDemandeCaisseValidee(sc),
+    enStock: estCaisseEnStock(sc),
+  };
+}
+
+// Sous-caisse dans le même cas que sa mère (pas encore commandée, non livrée, même date, même
+// caisse en stock ou non) : la ligne de la mère la représente déjà, pas de ligne en double.
+function couverteParLaMere(l: LigneAlerte, mere: LigneAlerte): boolean {
+  return !mere.ok && !mere.livree && !l.ok && !l.livree && mere.date === l.date && mere.enStock === l.enStock;
+}
+
+// Lignes mères + sous-caisses qui ne sont pas couvertes par leur mère (ACHSTOCK exclues).
+function lignesAlerte(demandes: Demande[], sousCaisses: DemandeCaisse[], anticipees: DatesAnticipees): LigneAlerte[] {
+  const lignes: LigneAlerte[] = [];
+  for (const d of demandes) {
+    if (estAchstock(d)) continue;
+    const mere = ligneMere(d, anticipees);
+    lignes.push(mere);
+    for (const sc of sousCaisses) {
+      if (sc.demande_id !== d.id) continue;
+      const l = ligneSousCaisse(sc, d, anticipees);
+      if (!couverteParLaMere(l, mere)) lignes.push(l);
+    }
+  }
+  return lignes;
+}
+
+function versAffaire(l: LigneAlerte, urgent: boolean): AffaireACommander {
+  return { demande: l.mere, sousCaisse: l.sousCaisse, datePickingAffichage: l.date, anticipee: l.anticipee, urgent };
+}
+
+function cleLigne(l: LigneAlerte): string {
+  return l.sousCaisse ? `c:${l.sousCaisse.id}` : `d:${l.mere.id}`;
 }
 
 function parseIso(iso: string): Date | null {
@@ -70,33 +140,33 @@ export function estAchstock(demande: Demande): boolean {
 
 // Caisse en stock choisie dans le menu Stock (`caisse_stock_id`), ou nom écrit dans l'ancienne
 // colonne texte `stock` (lignes reprises de l'Excel, que l'app n'écrit plus).
-function estCaisseEnStock(demande: Demande): boolean {
+function estCaisseEnStock(demande: Pick<Demande, "caisse_stock_id" | "stock">): boolean {
   return demande.caisse_stock_id != null || demande.stock.trim() !== "";
 }
 
 // "À commander" : semaine avant la semaine du picking (on ferme le week-end, donc la commande
-// doit partir la semaine calendaire précédant celle du picking). Les affaires en alerte
+// doit partir la semaine calendaire précédant celle du picking). Les lignes en alerte
 // « à Commander » y sont ajoutées (si besoin) et placées en tête.
 export function caissesACommanderCetteSemaine(
   demandes: Demande[],
   anticipees: DatesAnticipees = new Map(),
   aujourdHui: Date = new Date(),
+  sousCaisses: DemandeCaisse[] = [],
 ): AffaireACommander[] {
-  const cetteSemaine = demandes
-    .filter((d) => !estAchstock(d) && !estCaisseEnStock(d) && !estDemandeValidee(d))
-    .filter((d) => {
-      const picking = parseIso(dateReference(d, anticipees));
+  const lignes = lignesAlerte(demandes, sousCaisses, anticipees);
+  const cetteSemaine = lignes
+    .filter((l) => !l.enStock && !l.livree)
+    .filter((l) => {
+      const picking = parseIso(l.date);
       if (!picking) return false;
       const semaineCommandeAttendue = ajouterJours(lundiDeLaSemaine(picking), -7);
       return memeSemaine(semaineCommandeAttendue, aujourdHui);
     });
-  const urgentes = affairesACommanderUrgentes(demandes, anticipees, aujourdHui).sort((a, b) =>
-    dateReference(a, anticipees).localeCompare(dateReference(b, anticipees)),
-  );
-  const idsUrgents = new Set(urgentes.map((d) => d.id));
+  const urgentes = lignes.filter((l) => ligneUrgente(l, aujourdHui)).sort((a, b) => a.date.localeCompare(b.date));
+  const clesUrgentes = new Set(urgentes.map(cleLigne));
   return [
-    ...urgentes.map((d) => versAffaire(d, anticipees, true)),
-    ...cetteSemaine.filter((d) => !idsUrgents.has(d.id)).map((d) => versAffaire(d, anticipees, false)),
+    ...urgentes.map((l) => versAffaire(l, true)),
+    ...cetteSemaine.filter((l) => !clesUrgentes.has(cleLigne(l))).map((l) => versAffaire(l, false)),
   ];
 }
 
@@ -107,11 +177,12 @@ export function caissesARapatrierCetteSemaine(
   demandes: Demande[],
   anticipees: DatesAnticipees = new Map(),
   aujourdHui: Date = new Date(),
+  sousCaisses: DemandeCaisse[] = [],
 ): AffaireACommander[] {
-  return demandes
-    .filter((d) => !estAchstock(d) && estCaisseEnStock(d) && !estDemandeValidee(d))
-    .filter((d) => {
-      const picking = parseIso(dateReference(d, anticipees));
+  return lignesAlerte(demandes, sousCaisses, anticipees)
+    .filter((l) => l.enStock && !l.livree)
+    .filter((l) => {
+      const picking = parseIso(l.date);
       if (!picking) return false;
       const estLundi = jourSemaine(picking) === 0;
       const semaineRapatriementAttendue = estLundi
@@ -119,21 +190,21 @@ export function caissesARapatrierCetteSemaine(
         : lundiDeLaSemaine(picking);
       return memeSemaine(semaineRapatriementAttendue, aujourdHui);
     })
-    .map((d) => versAffaire(d, anticipees, false));
+    .map((l) => versAffaire(l, false));
 }
 
 // --- Alerte « à Commander » (décision 2026-09-30) -------------------------------------------
-// Affaire à commander (ni caisse en stock à rapatrier, ni ACHSTOCK), pas encore cochée « OK pour
+// Ligne à commander (ni caisse en stock à rapatrier, ni ACHSTOCK), pas encore cochée « OK pour
 // être commandée », non livrée, dont le picking est dans 7 jours calendaires ou moins — ou déjà
 // passé. Disparaît dès que la case est cochée, revient si on la décoche. Signalée par une
-// pastille sur l'icône de la barre des tâches et en rouge sur l'accueil.
+// pastille sur l'icône de la barre des tâches et en rouge sur l'accueil. Vaut aussi pour une
+// sous-caisse qui n'est pas couverte par sa mère (envoi en partiel, 2026-10-29).
 export const JOURS_ALERTE_COMMANDE = 7;
 export const MESSAGE_ALERTE_COMMANDE = "Picking (ou expédition anticipée) dans 7 jours ou moins et pas encore traité.";
 
-export function estACommanderUrgent(d: Demande, anticipees: DatesAnticipees = new Map(), aujourdHui: Date = new Date()): boolean {
-  if (d.ok_pour_passer_cde || estDemandeValidee(d) || estAchstock(d)) return false;
-  if (estCaisseEnStock(d)) return false;
-  const picking = parseIso(dateReference(d, anticipees));
+function ligneUrgente(l: LigneAlerte, aujourdHui: Date): boolean {
+  if (l.ok || l.livree || l.enStock || estAchstock(l.mere)) return false;
+  const picking = parseIso(l.date);
   if (!picking) return false;
   const jour = new Date(aujourdHui);
   jour.setHours(0, 0, 0, 0);
@@ -141,10 +212,27 @@ export function estACommanderUrgent(d: Demande, anticipees: DatesAnticipees = ne
   return joursAvantPicking <= JOURS_ALERTE_COMMANDE;
 }
 
-export function affairesACommanderUrgentes(
-  demandes: Demande[],
+export function estACommanderUrgent(d: Demande, anticipees: DatesAnticipees = new Map(), aujourdHui: Date = new Date()): boolean {
+  return ligneUrgente(ligneMere(d, anticipees), aujourdHui);
+}
+
+export function estSousCaisseACommanderUrgente(
+  sc: DemandeCaisse,
+  mere: Demande,
   anticipees: DatesAnticipees = new Map(),
   aujourdHui: Date = new Date(),
-): Demande[] {
-  return demandes.filter((d) => estACommanderUrgent(d, anticipees, aujourdHui));
+): boolean {
+  const l = ligneSousCaisse(sc, mere, anticipees);
+  if (couverteParLaMere(l, ligneMere(mere, anticipees))) return false;
+  return ligneUrgente(l, aujourdHui);
+}
+
+// Vrai si au moins une ligne (mère ou sous-caisse) est en alerte « à Commander ».
+export function alerteACommander(
+  demandes: Demande[],
+  sousCaisses: DemandeCaisse[],
+  anticipees: DatesAnticipees = new Map(),
+  aujourdHui: Date = new Date(),
+): boolean {
+  return lignesAlerte(demandes, sousCaisses, anticipees).some((l) => ligneUrgente(l, aujourdHui));
 }

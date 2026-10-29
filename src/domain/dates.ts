@@ -28,6 +28,12 @@ export function dateEstDansLePasse(iso: string): boolean {
   return iso < auj;
 }
 
+// Horodatage en heure locale du poste, AAAA-MM-JJ HH:MM:SS (date de livraison, 2026-10-29).
+export function horodatageLocal(d: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 // Horodatage stocké en UTC (datetime('now')) → affiché en heure locale JJ/MM/AAAA HH:MM.
 export function formaterHorodatage(iso: string): string {
   const d = new Date(iso.replace(" ", "T") + "Z");

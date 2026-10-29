@@ -51,7 +51,7 @@ export default function App() {
     confirmerConnexion,
     reessayer: reessayerConnexion,
   } = useUserSetup(dbStatus === "ready");
-  const { update, afficherBandeau, progression, erreur: erreurMaj, confirmInstall, dismiss } =
+  const { update, afficherBandeau, progression, erreur: erreurMaj, confirmInstall } =
     useUpdateCheck(dbStatus === "ready");
   const utilisateurPret = dbStatus === "ready" && userStatus === "ready" ? trigramme : null;
   useBackupAuto(utilisateurPret);
@@ -229,7 +229,7 @@ export default function App() {
         progression={progression}
         erreur={erreurMaj}
         onInstaller={confirmInstall}
-        onPlusTard={dismiss}
+        
       />
     </div>
   );
@@ -274,7 +274,7 @@ export default function App() {
           progression={progression}
           erreur={erreurMaj}
           onInstaller={confirmInstall}
-          onPlusTard={dismiss}
+          
         />
       )}
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column" }}>

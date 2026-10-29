@@ -26,6 +26,11 @@ interface Props {
   lien?: { libelle: string | null; onLier: () => void };
   // Caisse en stock suggérée d'après les articles (cf. domain/suggestionCaisse.ts).
   suggestion?: { nom: string; longueur_mm: number; largeur_mm: number; hauteur_mm: number; onUtiliser: () => void } | null;
+  // Caisse livrée (envoi en partiel, 2026-10-29) : libellé « Livrée le … », null sinon. Plus rien
+  // n'y entre ni n'en sort.
+  livree?: string | null;
+  // Numéro de la caisse dans l'affaire (1, 2…), repris dans la colonne Caisse du tableau.
+  numero?: number;
 }
 
 const BORDER_BY_NIVEAU: Record<CaisseCalculee["niveauAlerte"], string> = {
@@ -80,6 +85,8 @@ export default function CaisseCard({
   caisseStockNom,
   suggestion,
   lien,
+  livree,
+  numero,
 }: Props) {
   const [editing, setEditing] = useState(!!autoEdit && !readOnly);
   // Les dimensions sont saisies/affichées en mètres dans l'UI, mais stockées en mm partout
@@ -115,7 +122,7 @@ export default function CaisseCard({
         borderLeft: `5px solid ${caisse.couleur}`,
         background: survolee ? "var(--accent-soft)" : "var(--bg-panel)",
         transition: "background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease",
-        outline: dragActif && !survolee ? "1.5px dashed var(--border-strong)" : undefined,
+        outline: dragActif && !survolee && !livree ? "1.5px dashed var(--border-strong)" : undefined,
         outlineOffset: 2,
       }}
     >
@@ -173,7 +180,25 @@ export default function CaisseCard({
         <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 15.5, letterSpacing: "-0.005em" }}>{caisse.nom}</div>
+              <div style={{ fontWeight: 700, fontSize: 15.5, letterSpacing: "-0.005em", display: "flex", alignItems: "center", gap: 7 }}>
+                {numero !== undefined && (
+                  <span
+                    title={`Caisse ${numero}`}
+                    style={{ minWidth: 22, height: 22, padding: "0 6px", borderRadius: 999, background: caisse.couleur, border: "1px solid rgba(0,0,0,0.25)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}
+                  >
+                    {numero}
+                  </span>
+                )}
+                {caisse.nom}
+              </div>
+              {livree && (
+                <div
+                  title="Caisse livrée : ses articles sont figés"
+                  style={{ display: "inline-block", fontSize: 12, fontWeight: 650, marginTop: 3, padding: "1px 8px", borderRadius: 999, background: "var(--ok-bg)", color: "var(--ok-text)", border: "1px solid var(--ok-border)" }}
+                >
+                  {livree}
+                </div>
+              )}
               <div className="mono" style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 1 }}>
                 {(caisse.longueur_mm / 1000).toFixed(2)} × {(caisse.largeur_mm / 1000).toFixed(2)} × {(caisse.hauteur_mm / 1000).toFixed(2)} m
               </div>

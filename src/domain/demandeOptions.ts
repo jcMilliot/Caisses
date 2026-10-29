@@ -244,11 +244,10 @@ export function demandesActivesPourAffaire(nomAffaire: string, demandes: Demande
 }
 
 // Une sous-caisse (demande_caisse) n'a pas sa propre colonne `validee` — elle est considérée
-// validée UNIQUEMENT par sa propre observation "livrée"/"rapatriée". La validation de la
-// demande mère la propage via une cascade explicite (DemandesList.handleValider écrit
-// l'observation sur les sous-caisses existantes) — mais on n'HÉRITE PAS de la mère : une
-// sous-caisse ajoutée après coup à une affaire déjà livrée reste "à faire" (pas de "Livré").
-// `demandeMere` gardé en 2e paramètre pour compat des appelants, non utilisé.
+// validée UNIQUEMENT par sa propre observation "livrée"/"rapatriée", jamais par sa mère : depuis
+// l'envoi en partiel (2026-10-29), une mère peut être livrée avant certaines de ses sous-caisses.
+// « Livré » sur la mère écrit l'observation sur les sous-caisses concernées
+// (DemandesList.handleValider). `demandeMere` gardé en 2e paramètre pour compat, non utilisé.
 export function estDemandeCaisseValidee(c: DemandeCaisse, _demandeMere?: Demande | undefined): boolean {
   const obs = c.observations.trim().toLowerCase();
   return (
@@ -285,4 +284,19 @@ export function champsManquantsPourCommande(d: DemandePourCommande): string[] {
 
 export function demandePreteACommander(d: DemandePourCommande): boolean {
   return champsManquantsPourCommande(d).length === 0;
+}
+
+// Sous-caisse (envoi en partiel, 2026-10-29) : mêmes champs requis, l'affaire étant celle de la mère.
+export function champsManquantsPourCommandeSousCaisse(
+  c: Omit<DemandePourCommande, "affaire">,
+  mere: Pick<Demande, "affaire"> | undefined,
+): string[] {
+  return champsManquantsPourCommande({ ...c, affaire: mere?.affaire ?? "" });
+}
+
+// « Livré » sur une mère : sous-caisses livrées avec elle. Mère cochée « OK pour être commandée »
+// → seulement ses sous-caisses cochées (les autres partent plus tard) ; mère non cochée (caisse
+// en stock rapatriée, ligne ancienne) → toutes, comme avant l'envoi en partiel.
+export function sousCaisseSuitLaMere(c: Pick<DemandeCaisse, "ok_pour_passer_cde">, mere: Pick<Demande, "ok_pour_passer_cde">): boolean {
+  return !mere.ok_pour_passer_cde || c.ok_pour_passer_cde;
 }

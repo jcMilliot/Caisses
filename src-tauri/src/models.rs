@@ -145,6 +145,8 @@ pub struct DemandeCaisse {
     pub contre_plaque: bool,
     pub ordre: i64,
     pub caisse_stock_id: Option<i64>,
+    pub ok_pour_passer_cde: bool,
+    pub ok_cde_par: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -171,6 +173,11 @@ pub struct NewDemandeCaisse {
     pub poids_kg: f64,
     pub contre_plaque: bool,
     pub caisse_stock_id: Option<i64>,
+    // Envoi en partiel (0050) : propre à chaque sous-caisse, indépendant de la mère.
+    #[serde(default)]
+    pub ok_pour_passer_cde: bool,
+    #[serde(default)]
+    pub ok_cde_par: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

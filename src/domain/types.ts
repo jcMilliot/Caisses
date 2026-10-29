@@ -142,6 +142,9 @@ export interface DemandeCaisse {
   contre_plaque: boolean;
   ordre: number;
   caisse_stock_id: number | null;
+  // Envoi en partiel (2026-10-29, migration 0050) : propre à chaque sous-caisse.
+  ok_pour_passer_cde: boolean;
+  ok_cde_par: string;
 }
 
 export interface NewDemandeCaisse {
@@ -167,6 +170,8 @@ export interface NewDemandeCaisse {
   poids_kg: number;
   contre_plaque: boolean;
   caisse_stock_id: number | null;
+  ok_pour_passer_cde: boolean;
+  ok_cde_par: string;
 }
 
 export interface CaisseStock {
@@ -211,6 +216,14 @@ export interface MouvementStock {
 
 // Ligne de Gestion des caisses : mère (`demande`) ou sous-caisse (`demande_caisse`).
 export type TableLigne = "demande" | "demande_caisse";
+
+// Date de livraison d'une ligne de Gestion des caisses (migration 0051, envoi en partiel).
+export interface LivraisonLigne {
+  table_ligne: TableLigne;
+  ligne_id: number;
+  // AAAA-MM-JJ HH:MM:SS, heure locale du poste qui a marqué la ligne « Livré ».
+  livree_le: string;
+}
 
 export interface NewCaisseStock {
   nom: string;

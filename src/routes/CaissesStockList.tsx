@@ -46,11 +46,7 @@ export default function CaissesStockList({ trigramme, readOnly, rechargement }: 
     if (estArCaiss(c.nom)) return true;
     if (c.validee) return false;
     const mereLivree = demandes.some((d) => d.caisse_stock_id === c.id && estDemandeValidee(d));
-    const sousCaisseLivree = demandeCaisses.some((sc) => {
-      if (sc.caisse_stock_id !== c.id) return false;
-      const mere = demandes.find((d) => d.id === sc.demande_id);
-      return estDemandeCaisseValidee(sc) || (mere !== undefined && estDemandeValidee(mere));
-    });
+    const sousCaisseLivree = demandeCaisses.some((sc) => sc.caisse_stock_id === c.id && estDemandeCaisseValidee(sc));
     return !mereLivree && !sousCaisseLivree;
   });
 

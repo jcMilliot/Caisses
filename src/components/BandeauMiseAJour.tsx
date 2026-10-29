@@ -1,20 +1,18 @@
 import type { ProgressionMiseAJour } from "../data/updater";
 
-// Barre tout en haut de la fenêtre (2026-10-02) : mise à jour disponible (Installer / Plus tard),
-// puis téléchargement avec barre de progression et installation — l'installeur Windows tourne en
-// mode silencieux et relance l'app, rien d'autre ne s'affiche.
+// Barre tout en haut de la fenêtre (2026-10-02) : mise à jour disponible (« Mettre à jour », sans
+// « Plus tard » depuis le 2026-10-29), puis téléchargement avec barre de progression et
+// installation — l'installeur Windows tourne en mode silencieux et relance l'app.
 export default function BandeauMiseAJour({
   version,
   progression,
   erreur,
   onInstaller,
-  onPlusTard,
 }: {
   version: string;
   progression: ProgressionMiseAJour | null;
   erreur: string | null;
   onInstaller: () => void;
-  onPlusTard: () => void;
 }) {
   const pct =
     progression?.etape === "telechargement" && progression.total
@@ -47,11 +45,8 @@ export default function BandeauMiseAJour({
               </>
             )}
           </span>
-          <button className="btn btn-sm" onClick={onPlusTard}>
-            Plus tard
-          </button>
-          <button className="btn btn-sm btn-primary" onClick={onInstaller}>
-            {erreur ? "Réessayer" : "Installer"}
+          <button className="btn btn-primary" onClick={onInstaller} style={{ fontSize: 15, fontWeight: 650, padding: "8px 22px" }}>
+            {erreur ? "Réessayer" : "Mettre à jour"}
           </button>
         </>
       ) : progression.etape === "telechargement" ? (

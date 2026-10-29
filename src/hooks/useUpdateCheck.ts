@@ -3,14 +3,12 @@ import { updaterApi, type PendingUpdate, type ProgressionMiseAJour } from "../da
 
 // Recherche de mise à jour au démarrage puis toutes les 30 min (une version publiée pendant que
 // l'app est ouverte est signalée sans redémarrer). Tout passe par la barre en haut de l'app
-// (BandeauMiseAJour) : disponibilité + Installer / Plus tard, puis téléchargement et installation.
-// « Plus tard » la masque jusqu'à la vérification suivante.
+// (BandeauMiseAJour) : disponibilité + « Mettre à jour », puis téléchargement et installation.
+// Plus de « Plus tard » depuis le 2026-10-29 : la barre reste affichée.
 const INTERVALLE_MS = 30 * 60 * 1000;
 
 export function useUpdateCheck(enabled: boolean) {
   const [update, setUpdate] = useState<PendingUpdate | null>(null);
-  // true = « Plus tard » : barre masquée jusqu'à la vérification suivante.
-  const [reporte, setReporte] = useState(false);
   const [progression, setProgression] = useState<ProgressionMiseAJour | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const enCoursRef = useRef(false);
@@ -24,7 +22,6 @@ export function useUpdateCheck(enabled: boolean) {
           if (!u) return;
           // Pendant une installation, on ne remplace pas la mise à jour en cours.
           setUpdate((prev) => (enCoursRef.current ? prev : u));
-          setReporte(false);
         })
         .catch(() => {
           // Pas de mise à jour ou serveur injoignable : ne pas gêner l'utilisateur.
@@ -49,14 +46,11 @@ export function useUpdateCheck(enabled: boolean) {
     }
   }, [update]);
 
-  const dismiss = useCallback(() => setReporte(true), []);
-
   return {
     update,
-    afficherBandeau: update !== null && (!reporte || progression !== null),
+    afficherBandeau: update !== null,
     progression,
     erreur,
     confirmInstall,
-    dismiss,
   };
 }

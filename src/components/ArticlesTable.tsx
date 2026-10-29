@@ -20,6 +20,9 @@ interface Props {
   // pré-rempli, plutôt que de tout mettre dans un seul champ.
   onCollageMultiCellules?: (texte: string) => void;
   readOnly?: boolean;
+  // Articles partis dans une caisse livrée (envoi en partiel, 2026-10-29) → motif : ni sélection
+  // ni glisser-déposer.
+  articlesFiges?: Map<number, string>;
   // Bouton "Manque d'informations" (AffaireDetail) : quand actif, surligne précisément les
   // cellules de dimension/poids manquantes des articles listés — undefined/vide = pas de
   // surlignage (bascule désactivée).
@@ -114,6 +117,7 @@ export default function ArticlesTable({
   onStartDrag,
   onCollageMultiCellules,
   readOnly,
+  articlesFiges,
   champsManquantsParArticle,
   onNbAffiches,
 }: Props) {
@@ -132,7 +136,11 @@ export default function ArticlesTable({
   const boutonsFiltreRef = useRef<Partial<Record<ColonneTriable, HTMLButtonElement>>>({});
 
   const caisseById = useMemo(() => new Map(caisses.map((c) => [c.id, c])), [caisses]);
-  const caisseName = (id: number | null) => (id === null ? "—" : caisseById.get(id)?.nom ?? "?");
+  // Numéro de la caisse (ordre des cartes, 1, 2…) : les caisses d'une affaire portent toutes son
+  // nom, le numéro les distingue (retour du 2026-10-29). Filtre et tri passent par lui.
+  const numeroCaisse = useMemo(() => new Map(caisses.map((c, i) => [c.id, i + 1])), [caisses]);
+  const caisseName = (id: number | null) =>
+    id === null ? "—" : caisseById.has(id) ? `${numeroCaisse.get(id)} · ${caisseById.get(id)!.nom}` : "?";
 
   function valeurTexte(a: Article, colonne: ColonneTriable): string {
     switch (colonne) {
@@ -184,7 +192,7 @@ export default function ArticlesTable({
         case "volume":
           return volumeUnitaireM3(a);
         case "caisse":
-          return caisseName(a.caisse_id).toLowerCase();
+          return a.caisse_id === null ? 0 : (numeroCaisse.get(a.caisse_id) ?? 0);
         case "colis":
           return a.colis.toLowerCase();
         default:
@@ -200,7 +208,7 @@ export default function ArticlesTable({
       if (va > vb) return 1 * facteur;
       return 0;
     });
-  }, [articlesFiltres, tri, caisseById]);
+  }, [articlesFiltres, tri, caisseById, numeroCaisse]);
 
   function toggleTri(colonne: ColonneTriable) {
     setTri((prev) => {
@@ -394,11 +402,11 @@ export default function ArticlesTable({
             <input
               type="checkbox"
               checked={
-                articlesFiltres.length > 0 &&
-                selectedIds.size === articlesFiltres.length &&
-                articlesFiltres.every((a) => selectedIds.has(a.id))
+                articlesFiltres.some((a) => !articlesFiges?.has(a.id)) &&
+                articlesFiltres.every((a) => articlesFiges?.has(a.id) || selectedIds.has(a.id)) &&
+                selectedIds.size === articlesFiltres.filter((a) => !articlesFiges?.has(a.id)).length
               }
-              onChange={() => onToggleSelectAll(articlesFiltres.map((a) => a.id))}
+              onChange={() => onToggleSelectAll(articlesFiltres.filter((a) => !articlesFiges?.has(a.id)).map((a) => a.id))}
               title={yATrouFiltre ? "Sélectionner les lignes affichées (filtres appliqués)" : "Tout sélectionner"}
             />
           </th>
@@ -428,6 +436,7 @@ export default function ArticlesTable({
         ) : (
           articlesTries.map((a) => {
             const caisseAssignee = a.caisse_id !== null ? caisseById.get(a.caisse_id) : undefined;
+            const motifFige = articlesFiges?.get(a.id);
             return (
               <tr
                 key={a.id}
@@ -440,7 +449,12 @@ export default function ArticlesTable({
                       : undefined,
                 }}
               >
-                {onStartDrag && !readOnly && (
+                {onStartDrag && (readOnly || motifFige) && (
+                  <td style={{ ...tdStyle, textAlign: "center", color: "var(--text-faint)" }} title={motifFige}>
+                    {motifFige ? "🔒" : null}
+                  </td>
+                )}
+                {onStartDrag && !readOnly && !motifFige && (
                   <td
                     onPointerDown={(e) => {
                       e.preventDefault();
@@ -453,7 +467,13 @@ export default function ArticlesTable({
                   </td>
                 )}
                 <td style={tdStyle}>
-                  <input type="checkbox" checked={selectedIds.has(a.id)} onChange={() => onToggleSelect(a.id)} />
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(a.id)}
+                    disabled={!!motifFige}
+                    title={motifFige}
+                    onChange={() => onToggleSelect(a.id)}
+                  />
                 </td>
                 {cell(
                   a,
@@ -497,7 +517,24 @@ export default function ArticlesTable({
                         color: "var(--text)",
                       }}
                     >
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: caisseAssignee.couleur, border: "1px solid rgba(0,0,0,0.15)" }} />
+                      <span
+                        title={`Caisse ${numeroCaisse.get(caisseAssignee.id)}`}
+                        style={{
+                          minWidth: 20,
+                          height: 20,
+                          padding: "0 5px",
+                          borderRadius: 999,
+                          background: caisseAssignee.couleur,
+                          border: "1px solid rgba(0,0,0,0.25)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {numeroCaisse.get(caisseAssignee.id)}
+                      </span>
                       {caisseAssignee.nom}
                     </span>
                   ) : (

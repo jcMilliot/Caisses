@@ -75,27 +75,31 @@ export function construireAffiches(demandes: Demande[], demandeCaisses: DemandeC
   const affiches: AfficheCaisse[] = [];
 
   for (const d of demandes) {
-    if (!d.ok_pour_passer_cde || estDemandeValidee(d) || estDemandeAchstock(d)) continue;
+    if (estDemandeAchstock(d)) continue;
 
-    affiches.push({
-      cle: `demande:${d.id}`,
-      demandeId: d.id,
-      demandeCaisseId: null,
-      affaire: d.affaire,
-      typeEnvoiCaisse: d.type_envoi_caisse,
-      typeOuverture: d.type_ouverture,
-      longueurMm: d.longueur_mm,
-      largeurMm: d.largeur_mm,
-      hauteurMm: d.hauteur_mm,
-      quantite: d.quantite,
-      dateDemandeeS2c: d.date_demandee_s2c,
-      contrePlaque: d.contre_plaque,
-      okCdePar: d.ok_cde_par,
-    });
+    if (d.ok_pour_passer_cde && !estDemandeValidee(d)) {
+      affiches.push({
+        cle: `demande:${d.id}`,
+        demandeId: d.id,
+        demandeCaisseId: null,
+        affaire: d.affaire,
+        typeEnvoiCaisse: d.type_envoi_caisse,
+        typeOuverture: d.type_ouverture,
+        longueurMm: d.longueur_mm,
+        largeurMm: d.largeur_mm,
+        hauteurMm: d.hauteur_mm,
+        quantite: d.quantite,
+        dateDemandeeS2c: d.date_demandee_s2c,
+        contrePlaque: d.contre_plaque,
+        okCdePar: d.ok_cde_par,
+      });
+    }
 
+    // Envoi en partiel (2026-10-29) : chaque sous-caisse a sa propre case « OK pour être
+    // commandée », indépendante de la mère (qui peut être commandée, voire livrée, avant elle).
     for (const sc of demandeCaisses) {
       if (sc.demande_id !== d.id) continue;
-      if (estDemandeCaisseValidee(sc, d)) continue;
+      if (!sc.ok_pour_passer_cde || estDemandeCaisseValidee(sc)) continue;
       affiches.push({
         cle: `demande_caisse:${sc.id}`,
         demandeId: d.id,
@@ -109,7 +113,7 @@ export function construireAffiches(demandes: Demande[], demandeCaisses: DemandeC
         quantite: sc.quantite,
         dateDemandeeS2c: sc.date_demandee_s2c,
         contrePlaque: sc.contre_plaque,
-        okCdePar: d.ok_cde_par,
+        okCdePar: sc.ok_cde_par,
       });
     }
   }

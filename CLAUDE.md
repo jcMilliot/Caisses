@@ -182,7 +182,8 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-10-28 : migrations `0001` à `0046`, `0048` et `0049` publiées (0.19.0) —
+État au 2026-10-29 : migrations `0001` à `0046`, `0048` et `0049` publiées (0.19.0), `0050` et
+`0051` non publiées —
 **`0047` est réservé** à la branche `vue-3d`
 (`0047_add_placement_3d.sql`), pas de trou à combler. Pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes.
@@ -254,7 +255,9 @@ demande_caisse (id, demande_id NOT NULL REFERENCES demande ON DELETE CASCADE,  -
          longueur_mm, largeur_mm, hauteur_mm, poids_kg,
          moteurs, module_lineaire, terminaux, informations_supp, observations,  -- terminaux : 0021
          cde_passee_affaire BOOL, cde_passee_achat_stock BOOL, contre_plaque BOOL,
-         caisse_stock_id INTEGER NULL, ordre)
+         caisse_stock_id INTEGER NULL, ordre,
+         ok_pour_passer_cde BOOL, ok_cde_par TEXT)  -- 0050, envoi en partiel : commande propre
+         -- à chaque sous-caisse ; une sous-caisse n'est livrée QUE par sa propre observation
 
 caisse_stock (id, nom, longueur_mm, largeur_mm, hauteur_mm, quantite, observations,  -- 0006
          affaire_id INTEGER NULL REFERENCES affaire ON DELETE SET NULL,
@@ -309,6 +312,12 @@ colis_caisse_intranet (affaire_id REFERENCES affaire ON DELETE CASCADE, tag, let
          -- PK (affaire_id, tag) : caisse (lettre) d'un colis d'après la liste de colisage de
          -- l'intranet, imposée dans Colisage en cours, prioritaire sur colis_rangement (gardé à
          -- part). Réécrite en entier à chaque mise à jour du picking validée.
+
+livraison_ligne (table_ligne 'demande'|'demande_caisse', ligne_id, livree_le TEXT)  -- 0051
+         -- PK (table_ligne, ligne_id) : date de livraison (AAAA-MM-JJ HH:MM:SS, heure locale),
+         -- écrite par Gestion des caisses au passage « Livré », effacée à « Non livré » ; triggers
+         -- de suppression avec la ligne. Pas de ligne = livrée avant 0051 (date inconnue).
+         -- Regroupe les caisses par livraison dans Colisage en cours (domain/envois.ts).
 
 demande_alerte (demande_id PK REFERENCES demande ON DELETE CASCADE,  -- 0046, page Alertes
          date_anticipee TEXT,  -- AAAA-MM-JJ, '' = aucune ; remplace date_picking dans
@@ -2365,6 +2374,85 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   (17), `npm run tauri build -- --debug` (dossier de compilation à part). Soumission Microsoft
   Defender à faire dès publication si l'installeur est bloqué.
 
+### 2026-10-29 — Envoi en partiel, 1re étape : commande et livraison propres à chaque caisse enfant
+
+- **Besoin** (cas réel d'une affaire envoyée en deux fois) : commander et livrer la caisse mère
+  d'abord, une caisse enfant plus tard. Suite prévue : une fois livrée, figer dans Simulations les
+  AR partis dans la caisse expédiée et ne « jouer » qu'avec les reliquats.
+- **Décisions de l'utilisateur** : chaque sous-caisse a **sa propre case « OK pour être
+  commandée »**, indépendante (cocher la mère ne coche pas les enfants) ; **« Livré » sur la mère
+  livre aussi ses enfants cochées**, les autres restent à livrer (bouton « Livré » propre) ; une
+  enfant a **sa propre date de picking et sa propre alerte « À commander »**.
+- **Choix de l'assistant** :
+  - migration `0050` : colonnes `demande_caisse.ok_pour_passer_cde` / `ok_cde_par`, recopiées de
+    la mère pour les sous-caisses existantes (affiches inchangées) ; les sous-caisses d'une mère
+    livrée sans observation de livraison reçoivent « Livré » / « Rapatriée » (avant, une enfant
+    comptait comme livrée dès que sa mère l'était ; c'est fini partout : statistiques, Caisses en
+    stock, suggestion, Lier…, transitions de stock) ;
+  - « Livré » sur une mère **non cochée** (caisse en stock rapatriée, ligne ancienne) livre
+    **toutes** ses enfants, comme avant (`demandeOptions.ts::sousCaisseSuitLaMere`) ; « Non livré »
+    sur la mère dévalide les mêmes enfants ;
+  - date de picking de la mère répercutée seulement sur les enfants qui avaient sa date ; colonne
+    Date picking **modifiable** sur une sous-ligne ; une enfant de même date suit aussi la date
+    modifiée dans Alertes (`dateReferenceSousCaisse`) ;
+  - alertes (`caissesACommander.ts::lignesAlerte`) : une enfant n'a sa propre ligne (accueil,
+    pastille, barre des tâches) que si elle n'est pas « couverte » par sa mère (mère encore à
+    commander, même date, même stock) — sinon l'accueil doublerait chaque affaire multi-caisses ;
+    accueil : « caisse détaillée « nom » » après le nom de l'affaire ;
+  - « + Caisse » permis sur une mère livrée (caisse envoyée plus tard) ; « Masquer les caisses
+    reçues » garde une mère livrée tant qu'une enfant est à livrer ; une enfant d'une mère livrée
+    reste modifiable ;
+  - caisse de stock d'une enfant marquée livrée / disponible selon sa **propre** transition.
+- Non traité (étape suivante) : dans Simulations, `AffaireDetail` ne propose de créer une sous-caisse
+  dans Gestion des caisses que si la mère n'est pas livrée.
+- Validation : `cargo test --lib` (18, + migration 0050), `npx tsc --noEmit`, `npx vite build`,
+  alertes / affiches / cascade vérifiées sur 10 cas (fichier jetable). **Non vu à l'écran**.
+- **Même jour — pas de caisse en stock suggérée pour une caisse NIMP15** (retour de l'utilisateur,
+  cf. [Bugs.md](Bugs.md)) : la suggestion de Simulations lit le type d'envoi et le traitement de la
+  ligne de Gestion des caisses (liée, à défaut une de la même affaire) ; 4B / 4C ou traitement
+  NIMP15 → aucune suggestion (ni récup ni `AR_CAISS_`). `npx tsc --noEmit`, `npx vite build` OK.
+
+### 2026-10-29 — Envoi en partiel, 2e étape : articles figés, onglets par envoi ; mise à jour
+
+- **Demandes de l'utilisateur** : une caisse ajoutée dans Simulations garde le nom de l'affaire
+  (plus de « Caisse N », nom plus modifiable non plus dans le colisage) ; les pièces parties dans
+  une caisse livrée ne sont plus assignables à une autre caisse ; dans Colisage en cours, en
+  multi-caisses avec au moins une caisse livrée, des onglets « 1er envoi » (caisse livrée, ses
+  colis, ses calculs) / « 2ème envoi » (caisses non livrées, colis et pièces restants) ; bandeau
+  de mise à jour : un seul bouton, plus grand, « Mettre à jour » (plus de « Plus tard »).
+- **Décisions de l'utilisateur** : **un onglet par livraison** (pas seulement livré / restant) ;
+  la mise à jour du picking continue de s'appliquer à tous les articles, livrés compris (« on
+  prendra une décision à ce moment-là »).
+- **Choix de l'assistant** :
+  - date de livraison dans une table à part `livraison_ligne` (migration `0051`, même raison que
+    `demande_alerte`), écrite par `DemandesList::envoyerModifications` pour les transitions
+    livrée ↔ non livrée ; une même action « Livré » (mère + enfants) partage la même date ; les
+    caisses livrées **le même jour** forment un envoi ; livrées avant 0051 = « 1er envoi · livré »
+    sans date ;
+  - caisse **livrée** = caisse du Picking **liée explicitement** à une ligne livrée
+    (`demande_caisse_id`, sinon `demande_id`) ; caisse colisage livrée = via `source_caisse_id` ;
+    onglets seulement si ≥ 2 caisses colisage et au moins une livrée (`domain/envois.ts`) ;
+  - **figés** (`articlesFiges`) : article assigné dans le Picking à une caisse livrée, ou colisé
+    dans un colis / une lettre rangé(e) dans une caisse colisage livrée → case et poignée
+    verrouillées (🔒), exclus de « tout sélectionner », des assignations et du glisser-déposer ; une
+    caisse livrée ne reçoit plus rien (dépôt refusé avec message, absente de « Assigner à → » et du
+    menu « Caisse : » des colis), carte en lecture seule avec « Livrée le JJ/MM/AAAA » ; dans le
+    colisage, colis / lettres d'une caisse livrée figés (carton, caisse, « Accepter ») ;
+  - le colisage est chargé aussi depuis l'onglet Picking (pour les articles figés) ;
+  - récap d'un envoi : ses colis / lettres et leurs articles (+ articles non colisés pour l'envoi
+    restant) — `colisage.ts::calculerTotaux` ; panneau des caisses colisage : celles de l'envoi.
+- Validation : `cargo test --lib` (19, + dates de livraison), `npx tsc --noEmit`,
+  `npx vite build`, envois / état de livraison / figés vérifiés sur 10 cas (fichier jetable).
+  **Vérifié par l'utilisateur le même jour.**
+- **Même jour — numéro de caisse** (toutes les caisses portent le nom de l'affaire) : pastille
+  numérotée (1, 2… = ordre des cartes) à la couleur de la caisse sur la carte et dans la colonne
+  Caisse du Picking ; filtre sur « N · nom », tri sur le numéro. Accueil : « usacm109 caisse 2
+  À commander » (mère = caisse 1, ses caisses détaillées 2, 3… dans leur ordre). `npx tsc
+  --noEmit`, `npx vite build` OK, **non vu à l'écran**.
+- **Même jour — date demandée à S2C d'une caisse enfant** : plus reprise de la mère à la création
+  (« + Caisse » de Gestion des caisses, « + Nouvelle caisse » de Simulations) — commande
+  éventuellement différée ; vide, à saisir avant « OK pour être commandée » (champ requis).
+
 ## Prochaines étapes
 
 ### Fait
@@ -2905,12 +2993,17 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 > **sans termes techniques**. Texte statique : **le mettre à jour en même temps que cette section
 > et « À réfléchir plus tard »** (ajout d'un point, point terminé → le retirer).
 
+*Envoi en partiel (2026-10-29)* — commande / livraison par caisse enfant, articles figés et
+onglets par envoi faits (cf. journal). **Reste** : décider quoi faire quand la mise à jour du
+picking modifie / supprime un article déjà livré (s'applique aujourd'hui, décision reportée par
+l'utilisateur) ; créer une caisse détaillée depuis Simulations quand la mère est livrée.
+
 *Retours utilisateur 2026-10-27 — Simulations : import du picking et colisage* — mise à jour
 automatique, bouton, onglets, repère d'étapes et cote égale **faits le même jour** (cf. journal).
 Restent :
 
-- **Colis rangés automatiquement** — **codé le 2026-10-28** (cf. journal), reste à vérifier sur
-  le vrai intranet. Historique : l'utilisateur vérifie si l'intranet indique la caisse
+- **Colis rangés automatiquement** — **codé le 2026-10-28** (cf. journal), **validé par
+  l'utilisateur sur la 0.19.0 le 2026-10-29**. Historique : l'utilisateur vérifie si l'intranet indique la caisse
   (lettre) d'un colis (numéro). Sinon : affaire à **une seule caisse colisage** → colis rangés
   d'office dans cette caisse (aujourd'hui rangés à la main, `colis_rangement`). **Piste du
   2026-10-28** : l'utilisateur va essayer de récupérer cette info par une autre route de
