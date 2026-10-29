@@ -8,6 +8,7 @@ import AlertesList from "./routes/AlertesList";
 import DemandesAchatsList from "./routes/DemandesAchatsList";
 import Admin from "./routes/Admin";
 import Documentation from "./routes/Documentation";
+import NotesMiseAJour from "./routes/NotesMiseAJour";
 import CreerAffaireDialog from "./components/CreerAffaireDialog";
 import FirstLaunchSetup from "./components/FirstLaunchSetup";
 import ConnexionIntranet from "./components/ConnexionIntranet";
@@ -29,7 +30,7 @@ import { usePresence } from "./hooks/usePresence";
 import { useAlerteCommande } from "./hooks/useAlerteCommande";
 import type { Demande, DemandeCaisse } from "./domain/types";
 
-type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "alertes" | "admin" | "documentation";
+type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "alertes" | "admin" | "documentation" | "notes";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "demandes", label: "Gestion des caisses" },
@@ -339,6 +340,7 @@ export default function App() {
         {section === "alertes" && <AlertesList trigramme={trigramme} />}
         {section === "admin" && estAdmin && <Admin trigramme={trigramme} />}
         {section === "documentation" && <Documentation trigramme={trigramme} estAdmin={estAdmin} />}
+        {section === "notes" && <NotesMiseAJour />}
       </div>
 
       {creationAffaire && (

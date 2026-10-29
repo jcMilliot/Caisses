@@ -5,6 +5,7 @@ import { caisseStockApi } from "../data/caisseStock";
 import { caissesStockACommander } from "../domain/caisseStock";
 import PastilleAlerte from "../components/PastilleAlerte";
 import IconeNav from "../components/IconeNav";
+import { notesNonLues } from "./NotesMiseAJour";
 import { dateIsoVersAffichage } from "../domain/dates";
 import { demandeAlertesApi } from "../data/demandeAlertes";
 import {
@@ -17,7 +18,7 @@ import {
 } from "../domain/caissesACommander";
 import type { CaisseStock, Demande, DemandeCaisse } from "../domain/types";
 
-type Section = "demandes" | "simulations" | "stock" | "achats" | "alertes" | "admin" | "documentation";
+type Section = "demandes" | "simulations" | "stock" | "achats" | "alertes" | "admin" | "documentation" | "notes";
 
 interface CardDef {
   id: Exclude<Section, "admin" | "documentation">;
@@ -57,6 +58,12 @@ const CARDS: CardDef[] = [
     description: "Expéditions anticipées et commentaires",
     icone: "⏰",
   },
+  {
+    id: "notes",
+    titre: "Notes de mise à jour",
+    description: "Ce qui change à chaque nouvelle version",
+    icone: "📰",
+  },
 ];
 
 interface Props {
@@ -68,6 +75,7 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
   const [demandes, setDemandes] = useState<Demande[] | null>(null);
   const [stockACommander, setStockACommander] = useState<CaisseStock[]>([]);
   const [anticipees, setAnticipees] = useState<Map<number, string>>(new Map());
+  const [nouvellesNotes] = useState(notesNonLues);
   const [sousCaisses, setSousCaisses] = useState<DemandeCaisse[]>([]);
 
   useEffect(() => {
@@ -122,7 +130,15 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
           {CARDS.map((c) => (
             <button key={c.id} className="panel carte-accueil" onClick={() => onSelect(c.id)}>
               <span className="carte-accueil-icone">{c.icone}</span>
-              <span style={{ fontSize: 16.5, fontWeight: 650, marginTop: 6 }}>{c.titre}</span>
+              <span style={{ fontSize: 16.5, fontWeight: 650, marginTop: 6, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                {c.titre}
+                {/* Dernière version des notes pas encore ouverte sur ce poste. */}
+                {c.id === "notes" && nouvellesNotes && (
+                  <span style={{ fontSize: 11.5, fontWeight: 700, padding: "1px 8px", borderRadius: 999, background: "var(--accent)", color: "#fff" }}>
+                    Nouveau
+                  </span>
+                )}
+              </span>
               <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{c.description}</span>
             </button>
           ))}

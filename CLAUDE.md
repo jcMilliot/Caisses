@@ -54,7 +54,10 @@ Consignes propres à Caisses pour les procédures globales (`/reprise`, `/verifi
   pour piloter l'interface : un parcours UI reste « non testé en conditions réelles ».
 - **Bugs** : [Bugs.md](Bugs.md), index **par symptôme**, sans numéro.
 - **Releases** : cf. « Distribution et releases » (bump des 3 fichiers, tag, brouillon publié par
-  l'utilisateur, soumission Defender) — proposer, jamais lancer de soi-même.
+  l'utilisateur, soumission Defender) — proposer, jamais lancer de soi-même. **À chaque release,
+  ajouter la version en tête de `src/domain/notesMiseAJour.ts`** (page « Notes de mise à jour » de
+  l'accueil) : nouveautés / améliorations / corrections **sans aucun terme technique** — les autres
+  utilisateurs ne sont pas du métier (demande de l'utilisateur, 2026-10-29).
 - **Dépôt public** : ni nom d'entreprise, ni adresse d'API, ni identifiant, ni donnée réelle
   (`docs/prive/` est ignoré par git).
 
@@ -182,8 +185,7 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-10-29 : migrations `0001` à `0046`, `0048` et `0049` publiées (0.19.0), `0050` et
-`0051` non publiées —
+État au 2026-10-29 : migrations `0001` à `0046` et `0048` à `0051` publiées (0.20.0) —
 **`0047` est réservé** à la branche `vue-3d`
 (`0047_add_placement_3d.sql`), pas de trou à combler. Pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes.
@@ -2452,6 +2454,25 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 - **Même jour — date demandée à S2C d'une caisse enfant** : plus reprise de la mère à la création
   (« + Caisse » de Gestion des caisses, « + Nouvelle caisse » de Simulations) — commande
   éventuellement différée ; vide, à saisir avant « OK pour être commandée » (champ requis).
+
+### 2026-10-29 — Notes de mise à jour, release 0.20.0
+
+- **Page « Notes de mise à jour »** (demande de l'utilisateur) : 6e carte de l'accueil
+  (`routes/NotesMiseAJour.tsx`, section `notes`, texte dans `domain/notesMiseAJour.ts`) — dernière
+  version dépliée (résumé, rubriques Nouveautés / Améliorations / Corrections en pastilles de
+  couleur, un point = icône + titre + texte, détails en liste), versions précédentes repliées
+  (0.19.0, 0.18.0, 0.17). Pastille « Nouveau » sur la carte tant que la dernière version n'a pas
+  été ouverte sur le poste (`localStorage` `caisses:notesMiseAJourVues`). Texte écrit sans termes
+  techniques ; à compléter à chaque release (règle ajoutée en tête de ce fichier).
+- **Release 0.20.0** : envoi en partiel (commande / livraison par caisse enfant, articles figés,
+  onglets par envoi), numéro de caisse, NIMP15 sans suggestion de stock, date S2C non reprise,
+  bandeau « Mettre à jour », Notes de mise à jour. Migrations `0050` et `0051` (appliquées sur la
+  base partagée au premier lancement : `0050` marque « Livré » les caisses détaillées des lignes
+  déjà livrées). Le bandeau « Mettre à jour » ne se verra qu'à la mise à jour suivante (c'est la
+  version installée qui l'affiche).
+- Validation avant tag : `cargo check`, `cargo test --lib` (19), `npx tsc --noEmit`,
+  `npx vite build`, `npm run tauri build -- --debug` (dossier de compilation à part). Soumission
+  Microsoft Defender à faire dès publication si l'installeur est bloqué.
 
 ## Prochaines étapes
 

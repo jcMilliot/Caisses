@@ -3,14 +3,13 @@ projet: Caisses
 statut: en cours
 priorite: normale
 mis_a_jour: 2026-10-29
-prochaine_etape: Vérifier à l'écran l'envoi en partiel (caisse enfant, articles figés, onglets 1er / 2ème envoi) et le nouveau bandeau de mise à jour
+prochaine_etape: Publier le brouillon de la release 0.20.0 (soumission Defender si bloqué), puis vérifier les Notes de mise à jour sur un poste
 ---
 
 ## Résumé
-Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.19.0 publiée le 2026-10-29.
+Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.20.0 préparée le 2026-10-29 (brouillon à publier).
 
 ## Reste à faire
-- [ ] Envoi en partiel : à vérifier à l'écran (commande / livraison par caisse enfant, articles figés, onglets par envoi, migrations 0050-0051)
 - [ ] Envoi en partiel : décider du sort d'un article livré modifié par la mise à jour du picking
 - [ ] Tablette Samsung sous Windows : vérifier installation et usage (tactile, WebView2, dossier réseau, connexion intranet)
 - [ ] Point sur la documentation utilisateur avec l'utilisateur
@@ -25,6 +24,8 @@ Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier
 - [x] Picking mis à jour à l'ouverture, onglets Picking / Colisage en cours (0.18.0, 2026-10-27)
 - [x] Caisse des colis reprise de la liste de colisage de l'intranet, colis rangés d'office si une seule caisse (0.19.0, 2026-10-28, migration 0049) — validé le 2026-10-29
 - [x] Simulations : compteur « lignes affichées / total » quand un filtre est actif (0.19.0, 2026-10-28)
+- [x] Envoi en partiel : commande / livraison par caisse enfant, articles figés, onglets par envoi (0.20.0, 2026-10-29, migrations 0050-0051) — validé par l'utilisateur
+- [x] Page « Notes de mise à jour » sur l'accueil (0.20.0, 2026-10-29)
 
 ## Bloqué / points d'attention
 - Base SQLite sur un dossier réseau partagé : risque connu de corruption en écritures simultanées, atténué par le verrouillage applicatif et la sauvegarde
