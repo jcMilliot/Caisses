@@ -33,6 +33,30 @@ export const LIBELLE_RUBRIQUE: Record<GenreRubrique, { titre: string; icone: str
 
 export const NOTES_MISE_A_JOUR: NoteVersion[] = [
   {
+    version: "0.20.1",
+    date: "30/10/2026",
+    resume: "Le comparatif de Colisage en cours donne une idée juste des dimensions, même quand le colisage n'est pas terminé.",
+    rubriques: [
+      {
+        genre: "ameliore",
+        points: [
+          {
+            icone: "📦",
+            titre: "Colisage en cours : un comparatif plus juste",
+            texte:
+              "Jusqu'ici, la colonne **« Colisage en cours »** ne comptait que ce qui était déjà dans un colis : en plein colisage, l'écart avec le picking ne voulait pas dire grand-chose. Maintenant, elle part de **toutes les pièces du picking** et s'affine au fur et à mesure qu'on colise.",
+            details: [
+              "Une pièce **pas encore colisée** compte avec ses propres dimensions, dans la caisse où elle est rangée dans le Picking.",
+              "Un **colis avec un carton** compte pour la taille de son carton, une seule fois pour tout ce qu'il contient.",
+              "Au départ, les deux colonnes sont égales ; l'écart apparaît à mesure qu'on choisit les cartons, et le taux de remplissage se met à jour tout seul.",
+              "La carte de chaque caisse indique combien d'articles ne sont pas encore colisés.",
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: "0.20.0",
     date: "29/10/2026",
     resume: "Une affaire peut maintenant être expédiée en plusieurs fois : une caisse d'abord, les autres plus tard.",

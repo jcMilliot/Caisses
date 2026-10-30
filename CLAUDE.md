@@ -2474,6 +2474,34 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   `npx vite build`, `npm run tauri build -- --debug` (dossier de compilation à part). Soumission
   Microsoft Defender à faire dès publication si l'installeur est bloqué.
 
+### 2026-10-30 — Colisage en cours : comparatif qui part du picking
+
+- **Constat de l'utilisateur** (affaire à moitié colisée) : la colonne « Colisage en cours » ne
+  comptait que les colis / lettres, la colonne « Picking » toute l'affaire → l'écart mesurait
+  l'avancement du colisage, pas la justesse des dimensions.
+- **Décision de l'utilisateur** : « Colisage en cours » = copie du picking qui s'affine en
+  colisant — pièces **non colisées** au volume de leurs pièces, **colis avec carton** = volume
+  extérieur du carton **une fois** pour tout ce qu'il contient, lettre ou colis sans carton =
+  volume des pièces. Poids : pièces (+ carton s'il est saisi). Répartition par caisse (validée) :
+  pièce non colisée → caisse où elle est assignée dans le Picking (non assignée : total seulement) ;
+  pièce colisée → caisse de son colis / sa lettre, même si assignée ailleurs dans le Picking ;
+  colis non rangé → total seulement.
+- `colisage.ts` : `calculerTotaux` ajoute les non colisés, `calculerColisage` les ajoute à la
+  caisse colisage dont `source_caisse_id` = leur `caisse_id` (`CaisseColisageCalculee.nonColises`,
+  mention « Dont N article(s) pas encore colisé(s) » sur la carte) ; récap d'un envoi : non colisés
+  rattachés à l'envoi de leur caisse du Picking (non assignés : envoi restant).
+- Validation : `npx tsc --noEmit`, `npx vite build`, calcul vérifié sur un cas à 2 caisses (non
+  colisés assignés / non assigné, colis avec carton, lettre assignée à une autre caisse, colis non
+  rangé ; fichier jetable). **Non vu à l'écran**.
+
+### 2026-10-30 — Release 0.20.1
+
+- Contenu : comparatif de Colisage en cours qui part du picking (bloc précédent). Aucune
+  migration. Note ajoutée en tête de `notesMiseAJour.ts`.
+- Validation avant tag : `cargo check`, `cargo test --lib`, `npx tsc --noEmit`, `npx vite build`,
+  `npm run tauri build -- --debug` (dossier de compilation à part). Soumission Microsoft Defender
+  à faire dès publication si l'installeur est bloqué.
+
 ## Prochaines étapes
 
 ### Fait

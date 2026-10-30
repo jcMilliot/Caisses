@@ -2,12 +2,12 @@
 projet: Caisses
 statut: en cours
 priorite: normale
-mis_a_jour: 2026-10-29
-prochaine_etape: Publier le brouillon de la release 0.20.0 (soumission Defender si bloqué), puis vérifier les Notes de mise à jour sur un poste
+mis_a_jour: 2026-10-30
+prochaine_etape: Publier le brouillon de la release 0.20.1 (soumission Defender si bloqué), puis vérifier le comparatif de Colisage en cours sur une affaire en cours de colisage
 ---
 
 ## Résumé
-Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.20.0 préparée le 2026-10-29 (brouillon à publier).
+Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.20.1 préparée le 2026-10-30 (brouillon à publier).
 
 ## Reste à faire
 - [ ] Envoi en partiel : décider du sort d'un article livré modifié par la mise à jour du picking
