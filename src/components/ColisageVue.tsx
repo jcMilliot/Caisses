@@ -52,14 +52,18 @@ export default function ColisageVue({ colisage, readOnly, envois, envoi, caisses
     return <p style={{ color: "var(--text-muted)", padding: "20px 0" }}>Aucun article colisé.</p>;
   }
 
-  // Envoi affiché : ses colis / lettres, et les articles du picking correspondants (pour l'envoi
-  // restant, aussi les articles non colisés).
+  // Envoi affiché : ses colis / lettres et leurs articles, plus les articles non colisés assignés
+  // dans le Picking à une caisse de l'envoi (non assignés : envoi restant).
   const groupes = envois && envoi ? colisage.groupes.filter((g) => envoiDuGroupe(g, envois).cle === envoi.cle) : colisage.groupes;
+  const envoiNonColise = (caissePickingId: number | null): string => {
+    const cc = colisage.caisses.find((c) => caissePickingId !== null && c.caisse.source_caisse_id === caissePickingId);
+    return envois?.find((e) => cc && e.caisseIds.has(cc.caisse.id))?.cle ?? CLE_ENVOI_RESTANT;
+  };
   const totaux =
     envois && envoi
       ? calculerTotaux(groupes, [
           ...groupes.flatMap((g) => g.articles),
-          ...(envoi.cle === CLE_ENVOI_RESTANT ? colisage.articles.filter((a) => a.colis.trim() === "") : []),
+          ...colisage.articles.filter((a) => a.colis.trim() === "" && envoiNonColise(a.caisse_id) === envoi.cle),
         ])
       : colisage.totaux;
 
@@ -94,7 +98,7 @@ function RecapColisage({ totaux: t }: { totaux: TotauxColisage }) {
   const ecart = t.volumeColisageM3 - t.volumeInfosM3;
   const ecartPct = t.volumeInfosM3 > 0 ? Math.round((ecart / t.volumeInfosM3) * 100) : null;
   const remarques = [
-    t.nbArticlesNonColises > 0 && `${t.nbArticlesNonColises} article(s) non colisé(s), comptés seulement dans le picking`,
+    t.nbArticlesNonColises > 0 && `${t.nbArticlesNonColises} article(s) pas encore colisé(s), comptés avec le volume de leurs pièces`,
     t.nbColisSansCarton > 0 && `${t.nbColisSansCarton} colis sans carton (volume des pièces compté)`,
     t.nbNonRanges > 0 && `${t.nbNonRanges} colis / lettre(s) non rangé(s) dans une caisse`,
   ].filter((r): r is string => Boolean(r));

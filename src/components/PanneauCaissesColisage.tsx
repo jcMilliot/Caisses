@@ -211,6 +211,11 @@ function CarteCaisse({
           </span>
         </div>
       )}
+      {calc.nonColises.length > 0 && (
+        <div style={{ color: "var(--text-muted)", fontSize: 12 }}>
+          Dont {calc.nonColises.length} article(s) pas encore colisé(s), au volume de leurs pièces.
+        </div>
+      )}
       {!source && <div style={{ color: "var(--text-faint)", fontSize: 12 }}>Pas de caisse correspondante dans le picking.</div>}
       {calc.niveau === "alerte" && (
         <div style={{ color: "var(--danger-text)", fontWeight: 600 }}>⚠ Le contenu dépasse le volume de la caisse.</div>

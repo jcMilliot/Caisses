@@ -56,6 +56,14 @@ export function grouperColis(articles: Article[]): GroupeColis[] {
   });
 }
 
+function volumePieces(articles: Article[]): number {
+  return articles.reduce((s, a) => s + volumeUnitaireM3(a) * a.quantite, 0);
+}
+
+function poidsPieces(articles: Article[]): number {
+  return articles.reduce((s, a) => s + a.poids_unitaire_kg * a.quantite, 0);
+}
+
 function dimsTriees(d1: number, d2: number, d3: number): number[] {
   return [d1, d2, d3].sort((a, b) => b - a);
 }
@@ -159,6 +167,9 @@ export interface GroupeRange extends GroupeColis {
 export interface CaisseColisageCalculee {
   caisse: CaisseColisage;
   groupes: GroupeRange[];
+  // Articles pas encore colisés assignés dans le Picking à la caisse copiée : comptés avec le
+  // volume de leurs pièces (2026-10-30).
+  nonColises: Article[];
   volumeInterneM3: number;
   volumeOccupeM3: number;
   poidsKg: number;
@@ -168,7 +179,12 @@ export interface CaisseColisageCalculee {
   source: CaisseCalculee | undefined;
 }
 
+// Comparatif Picking / Colisage en cours (revu le 2026-10-30) : la colonne « Colisage en cours »
+// part du picking — pièces non colisées au volume de leurs pièces — et chaque colis remplace ses
+// pièces par le volume extérieur de son carton (une fois pour tout le colis) ; une lettre ou un
+// colis sans carton garde le volume de ses pièces. Le taux s'affine ainsi au fil du colisage.
 export interface TotauxColisage {
+  // Colis et lettres + pièces non colisées.
   volumeColisageM3: number;
   poidsColisageKg: number;
   volumeInfosM3: number;
@@ -236,16 +252,21 @@ export function calculerColisage(params: {
 
   const caissesCalculees = caisses.map((c): CaisseColisageCalculee => {
     const dedans = groupes.filter((g) => g.caisseId === c.id);
+    // Pièce non colisée : caisse où elle est assignée dans le Picking. Une pièce colisée compte
+    // dans la caisse de son colis / sa lettre ; un colis non rangé, dans le total seulement.
+    const nonColises =
+      c.source_caisse_id === null ? [] : articles.filter((a) => a.colis.trim() === "" && a.caisse_id === c.source_caisse_id);
     const volumeInterneM3 = (c.longueur_mm * c.largeur_mm * c.hauteur_mm) / 1e9;
-    const volumeOccupeM3 = dedans.reduce((s, g) => s + g.volumeM3, 0);
+    const volumeOccupeM3 = dedans.reduce((s, g) => s + g.volumeM3, 0) + volumePieces(nonColises);
     const taux = volumeInterneM3 > 0 ? volumeOccupeM3 / volumeInterneM3 : 0;
     const niveau = volumeOccupeM3 > volumeInterneM3 && volumeInterneM3 > 0 ? "alerte" : taux * 100 >= seuilPct ? "attention" : "ok";
     return {
       caisse: c,
       groupes: dedans,
+      nonColises,
       volumeInterneM3,
       volumeOccupeM3,
-      poidsKg: dedans.reduce((s, g) => s + g.poidsKg, 0),
+      poidsKg: dedans.reduce((s, g) => s + g.poidsKg, 0) + poidsPieces(nonColises),
       taux,
       niveau,
       source: c.source_caisse_id !== null ? caissesInfos.find((ci) => ci.id === c.source_caisse_id) : undefined,
@@ -258,12 +279,13 @@ export function calculerColisage(params: {
 // Comparatif colisage / picking sur un ensemble de colis et lettres et les articles du picking
 // correspondants (toute l'affaire, ou un envoi — envoi en partiel, 2026-10-29).
 export function calculerTotaux(groupes: GroupeRange[], articles: Article[]): TotauxColisage {
+  const nonColises = articles.filter((a) => a.colis.trim() === "");
   return {
-    volumeColisageM3: groupes.reduce((s, g) => s + g.volumeM3, 0),
-    poidsColisageKg: groupes.reduce((s, g) => s + g.poidsKg, 0),
-    volumeInfosM3: articles.reduce((s, a) => s + volumeUnitaireM3(a) * a.quantite, 0),
-    poidsInfosKg: articles.reduce((s, a) => s + a.poids_unitaire_kg * a.quantite, 0),
-    nbArticlesNonColises: articles.filter((a) => a.colis.trim() === "").length,
+    volumeColisageM3: groupes.reduce((s, g) => s + g.volumeM3, 0) + volumePieces(nonColises),
+    poidsColisageKg: groupes.reduce((s, g) => s + g.poidsKg, 0) + poidsPieces(nonColises),
+    volumeInfosM3: volumePieces(articles),
+    poidsInfosKg: poidsPieces(articles),
+    nbArticlesNonColises: nonColises.length,
     nbColisSansCarton: groupes.filter((g) => g.estColis && !g.carton).length,
     nbNonRanges: groupes.filter((g) => g.caisseId === null).length,
   };

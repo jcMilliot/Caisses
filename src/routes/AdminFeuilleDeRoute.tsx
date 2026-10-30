@@ -28,6 +28,11 @@ const A_FAIRE: Point[] = [
 
 const A_VERIFIER: Point[] = [
   {
+    titre: "Colisage en cours : comparaison avec le picking",
+    detail:
+      "La colonne « Colisage en cours » part maintenant de tout le picking : les pièces pas encore colisées comptent avec leur propre volume, et chaque colis remplace ses pièces par le volume de son carton. Au départ les deux colonnes sont égales, puis l'écart s'affine en colisant.",
+  },
+  {
     titre: "Envoi en partiel : commande des caisses détaillées",
     detail:
       "Dans Gestion des caisses, chaque caisse détaillée a sa case « OK pour être commandée » et son bouton « Livré ». Cocher la caisse principale seule ne génère que son affiche. « Livré » sur la caisse principale livre aussi les caisses détaillées cochées ; une caisse détaillée non cochée reste à livrer, garde sa date de picking (modifiable) et a sa propre alerte « À commander ». Dans la simulation : les articles d'une caisse livrée sont verrouillés (🔒) et la caisse ne reçoit plus rien ; Colisage en cours affiche un onglet par livraison (« 1er envoi »…) puis un onglet pour ce qui reste.",
