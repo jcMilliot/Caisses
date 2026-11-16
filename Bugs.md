@@ -10,6 +10,23 @@ racine, le fix, et un lien vers l'entrée de journal correspondante pour le dét
 
 ---
 
+## Simulations : nouvelle caisse sans caisse détaillée, dimensions de la ligne mère écrasées
+
+- **Symptôme** (affaire de la base de test, 2026-11-16) : une caisse créée dans la simulation
+  n'apparaît pas dans Gestion des caisses ; après « Lier… » à la main sur la ligne de l'affaire,
+  modifier ses dimensions a remplacé celles de la ligne mère (journal : 2,20 × 0,50 × 0,50 →
+  0,20 × 0,10 × 0,15 m).
+- **Cause** : deux chemins créent une caisse, seul « + Nouvelle caisse » proposait la caisse
+  détaillée ; « Assigner à → Nouvelle caisse » (`handleCreateAndAssign`) n'en proposait pas. Et
+  `LierCaisseDialog` laissait choisir une ligne **déjà liée à une autre caisse** : deux caisses
+  sur la même ligne mère, la synchro des dimensions (`ligneLiee`) écrase la ligne avec celles de
+  la dernière modifiée.
+- **Fix** (2026-11-16) : `AffaireDetail::proposerCaisseDetaillee` commun aux deux chemins (avec
+  les dimensions saisies), erreur de création affichée au lieu d'être avalée ; « Lier… » grise
+  les lignes livrées et celles déjà liées à une autre caisse (« liée à la caisse N »).
+- **Piège** : toute nouvelle façon de créer une caisse de Simulations doit passer par
+  `proposerCaisseDetaillee` ; une ligne de Gestion des caisses = une caisse de Simulations au plus.
+
 ## Simulations : caisse de récup suggérée pour une caisse qui doit être traitée NIMP15
 
 - **Symptôme** : une caisse créée dans une affaire de Simulations (« + Nouvelle caisse ») affiche

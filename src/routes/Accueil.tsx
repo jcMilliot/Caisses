@@ -8,6 +8,8 @@ import IconeNav from "../components/IconeNav";
 import { notesNonLues } from "./NotesMiseAJour";
 import { dateIsoVersAffichage } from "../domain/dates";
 import { demandeAlertesApi } from "../data/demandeAlertes";
+import { controleDimensionApi } from "../data/controleDimension";
+import { nbAControler } from "../domain/controleDimension";
 import {
   MESSAGE_ALERTE_COMMANDE,
   caissesACommanderCetteSemaine,
@@ -18,7 +20,7 @@ import {
 } from "../domain/caissesACommander";
 import type { CaisseStock, Demande, DemandeCaisse } from "../domain/types";
 
-type Section = "demandes" | "simulations" | "stock" | "achats" | "alertes" | "admin" | "documentation" | "notes";
+type Section = "demandes" | "simulations" | "stock" | "achats" | "alertes" | "controle" | "admin" | "documentation" | "notes";
 
 interface CardDef {
   id: Exclude<Section, "admin" | "documentation">;
@@ -59,6 +61,12 @@ const CARDS: CardDef[] = [
     icone: "⏰",
   },
   {
+    id: "controle",
+    titre: "Contrôle dimensionnel",
+    description: "Mesures des grands articles à vérifier",
+    icone: "📏",
+  },
+  {
     id: "notes",
     titre: "Notes de mise à jour",
     description: "Ce qui change à chaque nouvelle version",
@@ -77,6 +85,8 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
   const [anticipees, setAnticipees] = useState<Map<number, string>>(new Map());
   const [nouvellesNotes] = useState(notesNonLues);
   const [sousCaisses, setSousCaisses] = useState<DemandeCaisse[]>([]);
+  // Articles à contrôler (Contrôle dimensionnel) : aura rouge sur la carte tant qu'il y en a.
+  const [aControler, setAControler] = useState(0);
 
   useEffect(() => {
     // Dates anticipées chargées avant les demandes : les blocs ne s'affichent qu'avec les deux.
@@ -92,6 +102,9 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
           .catch((e) => console.warn("Sous-caisses :", e))
           .finally(() => demandesApi.list().then(setDemandes)),
       );
+    Promise.all([controleDimensionApi.list(), controleDimensionApi.getReglages()])
+      .then(([l, r]) => setAControler(nbAControler(l, r)))
+      .catch((e) => console.warn("Contrôle dimensionnel :", e));
     caisseStockApi
       .list()
       .then((c) => setStockACommander(caissesStockACommander(c)))
@@ -105,18 +118,22 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
     // Conteneur positionné : Admin est calé en haut à droite de l'écran d'accueil (et non de la
     // fenêtre), pour ne pas passer sous la barre de mise à jour (retour du 2026-10-07).
     <div style={{ position: "relative" }}>
-    {/* Pas de bandeau sur l'accueil : Admin et Documentation y sont posés aux coins de l'écran
-        (Admin en haut à droite comme dans le bandeau des autres pages). */}
-    {estAdmin && (
-      <button className="nav-lien" onClick={() => onSelect("admin")} style={{ position: "absolute", top: 14, right: 20, zIndex: 50 }}>
-        <IconeNav nom="admin" taille={15} />
-        Admin
+    {/* Pas de bandeau sur l'accueil : Documentation et Admin sont posés en haut à droite, comme dans
+        le bandeau des autres pages. */}
+    {/* Documentation en haut à droite, à côté d'Admin (2026-11-16) : en bas à gauche (position
+        fixe), elle chevauchait la carte « Notes de mise à jour » dans une fenêtre réduite. */}
+    <div style={{ position: "absolute", top: 14, right: 20, zIndex: 50, display: "flex", gap: 4 }}>
+      <button className="nav-lien" onClick={() => onSelect("documentation")}>
+        <IconeNav nom="documentation" taille={15} />
+        Documentation
       </button>
-    )}
-    <button className="nav-lien" onClick={() => onSelect("documentation")} style={{ position: "fixed", bottom: 14, left: 20, zIndex: 50 }}>
-      <IconeNav nom="documentation" taille={15} />
-      Documentation
-    </button>
+      {estAdmin && (
+        <button className="nav-lien" onClick={() => onSelect("admin")}>
+          <IconeNav nom="admin" taille={15} />
+          Admin
+        </button>
+      )}
+    </div>
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "48px 24px", display: "flex", gap: 48 }}>
       <div style={{ flex: "0 0 auto", width: 520 }}>
         <h1 className="page-title" style={{ margin: "0 0 24px" }}>Accueil</h1>
@@ -128,7 +145,12 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
           }}
         >
           {CARDS.map((c) => (
-            <button key={c.id} className="panel carte-accueil" onClick={() => onSelect(c.id)}>
+            <button
+              key={c.id}
+              className={c.id === "controle" && aControler > 0 ? "panel carte-accueil carte-aura-alerte" : "panel carte-accueil"}
+              onClick={() => onSelect(c.id)}
+              title={c.id === "controle" && aControler > 0 ? `${aControler} article(s) à contrôler` : undefined}
+            >
               <span className="carte-accueil-icone">{c.icone}</span>
               <span style={{ fontSize: 16.5, fontWeight: 650, marginTop: 6, display: "inline-flex", alignItems: "center", gap: 8 }}>
                 {c.titre}
@@ -138,6 +160,7 @@ export default function Accueil({ onSelect, estAdmin }: Props) {
                     Nouveau
                   </span>
                 )}
+                {c.id === "controle" && aControler > 0 && <span className="badge badge-danger">{aControler} à contrôler</span>}
               </span>
               <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{c.description}</span>
             </button>

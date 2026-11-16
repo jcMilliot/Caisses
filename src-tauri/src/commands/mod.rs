@@ -7,6 +7,7 @@ pub mod backup;
 pub mod caisse_stock;
 pub mod carton_conso;
 pub mod colisage;
+pub mod controle_dimension;
 pub mod caisses;
 pub mod demande_alerte;
 pub mod demande_caisse;

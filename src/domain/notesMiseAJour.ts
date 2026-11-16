@@ -33,6 +33,58 @@ export const LIBELLE_RUBRIQUE: Record<GenreRubrique, { titre: string; icone: str
 
 export const NOTES_MISE_A_JOUR: NoteVersion[] = [
   {
+    version: "0.21.0",
+    date: "16/11/2026",
+    resume: "Un nouvel outil pour vérifier les mesures des grands articles, et l'ajout d'une caisse après une première expédition.",
+    rubriques: [
+      {
+        genre: "nouveau",
+        points: [
+          {
+            icone: "📏",
+            titre: "Contrôle dimensionnel",
+            texte:
+              "Les mesures des articles sont prises à la main et une erreur fausse tout le colisage. Une nouvelle carte de l'accueil, **« Contrôle dimensionnel »**, liste les articles à revérifier : ceux dont **2 dimensions sur 3 atteignent 350 mm**.",
+            details: [
+              "La liste se remplit toute seule avec les articles des simulations, et avec chaque nouveau picking.",
+              "Tant qu'il reste des articles à contrôler, la carte de l'accueil est entourée d'un **halo rouge**.",
+              "Pièce en main : **« Conforme »** si les mesures sont bonnes, sinon **« Corriger… »** pour noter les bonnes dimensions et le bon poids.",
+              "Un article validé reste tranquille **un an**, puis revient dans la liste.",
+              "Les articles corrigés passent dans l'onglet **« Dimensions corrigées »**. Une fois la fiche de l'article corrigée, on les valide un par un ou plusieurs à la fois.",
+              "**« Exporter en Excel »** donne la liste à imprimer ou à ouvrir sur une tablette près des pièces, avec des colonnes vides pour noter les mesures, ainsi que la liste des corrections à reporter.",
+              "La colonne « Affaires » indique où trouver la pièce, sauf si elle est déjà dans un colis : on attend alors sa prochaine arrivée.",
+            ],
+          },
+        ],
+      },
+      {
+        genre: "ameliore",
+        points: [
+          {
+            icone: "🚚",
+            titre: "Ajouter une caisse après une première expédition",
+            texte:
+              "Dans une simulation dont la première caisse est déjà livrée, une nouvelle caisse peut maintenant être ajoutée dans **Gestion des caisses**, sous la ligne de l'affaire, avec la même date de picking. Elle reste à commander et à livrer.",
+            details: [
+              "L'ajout est proposé par **« + Nouvelle caisse »** comme par **« Assigner à → Nouvelle caisse »**.",
+              "Dans **« Lier… »**, une ligne déjà livrée ou déjà liée à une autre caisse ne peut plus être choisie.",
+            ],
+          },
+        ],
+      },
+      {
+        genre: "corrige",
+        points: [
+          {
+            icone: "🏠",
+            titre: "Accueil",
+            texte: "Le lien **« Documentation »** est passé en haut à droite : il ne cache plus la carte « Notes de mise à jour » quand la fenêtre est petite.",
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: "0.20.1",
     date: "30/10/2026",
     resume: "Le comparatif de Colisage en cours donne une idée juste des dimensions, même quand le colisage n'est pas terminé.",

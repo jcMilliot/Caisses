@@ -73,6 +73,7 @@ export const SECTIONS_DOC_TECHNIQUE: SectionDocTechnique[] = [
         "`affaire`, `caisse`, `article` : Simulations (articles importés de l'intranet ou collés depuis Excel) ;",
         "`demande`, `demande_caisse` : Gestion des caisses (indépendantes des affaires, liées par le nom et par des liens explicites) ;",
         "`demande_alerte` : page Alertes (date d'expédition anticipée, qui remplace le picking dans le calcul des alertes, et commentaire) — table à part pour que l'enregistrement de Gestion des caisses, qui réécrit toute la ligne `demande`, ne l'écrase pas ;",
+        "`controle_dimension` : Contrôle dimensionnel — un AR par ligne (dimensions et poids de l'ERP, rafraîchis à chaque import du picking ou collage) et le résultat de son dernier contrôle ; les listes (à contrôler, validés, corrigés) sont calculées à l'affichage d'après le seuil et la durée de validité de l'Admin (`domain/controleDimension.ts`) ;",
         "`caisse_stock`, `carton_conso` : Consommable ;",
         "`colis_affaire`, `caisse_colisage`, `colis_rangement` : onglet Colisage d'une affaire ; `colis_caisse_intranet` : caisse (lettre) de chaque colis d'après l'intranet ;",
         "`section_lock`, `poste_actif` : verrous et postes ouverts ;",

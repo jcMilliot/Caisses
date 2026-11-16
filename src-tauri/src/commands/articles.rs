@@ -103,6 +103,18 @@ pub fn bulk_create_articles(
             ids.push(tx.last_insert_rowid());
             ordre += 1;
         }
+        // Contrôle dimensionnel (2026-11-16) : les AR collés entrent aussi dans le référentiel.
+        let vus: Vec<_> = articles
+            .iter()
+            .map(|a| crate::commands::controle_dimension::ArticleVu {
+                ar: &a.ar,
+                dim1_mm: a.dim1_mm,
+                dim2_mm: a.dim2_mm,
+                dim3_mm: a.dim3_mm,
+                poids_kg: a.poids_unitaire_kg,
+            })
+            .collect();
+        crate::commands::controle_dimension::enregistrer_articles(&tx, &vus)?;
     }
     tx.commit().map_err(|e| e.to_string())?;
 

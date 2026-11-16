@@ -357,3 +357,30 @@ export interface CaisseColisage {
   source_caisse_id: number | null;
   ordre: number;
 }
+
+// Contrôle dimensionnel (2026-11-16) : un AR du référentiel (valeurs de l'ERP reprises du picking)
+// et le résultat de son dernier contrôle manuel. Horodatages UTC « AAAA-MM-JJ HH:MM:SS ».
+export interface ControleDimension {
+  ar: string;
+  dim1_mm: number;
+  dim2_mm: number;
+  dim3_mm: number;
+  poids_kg: number;
+  ajoute_le: string;
+  controle_le: string | null;
+  controle_par: string;
+  corrige: boolean;
+  corr_dim1_mm: number | null;
+  corr_dim2_mm: number | null;
+  corr_dim3_mm: number | null;
+  corr_poids_kg: number | null;
+  erp_valide_le: string | null;
+  erp_valide_par: string;
+  /** Affaires de Simulations où l'AR apparaît, séparées par « , ». */
+  affaires: string;
+}
+
+export interface ReglagesControle {
+  seuil_mm: number;
+  duree_mois: number;
+}

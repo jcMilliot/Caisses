@@ -4,6 +4,8 @@ import AdminFeuilleDeRoute from "./AdminFeuilleDeRoute";
 import AdminCaisses from "./AdminCaisses";
 import { adminApi, ADMIN_PERMANENT, LIBELLE_ROLE, type Role, type Utilisateur } from "../data/admin";
 import { affairesApi } from "../data/affaires";
+import { controleDimensionApi } from "../data/controleDimension";
+import type { ReglagesControle } from "../domain/types";
 import { intranetApi } from "../data/intranet";
 import { setupApi, type DossierBase } from "../data/setup";
 import { backupApi, type BackupConfig, type FichierSauvegarde, type FrequenceBackup } from "../data/backup";
@@ -331,6 +333,7 @@ function ParametresOnglet({ trigramme }: { trigramme: string }) {
         <p style={{ margin: "12px 0 0", fontSize: 13, color: message.ok ? "var(--ok-text)" : "var(--danger-text)" }}>{message.texte}</p>
       )}
       <PoidsMaxParametre />
+      <ControleParametres />
       <IntranetParametres trigramme={trigramme} />
       <DossierBaseParametre />
     </div>
@@ -389,6 +392,82 @@ function PoidsMaxParametre() {
           Dans une affaire en simulation, si le poids total des articles présents dans une caisse dépasse la limite au
           mètre carré, une alerte apparaît. Le poids de la caisse elle-même est compris (tare de la caisse en stock, sinon
           estimation réglée dans Admin › Caisses › Poids).
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button className="btn btn-primary" onClick={enregistrer} disabled={!modifie || busy}>
+            Enregistrer
+          </button>
+        </div>
+      </div>
+      {message && (
+        <p style={{ margin: "12px 0 0", fontSize: 13, color: message.ok ? "var(--ok-text)" : "var(--danger-text)" }}>{message.texte}</p>
+      )}
+    </div>
+  );
+}
+
+// Contrôle dimensionnel (2026-11-16) : seuil des 2 dimensions sur 3 et durée de validité d'un
+// contrôle. Pris en compte tout de suite (les listes sont recalculées à l'affichage).
+function ControleParametres() {
+  const [actuel, setActuel] = useState<ReglagesControle | null>(null);
+  const [seuil, setSeuil] = useState("");
+  const [duree, setDuree] = useState("");
+  const [message, setMessage] = useState<{ ok: boolean; texte: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    controleDimensionApi
+      .getReglages()
+      .then((r) => {
+        setActuel(r);
+        setSeuil(String(r.seuil_mm));
+        setDuree(String(r.duree_mois));
+      })
+      .catch((e) => setMessage({ ok: false, texte: String(e) }));
+  }, []);
+
+  const s = Number(seuil.replace(",", "."));
+  const d = Number(duree);
+  const valide = Number.isFinite(s) && s > 0 && Number.isInteger(d) && d >= 1 && d <= 120;
+  const modifie = actuel !== null && valide && (s !== actuel.seuil_mm || d !== actuel.duree_mois);
+
+  async function enregistrer() {
+    if (!modifie) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await controleDimensionApi.setReglages({ seuil_mm: s, duree_mois: d });
+      setActuel({ seuil_mm: s, duree_mois: d });
+      setMessage({ ok: true, texte: "Réglages du contrôle dimensionnel enregistrés." });
+    } catch (e) {
+      setMessage({ ok: false, texte: String(e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (actuel === null) return message ? <p style={{ color: "var(--danger-text)" }}>{message.texte}</p> : null;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div className="panel" style={panneauReglageStyle}>
+        <label style={labelStyle}>
+          <span style={libelleStyle}>Contrôle dimensionnel : seuil</span>
+          <span style={champUniteStyle}>
+            <input className="input" type="number" min={1} value={seuil} onChange={(e) => setSeuil(e.target.value)} style={{ width: 90 }} />
+            <span style={uniteStyle}>mm</span>
+          </span>
+        </label>
+        <label style={labelStyle}>
+          <span style={libelleStyle}>Contrôle dimensionnel : validité d'un contrôle</span>
+          <span style={champUniteStyle}>
+            <input className="input" type="number" min={1} max={120} value={duree} onChange={(e) => setDuree(e.target.value)} style={{ width: 90 }} />
+            <span style={uniteStyle}>mois</span>
+          </span>
+        </label>
+        <p style={aideStyle}>
+          Un article est à contrôler quand 2 de ses 3 dimensions atteignent le seuil. Une fois validé, il revient dans la
+          liste à contrôler au bout de la durée de validité.
         </p>
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button className="btn btn-primary" onClick={enregistrer} disabled={!modifie || busy}>

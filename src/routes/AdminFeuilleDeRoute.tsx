@@ -10,16 +10,6 @@ interface Point {
 
 const A_FAIRE: Point[] = [
   {
-    titre: "Envoi en partiel : mise à jour du picking",
-    detail:
-      "Décider quoi faire quand la mise à jour du picking modifie ou supprime un article déjà parti dans une caisse livrée (aujourd'hui, la modification s'applique).",
-  },
-  {
-    titre: "Tablette Samsung sous Windows",
-    detail:
-      "Essayer d'installer l'application sur la tablette, pour choisir les cartons pendant le colisage.",
-  },
-  {
     titre: "Documentation",
     detail:
       "Faire le point ensemble : ajouter l'import du picking depuis l'intranet (mise à jour à l'ouverture d'une affaire, lignes supprimées, numéro de besoin), les onglets Picking / Colisage en cours, et revoir la section « Récupérer les articles ».",
@@ -27,16 +17,6 @@ const A_FAIRE: Point[] = [
 ];
 
 const A_VERIFIER: Point[] = [
-  {
-    titre: "Colisage en cours : comparaison avec le picking",
-    detail:
-      "La colonne « Colisage en cours » part maintenant de tout le picking : les pièces pas encore colisées comptent avec leur propre volume, et chaque colis remplace ses pièces par le volume de son carton. Au départ les deux colonnes sont égales, puis l'écart s'affine en colisant.",
-  },
-  {
-    titre: "Envoi en partiel : commande des caisses détaillées",
-    detail:
-      "Dans Gestion des caisses, chaque caisse détaillée a sa case « OK pour être commandée » et son bouton « Livré ». Cocher la caisse principale seule ne génère que son affiche. « Livré » sur la caisse principale livre aussi les caisses détaillées cochées ; une caisse détaillée non cochée reste à livrer, garde sa date de picking (modifiable) et a sa propre alerte « À commander ». Dans la simulation : les articles d'une caisse livrée sont verrouillés (🔒) et la caisse ne reçoit plus rien ; Colisage en cours affiche un onglet par livraison (« 1er envoi »…) puis un onglet pour ce qui reste.",
-  },
   {
     titre: "Dossier de la base",
     detail:

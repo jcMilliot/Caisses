@@ -5,6 +5,7 @@ import AffaireDetail from "./routes/AffaireDetail";
 import DemandesList from "./routes/DemandesList";
 import ConsoStockList from "./routes/ConsoStockList";
 import AlertesList from "./routes/AlertesList";
+import ControleDimensionList from "./routes/ControleDimensionList";
 import DemandesAchatsList from "./routes/DemandesAchatsList";
 import Admin from "./routes/Admin";
 import Documentation from "./routes/Documentation";
@@ -30,7 +31,7 @@ import { usePresence } from "./hooks/usePresence";
 import { useAlerteCommande } from "./hooks/useAlerteCommande";
 import type { Demande, DemandeCaisse } from "./domain/types";
 
-type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "alertes" | "admin" | "documentation" | "notes";
+type Section = "accueil" | "demandes" | "simulations" | "stock" | "achats" | "alertes" | "controle" | "admin" | "documentation" | "notes";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "demandes", label: "Gestion des caisses" },
@@ -38,6 +39,7 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "stock", label: "Consommable" },
   { id: "achats", label: "Demandes d'achats" },
   { id: "alertes", label: "Alertes" },
+  { id: "controle", label: "Contrôle dimensionnel" },
 ];
 
 export default function App() {
@@ -338,6 +340,7 @@ export default function App() {
         {section === "stock" && <ConsoStockList trigramme={trigramme} />}
         {section === "achats" && <DemandesAchatsList trigramme={trigramme} />}
         {section === "alertes" && <AlertesList trigramme={trigramme} />}
+        {section === "controle" && <ControleDimensionList trigramme={trigramme} />}
         {section === "admin" && estAdmin && <Admin trigramme={trigramme} />}
         {section === "documentation" && <Documentation trigramme={trigramme} estAdmin={estAdmin} />}
         {section === "notes" && <NotesMiseAJour />}

@@ -128,6 +128,9 @@ src-tauri/src/
     demande_caisse.rs → CRUD sous-caisses d'une demande (multi-caisses par demande)
     demande_alerte.rs → page Alertes : list_demande_alertes / set_demande_alerte (verrou
                         « alertes », date + commentaire vides = ligne supprimée)
+    controle_dimension.rs → Contrôle dimensionnel : enregistrer_articles (appelé par l'import
+                        du picking et le collage), list / valider / corriger / valider_erp
+                        (verrou « controle »), réglages (admin), export .xlsx (rust_xlsxwriter)
     carton_conso.rs   → CRUD cartons conso (list/create/update/delete, verrou « stock »,
                         nom AR_RAJA__XXXXX unique, dims int. + ext. obligatoires) +
                         list_colis_affaire / set_colis_carton / set_colis_carton_libre (carton
@@ -185,7 +188,7 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-10-29 : migrations `0001` à `0046` et `0048` à `0051` publiées (0.20.0) —
+État au 2026-11-16 : migrations `0001` à `0046` et `0048` à `0052` publiées (0.21.0) —
 **`0047` est réservé** à la branche `vue-3d`
 (`0047_add_placement_3d.sql`), pas de trou à combler. Pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes.
@@ -327,6 +330,16 @@ demande_alerte (demande_id PK REFERENCES demande ON DELETE CASCADE,  -- 0046, pa
          commentaire TEXT)
          -- table à part : l'enregistrement de Gestion des caisses réécrit toute la ligne `demande`
          -- depuis son brouillon et écraserait une date saisie entre-temps dans Alertes.
+
+controle_dimension (ar TEXT PK COLLATE NOCASE,  -- 0052, Contrôle dimensionnel (ADR 0004)
+         dim1_mm, dim2_mm, dim3_mm, poids_kg,  -- valeurs de l'ERP, rafraîchies à l'import du
+                                               --   picking / au collage (sauf ligne sans mesures)
+         ajoute_le, controle_le NULL, controle_par,  -- dernier contrôle (NULL = jamais)
+         corrige BOOL, corr_dim1_mm…corr_poids_kg NULL,  -- mesures relevées si ≠ ERP
+         erp_valide_le NULL, erp_valide_par)  -- correction reportée dans l'ERP
+         -- listes à contrôler / validés / corrigés CALCULÉES (domain/controleDimension.ts) d'après
+         -- parametre controle_seuil_mm (350) et controle_duree_mois (12). Ne modifie jamais
+         -- les articles de Simulations.
 
 section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" | "alertes" | "affaire:{id}"
               titulaire, acquis_le, dernier_battement,  -- trigramme + horodatages
@@ -2502,6 +2515,81 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   `npm run tauri build -- --debug` (dossier de compilation à part). Soumission Microsoft Defender
   à faire dès publication si l'installeur est bloqué.
 
+### 2026-11-16 — Contrôle dimensionnel
+
+- **Besoin** : les mesures des articles sont prises à la main et parfois fausses, ce qui fausse
+  le colisage. Retenir AR + dimensions + poids des articles de Simulations, lister ceux dont
+  **2 dimensions sur 3 dépassent un seuil** (350 mm, Admin), les recontrôler à la main :
+  conforme → validé pour une durée (12 mois, Admin), sinon mesures corrigées → onglet
+  « Dimensions corrigées », à reporter dans l'ERP (export Excel), puis validées une à une ou par
+  sélection. Carte « Contrôle dimensionnel » sur l'accueil, aura rouge qui pulse tant qu'il y a
+  des articles à contrôler. Modèle et décisions : [ADR 0004](docs/ADR/0004-controle-dimensionnel.md).
+- **Décisions de l'utilisateur** : un AR connu n'est pas remis à contrôler par un nouveau picking
+  (il ne revient qu'à l'expiration de sa validité) ; dimensions **et** poids corrigeables ; les
+  articles de Simulations **ne sont pas modifiés** (la mise à jour du picking reprendra l'ERP
+  corrigé) ; export = Article, Longueur, Largeur, Hauteur, Poids (valeurs relevées), au choix
+  « à reporter » / « reportées » / « toutes » (filtre de l'onglet).
+- **Choix de l'assistant** : mesures identiques à l'ERP au « Corriger… » = validation ; validité
+  d'un article corrigé comptée depuis le report dans l'ERP ; corrections listées quel que soit le
+  seuil ; seuil atteint (≥ 350, retour du 2026-11-16) ; dernier contrôle seulement (pas d'historique) ; colonne
+  « Affaires » (calculée, affaires où la pièce n'est pas encore colisée — retour du 2026-11-16 :
+  on ne rouvre pas un colis pour contrôler ; une pièce colisée partout reste dans la liste sans
+  nom d'affaire, en attendant sa prochaine réception) ; lignes « AR… » seulement ; entrée de la barre
+  de navigation ; aura fixe si l'utilisateur a demandé moins d'animations.
+- Code : migration `0052` (reprend les articles existants, ligne la plus récente par AR),
+  `commands/controle_dimension.rs` (appelé dans `intranet.rs::appliquer` et
+  `bulk_create_articles`), `domain/controleDimension.ts`, `data/controleDimension.ts`,
+  `routes/ControleDimensionList.tsx`, `Admin.tsx::ControleParametres`, carte de l'accueil
+  (`.carte-aura-alerte`, `index.css`). Réglages conservés à la restauration. Documentation
+  utilisateur (nouvelle section, aucune clé décalée) et technique complétées.
+- Validation : `cargo test --lib` (21, + référentiel / contrôle / ERP / verrou / réglages /
+  export, + reprise par la migration), `npx tsc --noEmit`, `npx vite build`, répartition des
+  listes vérifiée sur 9 cas (fichier jetable). **Validé par l'utilisateur le même jour.**
+- **Suite du même jour — export de la liste « À contrôler »** (les pièces ne peuvent pas
+  toujours être approchées de l'ordinateur → liste imprimée ou ouverte sur une tablette) :
+  Article, Affaires, dimensions / poids de l'ERP, puis colonnes vides Conforme / Longueur /
+  Largeur / Hauteur / Poids relevés (choix de l'assistant). Export générique
+  (`exporter_controle_xlsx` prend une feuille : nom, en-têtes, lignes de nombres / textes),
+  mis en page pour l'impression (paysage, une page en largeur, en-tête répété, quadrillage,
+  en-tête figé). L'export « Dimensions corrigées » est inchangé. `cargo test --lib` (21),
+  `npx tsc --noEmit`, `npx vite build`. **Fichier non ouvert dans Excel.**
+
+### 2026-11-16 — Envoi en partiel : caisse ajoutée dans Simulations après une livraison
+
+- **Constat** : « + Nouvelle caisse » de Simulations ne proposait la caisse détaillée dans Gestion
+  des caisses que si la ligne de l'affaire n'était pas livrée ; la caisse du 2e envoi restait
+  sans ligne (pas d'affiche, pas d'alerte), et « Lier… » permettait de la lier à la ligne livrée
+  (elle aurait été figée comme livrée).
+- **Décisions de l'utilisateur** : la caisse détaillée est créée sous la ligne de l'affaire même
+  livrée — **« une affaire, une liste de pièces »**, on ajoute une caisse à l'affaire de base,
+  jamais une nouvelle ligne mère ; **date de picking reprise de la ligne** (date demandée par le
+  client, « notre guide ») ; « Lier… » : lignes livrées visibles mais non sélectionnables.
+- Code : `AffaireDetail::demandeBase` (ligne non livrée de l'affaire, sinon la plus ancienne de
+  ce nom, même livrée), utilisée seulement par « + Nouvelle caisse » ; `demandeParente` (reports
+  de dimensions / suppression) inchangée, ne vise jamais une ligne livrée. Message de
+  confirmation propre au cas livré. `LierCaisseDialog` : option livrée désactivée (sauf le lien
+  actuel). La caisse détaillée créée n'est pas livrée (elle ne l'est que par sa propre
+  observation depuis 0050), « OK pour être commandée » décoché, date S2C vide.
+- Validation : `npx tsc --noEmit`, `npx vite build`. **Non vu à l'écran.**
+- **Bug du même jour** (essai de l'utilisateur sur la base de test) : « Assigner à → Nouvelle caisse » ne
+  proposait pas la caisse détaillée, et « Lier… » acceptait une ligne déjà liée à une autre caisse
+  (dimensions de la ligne mère écrasées) — cf. [Bugs.md](Bugs.md). `proposerCaisseDetaillee`
+  commun aux deux chemins, lignes déjà liées grisées dans « Lier… ». `npx tsc --noEmit`,
+  `npx vite build`. **Validé par l'utilisateur le même jour.**
+- **Accueil** : « Documentation » passe en haut à droite, à côté d'« Admin » (en bas à gauche,
+  en position fixe, elle chevauchait la carte « Notes de mise à jour » dans une fenêtre réduite).
+
+### 2026-11-16 — Release 0.21.0
+
+- Contenu : contrôle dimensionnel (carte de l'accueil, onglets À contrôler / Validés /
+  Dimensions corrigées, exports Excel, réglages Admin), caisse détaillée ajoutée depuis
+  Simulations après une livraison (deux chemins de création, « Lier… » sécurisé), Documentation
+  en haut à droite de l'accueil. Migration `0052` (appliquée sur la base partagée au premier
+  lancement : reprend les AR déjà présents dans Simulations). Note en tête de `notesMiseAJour.ts`.
+- Validation avant tag : `cargo check`, `cargo test --lib` (21), `npx tsc --noEmit`,
+  `npx vite build`, `npm run tauri build -- --debug` (dossier de compilation à part).
+  Soumission Microsoft Defender à faire dès publication si l'installeur est bloqué.
+
 ## Prochaines étapes
 
 ### Fait
@@ -3043,9 +3131,12 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
 > et « À réfléchir plus tard »** (ajout d'un point, point terminé → le retirer).
 
 *Envoi en partiel (2026-10-29)* — commande / livraison par caisse enfant, articles figés et
-onglets par envoi faits (cf. journal). **Reste** : décider quoi faire quand la mise à jour du
-picking modifie / supprime un article déjà livré (s'applique aujourd'hui, décision reportée par
-l'utilisateur) ; créer une caisse détaillée depuis Simulations quand la mère est livrée.
+onglets par envoi faits (cf. journal). Article déjà livré modifié / supprimé par la mise à jour
+du picking : **cas qui n'est pas censé arriver** (utilisateur, 2026-11-16) — rien à développer,
+la modification continue de s'appliquer. Caisse détaillée créée depuis Simulations quand la mère
+est livrée : **codée le 2026-11-16** (cf. journal).
+
+*Contrôle dimensionnel (2026-11-16)* — **validé par l'utilisateur le même jour** sur ses essais.
 
 *Retours utilisateur 2026-10-27 — Simulations : import du picking et colisage* — mise à jour
 automatique, bouton, onglets, repère d'étapes et cote égale **faits le même jour** (cf. journal).
@@ -3065,9 +3156,9 @@ Restent :
   caisse colisage** → rangé d'office dedans, sinon choix à la main comme aujourd'hui. Reste à
   savoir : jeton dans `fake_header` ou en en-tête, et forme exacte de la réponse (liste à la
   racine ou sous une clé).
-- **Tablette Samsung sous Windows** : voir si l'app s'y installe et s'utilise (tactile,
-  WebView2, accès au dossier réseau de la base, connexion intranet) — utile pour choisir les
-  cartons dans Colisage en cours. Glisser-déposer et vue 3D au tactile non prévus à ce jour.
+- ~~Tablette Samsung sous Windows~~ — **abandonné par l'utilisateur le 2026-11-16**.
+- **Validés par l'utilisateur le 2026-11-16** : comparatif de Colisage en cours (0.20.1), numéro
+  de caisse et commande / livraison par caisse détaillée (0.20.0).
 
 *Retours utilisateur 2026-10-09 / 12 / 13* — **tous traités le 2026-10-13**, voir le journal du
 même jour (verrous, accueil, colonne Affaire, Cde affaire / stock, cases de sélection).

@@ -2,16 +2,14 @@
 projet: Caisses
 statut: en cours
 priorite: normale
-mis_a_jour: 2026-10-30
-prochaine_etape: Publier le brouillon de la release 0.20.1 (soumission Defender si bloqué), puis vérifier le comparatif de Colisage en cours sur une affaire en cours de colisage
+mis_a_jour: 2026-11-16
+prochaine_etape: Publier le brouillon de la release 0.21.0 (soumission Defender si bloqué)
 ---
 
 ## Résumé
-Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.20.1 préparée le 2026-10-30 (brouillon à publier).
+Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.21.0 préparée le 2026-11-16 (brouillon à publier).
 
 ## Reste à faire
-- [ ] Envoi en partiel : décider du sort d'un article livré modifié par la mise à jour du picking
-- [ ] Tablette Samsung sous Windows : vérifier installation et usage (tactile, WebView2, dossier réseau, connexion intranet)
 - [ ] Point sur la documentation utilisateur avec l'utilisateur
 
 ## Fait
@@ -26,6 +24,11 @@ Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier
 - [x] Simulations : compteur « lignes affichées / total » quand un filtre est actif (0.19.0, 2026-10-28)
 - [x] Envoi en partiel : commande / livraison par caisse enfant, articles figés, onglets par envoi (0.20.0, 2026-10-29, migrations 0050-0051) — validé par l'utilisateur
 - [x] Page « Notes de mise à jour » sur l'accueil (0.20.0, 2026-10-29)
+- [x] Comparatif de Colisage en cours qui part du picking (0.20.1, 2026-10-30) — validé le 2026-11-16
+- [x] ~~Tablette Samsung~~ : abandonné le 2026-11-16
+- [x] Contrôle dimensionnel (0.21.0, migration 0052, 2026-11-16) — validé par l'utilisateur le 2026-11-16
+- [x] Envoi en partiel : caisse détaillée créée depuis Simulations quand la mère est livrée — validé le 2026-11-16
+- [x] Envoi en partiel : article livré modifié par le picking — cas non censé arriver, rien à faire (2026-11-16)
 
 ## Bloqué / points d'attention
 - Base SQLite sur un dossier réseau partagé : risque connu de corruption en écritures simultanées, atténué par le verrouillage applicatif et la sauvegarde
@@ -38,6 +41,7 @@ Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier
 - 2026-07-30 : base sur dossier réseau partagé pour le multi-poste, malgré le risque
 - 2026-09-09 : pas de signature Authenticode de l'installeur (ADR 0002)
 - 2026-09-28 : compte admin en base, session en mémoire, sauvegarde par n'importe quel poste (ADR 0003)
+- 2026-11-16 : contrôle dimensionnel — référentiel par AR, listes calculées, Simulations jamais modifié par l'outil (ADR 0004)
 - 2026-10-28 : caisse d'un colis donnée par l'intranet imposée et prioritaire sur le choix à la main ; une seule caisse colisage → colis rangés d'office
 
 ## Idées plus tard

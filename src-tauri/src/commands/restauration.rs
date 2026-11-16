@@ -233,7 +233,7 @@ fn lire_roles(conn: &Connection) -> Result<Vec<(String, String)>, String> {
 
 fn lire_parametres_sauvegarde(conn: &Connection) -> Result<Vec<(String, String)>, String> {
     let mut stmt = conn
-        .prepare("SELECT cle, valeur FROM parametre WHERE cle LIKE 'backup\\_%' ESCAPE '\\' OR cle IN ('seuil_alerte_general', 'poids_max_kg_m2', 'intranet_api_url', 'collage_excel_visible', 'poids_max_kg_m2_total', 'estimation_poids_caisse', 'dossier_base')")
+        .prepare("SELECT cle, valeur FROM parametre WHERE cle LIKE 'backup\\_%' ESCAPE '\\' OR cle IN ('seuil_alerte_general', 'poids_max_kg_m2', 'intranet_api_url', 'collage_excel_visible', 'poids_max_kg_m2_total', 'estimation_poids_caisse', 'dossier_base', 'controle_seuil_mm', 'controle_duree_mois')")
         .map_err(|e| e.to_string())?;
     let lignes = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))

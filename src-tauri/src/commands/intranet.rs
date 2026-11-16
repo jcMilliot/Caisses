@@ -578,6 +578,22 @@ fn appliquer(conn: &mut rusqlite::Connection, affaire_id: i64, plan: &PlanImport
             .map_err(|e| e.to_string())?;
         }
     }
+    // Contrôle dimensionnel (2026-11-16) : AR nouveaux ajoutés au référentiel, valeurs de l'ERP
+    // rafraîchies pour les autres. Lignes supprimées dans l'intranet ignorées.
+    let vus: Vec<_> = plan
+        .ajouts
+        .iter()
+        .chain(plan.modifs.iter().map(|m| &m.article))
+        .filter(|a| !a.supprime_intranet)
+        .map(|a| crate::commands::controle_dimension::ArticleVu {
+            ar: &a.ar,
+            dim1_mm: a.dim1_mm,
+            dim2_mm: a.dim2_mm,
+            dim3_mm: a.dim3_mm,
+            poids_kg: a.poids_unitaire_kg,
+        })
+        .collect();
+    crate::commands::controle_dimension::enregistrer_articles(&tx, &vus)?;
     let anomalies = serde_json::to_string(&plan.anomalies).map_err(|e| e.to_string())?;
     tx.execute(
         "INSERT INTO affaire_import_intranet (affaire_id, importe_le, anomalies) VALUES (?1, datetime('now'), ?2)

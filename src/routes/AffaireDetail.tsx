@@ -159,6 +159,12 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
   // et ses valeurs par défaut (type envoi, dates, traitement, cde passée) à la création.
   const [demandeCaissesLiees, setDemandeCaissesLiees] = useState<DemandeCaisse[]>([]);
   const [demandeParente, setDemandeParente] = useState<Demande | null>(null);
+  // Ligne à laquelle « + Nouvelle caisse » ajoute une caisse détaillée : la ligne non livrée de
+  // l'affaire, sinon la ligne de base (la plus ancienne), même livrée — envoi en partiel, caisse
+  // ajoutée après une livraison (2026-11-16 : « une affaire, une liste de pièces », on ajoute une
+  // caisse à l'affaire de base, jamais une nouvelle ligne mère). Distincte de `demandeParente`,
+  // qui pilote aussi des reports à ne jamais faire sur une ligne livrée.
+  const [demandeBase, setDemandeBase] = useState<Demande | null>(null);
   const [toutesDemandes, setToutesDemandes] = useState<Demande[]>([]);
   const [caissesStock, setCaissesStock] = useState<CaisseStock[]>([]);
   // Caisse dont on choisit la ligne de Gestion des caisses (« Lier… »).
@@ -180,9 +186,12 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
       setToutesDemandes(toutes);
       // On ne propose la synchro « ajouter/répercuter dans la demande » que si une demande
       // NON validée porte ce nom d'affaire — une demande déjà validée est close, on n'y touche pas.
-      setDemandeParente(
-        affaire ? toutes.find((d) => memeNomAffaire(d.affaire, affaire.nom) && !estDemandeValidee(d)) ?? null : null,
-      );
+      const parente = affaire ? toutes.find((d) => memeNomAffaire(d.affaire, affaire.nom) && !estDemandeValidee(d)) ?? null : null;
+      setDemandeParente(parente);
+      const base = affaire
+        ? toutes.filter((d) => memeNomAffaire(d.affaire, affaire.nom)).sort((a, b) => a.id - b.id)[0] ?? null
+        : null;
+      setDemandeBase(parente ?? base);
     });
   }, [affaire?.nom]);
 
@@ -269,6 +278,63 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
     const caisse = await creerCaisse(nom, l, w, h, null);
     await assignerArticles(selectionAssignable(), caisse.id);
     setSelectedIds(new Set());
+    // Même proposition que « + Nouvelle caisse » (oubli corrigé le 2026-11-16, cf. Bugs.md).
+    await proposerCaisseDetaillee(caisse.id, nom, l, w, h);
+  }
+
+  // Caisse ajoutée dans la simulation (« + Nouvelle caisse » ou « Assigner à → Nouvelle
+  // caisse ») : propose la caisse détaillée correspondante dans Gestion des caisses, sous la ligne
+  // de l'affaire (même livrée, envoi en partiel), et lie la caisse à cette caisse détaillée.
+  async function proposerCaisseDetaillee(caisseId: number, nom: string, l: number, w: number, h: number) {
+    if (!demandeBase) return;
+    const mereLivree = estDemandeValidee(demandeBase);
+    const confirme = await confirmerAction(
+      mereLivree
+        ? `Ajouter une caisse détaillée « ${nom} » dans Gestion des caisses, sous la ligne « ${demandeBase.affaire} » ? La 1re caisse de cette affaire est déjà livrée ; la nouvelle caisse restera à commander et à livrer.`
+        : `Ajouter une caisse correspondante « ${nom} » dans la demande « ${demandeBase.affaire} » ?`,
+      "Synchroniser avec Demandes",
+    );
+    if (!confirme) return;
+    const nouvelle: NewDemandeCaisse = {
+      demande_id: demandeBase.id,
+      nom,
+      type_envoi_caisse: demandeBase.type_envoi_caisse,
+      type_ouverture: "",
+      stock: "",
+      // Reprise de la ligne, même livrée : c'est la date demandée par le client (2026-11-16).
+      date_picking: demandeBase.date_picking,
+      // Pas reprise de la mère : commande éventuellement différée (2026-10-29).
+      date_demandee_s2c: "",
+      traitement: demandeBase.traitement,
+      quantite: 1,
+      moteurs: "",
+      module_lineaire: "",
+      terminaux: "",
+      informations_supp: "",
+      observations: "",
+      cde_passee_affaire: demandeBase.cde_passee_affaire,
+      cde_passee_achat_stock: demandeBase.cde_passee_achat_stock,
+      longueur_mm: l,
+      largeur_mm: w,
+      hauteur_mm: h,
+      poids_kg: 0,
+      contre_plaque: contrePlaqueParDefaut(demandeBase.type_envoi_caisse),
+      caisse_stock_id: null,
+      ok_pour_passer_cde: false,
+      ok_cde_par: "",
+    };
+    try {
+      const sousLigneCreee = await demandeCaisseApi.create(nouvelle, trigramme);
+      await caissesApi.linkDemandeCaisse(caisseId, sousLigneCreee.id, trigramme);
+      setDemandeCaissesLiees((prev) => [...prev, sousLigneCreee]);
+      await reload();
+    } catch (e) {
+      // Avant : erreur avalée, la caisse restait sans ligne sans que personne ne le sache.
+      await confirmerAction(
+        `La caisse détaillée n'a pas pu être ajoutée dans Gestion des caisses : ${e}. La caisse de la simulation reste « non liée » ; utiliser « Lier… » une fois le problème réglé.`,
+        "Gestion des caisses",
+      );
+    }
   }
 
   // Articles emportés par un glisser : toute la sélection si l'article attrapé est coché (comme
@@ -610,45 +676,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
               const nom = affaire?.nom ?? `Caisse ${caissesCalculees.length + 1}`;
               const caisse = await creerCaisse(nom, 0, 0, 0, null);
               setCaisseRecenteId(caisse.id);
-              if (demandeParente) {
-                const confirme = await confirmerAction(
-                  `Ajouter une caisse correspondante « ${nom} » dans la demande « ${demandeParente.affaire} » ?`,
-                  "Synchroniser avec Demandes",
-                );
-                if (confirme) {
-                  const nouvelle: NewDemandeCaisse = {
-                    demande_id: demandeParente.id,
-                    nom,
-                    type_envoi_caisse: demandeParente.type_envoi_caisse,
-                    type_ouverture: "",
-                    stock: "",
-                    date_picking: demandeParente.date_picking,
-                    // Pas reprise de la mère : commande éventuellement différée (2026-10-29).
-                    date_demandee_s2c: "",
-                    traitement: demandeParente.traitement,
-                    quantite: 1,
-                    moteurs: "",
-                    module_lineaire: "",
-                    terminaux: "",
-                    informations_supp: "",
-                    observations: "",
-                    cde_passee_affaire: demandeParente.cde_passee_affaire,
-                    cde_passee_achat_stock: demandeParente.cde_passee_achat_stock,
-                    longueur_mm: 0,
-                    largeur_mm: 0,
-                    hauteur_mm: 0,
-                    poids_kg: 0,
-                    contre_plaque: contrePlaqueParDefaut(demandeParente.type_envoi_caisse),
-                    caisse_stock_id: null,
-                    ok_pour_passer_cde: false,
-                    ok_cde_par: "",
-                  };
-                  const sousLigneCreee = await demandeCaisseApi.create(nouvelle, trigramme);
-                  await caissesApi.linkDemandeCaisse(caisse.id, sousLigneCreee.id, trigramme);
-                  setDemandeCaissesLiees((prev) => [...prev, sousLigneCreee]);
-                  await reload();
-                }
-              }
+              await proposerCaisseDetaillee(caisse.id, nom, 0, 0, 0);
             }}
           >
             + Nouvelle caisse
@@ -1007,6 +1035,18 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
           sousCaisses={demandeCaissesLiees.filter((sc) =>
             toutesDemandes.some((d) => d.id === sc.demande_id && memeNomAffaire(d.affaire, affaire.nom)),
           )}
+          liensPris={
+            new Map(
+              caissesCalculees
+                .filter((c) => c.id !== caisseALier.id)
+                .flatMap((c) => {
+                  const numero = caissesCalculees.findIndex((x) => x.id === c.id) + 1;
+                  if (c.demande_caisse_id !== null) return [[`sc:${c.demande_caisse_id}`, numero] as [string, number]];
+                  if (c.demande_id !== null) return [[`d:${c.demande_id}`, numero] as [string, number]];
+                  return [];
+                }),
+            )
+          }
           onLier={(cible) => lierCaisse(caisseALier, cible)}
           onClose={() => setCaisseALier(null)}
         />

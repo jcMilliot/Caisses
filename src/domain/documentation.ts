@@ -145,6 +145,28 @@ export const SECTIONS_DOC: SectionDoc[] = [
     ],
   },
   {
+    id: "controle-dimensionnel",
+    sommaire: "Contrôle dimensionnel",
+    titre: "Contrôle dimensionnel",
+    blocs: [
+      li(
+        "Les mesures des articles sont prises à la main et peuvent être fausses. Chaque article importé dans Simulations (picking ou collage) est retenu avec ses dimensions et son poids. Ceux dont **2 dimensions sur 3 atteignent ou dépassent le seuil** (350 mm par défaut, réglé dans l'Admin) sont à recontrôler.",
+      ),
+      li(
+        "Onglet **À contrôler** : quand on a l'article sous la main, on le mesure. « Conforme » si les mesures correspondent ; sinon « Corriger… » et saisir les mesures relevées. Les pièces ne pouvant pas toujours être approchées de l'ordinateur, « Exporter en Excel » donne la liste (avec les affaires où trouver la pièce et des colonnes vides pour noter les mesures), à imprimer ou à ouvrir sur une tablette. Tant qu'il y a des articles à contrôler, la carte de l'accueil est entourée d'un halo rouge.",
+      ),
+      li(
+        "Onglet **Validés** : un contrôle reste valable 12 mois (durée réglée dans l'Admin), puis l'article revient dans « À contrôler ».",
+      ),
+      li(
+        "Onglet **Dimensions corrigées** : les articles dont les mesures ont été corrigées, à reporter dans l'ERP. « Exporter en Excel » donne la liste affichée (à reporter, déjà reportées ou toutes). Une fois l'ERP corrigé, « Reporté dans l'ERP » sur une ligne, ou cocher plusieurs lignes (ou toutes) pour les valider ensemble.",
+      ),
+      li(
+        "Les articles de Simulations ne sont pas modifiés par cet outil : ils prennent les bonnes mesures à la mise à jour du picking, une fois l'ERP corrigé.",
+      ),
+    ],
+  },
+  {
     id: "stock",
     sommaire: "Consommable",
     titre: "Consommable (section indépendante)",

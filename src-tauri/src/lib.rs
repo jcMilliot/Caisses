@@ -25,6 +25,10 @@ use commands::carton_conso::{
     create_carton_conso, delete_carton_conso, list_cartons_conso, list_colis_affaire, set_colis_carton, set_colis_carton_libre, update_carton_conso,
 };
 use commands::demande_alerte::{list_demande_alertes, set_demande_alerte};
+use commands::controle_dimension::{
+    corriger_controle_dimension, exporter_controle_xlsx, get_reglages_controle, list_controle_dimension, set_reglages_controle,
+    valider_controle_dimension, valider_erp_controle_dimension,
+};
 use commands::livraison::{list_livraisons, set_livraison};
 use commands::colisage::{
     copier_caisses_colisage, create_caisse_colisage, delete_caisse_colisage, list_caisses_colisage, list_colis_rangement,
@@ -164,6 +168,13 @@ pub fn run() {
             count_caisse_stock_lignes_liees,
             list_demande_alertes,
             set_demande_alerte,
+            list_controle_dimension,
+            get_reglages_controle,
+            set_reglages_controle,
+            valider_controle_dimension,
+            corriger_controle_dimension,
+            valider_erp_controle_dimension,
+            exporter_controle_xlsx,
             list_livraisons,
             set_livraison,
             list_cartons_conso,

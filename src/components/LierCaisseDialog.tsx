@@ -14,12 +14,15 @@ export default function LierCaisseDialog({
   caisse,
   demandes,
   sousCaisses,
+  liensPris,
   onLier,
   onClose,
 }: {
   caisse: Caisse;
   demandes: Demande[]; // lignes mères du même nom d'affaire
   sousCaisses: DemandeCaisse[]; // caisses détaillées de ces lignes
+  /** Lignes déjà liées à une AUTRE caisse de la simulation (« d:id » / « sc:id » → n° de caisse). */
+  liensPris: Map<string, number>;
   onLier: (cible: CibleLien) => Promise<void>;
   onClose: () => void;
 }) {
@@ -50,13 +53,29 @@ export default function LierCaisseDialog({
     }
   }
 
-  function Option({ cle, titre, detail, l, w, h, retrait }: { cle: string; titre: string; detail: string; l: number; w: number; h: number; retrait?: boolean }) {
+  // Ligne livrée : visible mais pas sélectionnable (2026-11-16) — y lier une nouvelle caisse la
+  // ferait passer pour livrée (articles verrouillés). Passer par « + Nouvelle caisse », qui crée une
+  // caisse détaillée à livrer sous la ligne de base.
+  // Ligne déjà liée à une autre caisse : pas sélectionnable non plus (2026-11-16) — deux caisses
+  // sur une même ligne se renvoyaient leurs dimensions (cf. Bugs.md).
+  function Option({ cle, titre, detail, l, w, h, retrait, livree }: { cle: string; titre: string; detail: string; l: number; w: number; h: number; retrait?: boolean; livree?: boolean }) {
+    const priseePar = liensPris.get(cle);
+    const motif =
+      cle === cleActuelle
+        ? null
+        : livree
+          ? "Déjà livrée : une nouvelle caisse ne peut pas y être liée."
+          : priseePar !== undefined
+            ? `Déjà liée à la caisse ${priseePar} de la simulation.`
+            : null;
+    const desactive = motif !== null;
     return (
       <label
-        className="ligne-filtre-valeur"
-        style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 10px", paddingLeft: retrait ? 34 : 10, borderRadius: 6, cursor: "pointer" }}
+        className={desactive ? undefined : "ligne-filtre-valeur"}
+        title={motif ?? undefined}
+        style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 10px", paddingLeft: retrait ? 34 : 10, borderRadius: 6, cursor: desactive ? "not-allowed" : "pointer", opacity: desactive ? 0.5 : 1 }}
       >
-        <input type="radio" name="lien" checked={choix === cle} onChange={() => setChoix(cle)} style={{ marginTop: 3 }} />
+        <input type="radio" name="lien" checked={choix === cle} disabled={desactive} onChange={() => setChoix(cle)} style={{ marginTop: 3 }} />
         <span style={{ flex: 1 }}>
           <span style={{ fontWeight: 600 }}>{titre}</span>
           <span className="mono" style={{ marginLeft: 8, fontSize: 12.5 }}>
@@ -65,7 +84,10 @@ export default function LierCaisseDialog({
           {memesDims(l, w, h) && (
             <span style={{ marginLeft: 8, fontSize: 11.5, color: "var(--ok-text)", fontWeight: 600 }}>mêmes dimensions</span>
           )}
-          <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)" }}>{detail}</span>
+          <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)" }}>
+            {detail}
+            {priseePar !== undefined && cle !== cleActuelle && ` · liée à la caisse ${priseePar}`}
+          </span>
         </span>
       </label>
     );
@@ -97,6 +119,7 @@ export default function LierCaisseDialog({
                   l={d.longueur_mm}
                   w={d.largeur_mm}
                   h={d.hauteur_mm}
+                  livree={estDemandeValidee(d)}
                 />
                 {sousCaisses
                   .filter((sc) => sc.demande_id === d.id)
@@ -109,6 +132,7 @@ export default function LierCaisseDialog({
                       l={sc.longueur_mm}
                       w={sc.largeur_mm}
                       h={sc.hauteur_mm}
+                      livree={estDemandeCaisseValidee(sc)}
                       retrait
                     />
                   ))}
