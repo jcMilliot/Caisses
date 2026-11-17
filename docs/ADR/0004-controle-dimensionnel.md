@@ -18,6 +18,10 @@ corrections dans l'ERP (export Excel, validation une à une ou par sélection).
   sans mesures) et **le dernier contrôle seulement** (date, auteur, mesures relevées si
   différentes, date de report dans l'ERP). Pas d'historique des contrôles.
 - Reprise des articles déjà présents dans Simulations par la migration `0052`.
+- **Complété le 2026-11-17** : la page relit aussi en direct le picking de toutes les affaires de
+  Simulations pas entièrement expédiées (nouveaux AR, valeurs de l'ERP, colonnes « Affaires » et
+  « Dispo pour ctrl ») — l'utilisateur ne met pas à jour le picking de chaque affaire dans
+  Simulations. Les articles de Simulations ne sont toujours pas modifiés.
 - **Les listes ne sont pas stockées** : à contrôler / validés / corrigés sont calculés côté
   frontend (`domain/controleDimension.ts`) d'après le seuil (`controle_seuil_mm`) et la durée
   (`controle_duree_mois`) de `parametre`. Changer un réglage s'applique tout de suite.

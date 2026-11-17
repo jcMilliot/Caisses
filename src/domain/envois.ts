@@ -104,8 +104,11 @@ export function envoiDuGroupe(g: Pick<GroupeRange, "caisseId">, envois: Envoi[])
   return envois.find((e) => g.caisseId !== null && e.caisseIds.has(g.caisseId)) ?? envois[envois.length - 1];
 }
 
-// Articles figés (partis dans une caisse livrée) : assignés dans le Picking à une caisse livrée,
-// ou colisés dans un colis / une lettre rangé(e) dans une caisse colisage livrée. Article → motif.
+// Articles figés (partis dans une caisse livrée) : **colisés** et assignés dans le Picking à une
+// caisse livrée, ou colisés dans un colis / une lettre rangé(e) dans une caisse colisage livrée.
+// Article → motif. Un article **non colisé** n'est jamais figé (2026-11-17, USACM109 : pièces
+// décolisées restées sur place, à envoyer avec la caisse suivante) — l'assignation du Picking
+// n'est qu'un plan.
 export function articlesFiges(
   articles: Article[],
   etatParCaissePicking: Map<number, EtatLivraison>,
@@ -114,6 +117,7 @@ export function articlesFiges(
 ): Map<number, string> {
   const figes = new Map<number, string>();
   for (const a of articles) {
+    if (a.colis.trim() === "") continue;
     if (a.caisse_id !== null && etatParCaissePicking.get(a.caisse_id)?.livree) figes.set(a.id, "Dans une caisse livrée");
   }
   for (const g of groupes) {

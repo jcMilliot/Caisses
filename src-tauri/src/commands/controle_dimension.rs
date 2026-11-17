@@ -86,10 +86,24 @@ const DEMANDE_LIVREE: &str = "(COALESCE(d.validee, 0) = 1 OR lower(COALESCE(d.ob
 const SOUS_CAISSE_LIVREE: &str = "(lower(COALESCE(dc.observations, '')) LIKE '%livré%' OR lower(COALESCE(dc.observations, '')) LIKE '%livre%'
      OR lower(COALESCE(dc.observations, '')) LIKE '%rapatrié%' OR lower(COALESCE(dc.observations, '')) LIKE '%rapatrie%')";
 
-/// Affaires où la pièce est encore à portée de main (2026-11-16 / 17) : ligne non supprimée, pas
-/// colisée, pas rangée dans une caisse déjà livrée (envoi en partiel), et affaire pas entièrement
-/// expédiée (au moins une ligne de Gestion des caisses de ce nom, toutes livrées).
+/// Affaire `f` entièrement expédiée : au moins une ligne de Gestion des caisses de ce nom, toutes
+/// livrées (mère et caisses détaillées).
+fn affaire_expediee() -> String {
+    format!(
+        "(EXISTS (SELECT 1 FROM demande d WHERE lower(trim(d.affaire)) = lower(trim(f.nom)))
+          AND NOT EXISTS (SELECT 1 FROM demande d WHERE lower(trim(d.affaire)) = lower(trim(f.nom))
+                          AND NOT {DEMANDE_LIVREE})
+          AND NOT EXISTS (SELECT 1 FROM demande_caisse dc JOIN demande d ON d.id = dc.demande_id
+                          WHERE lower(trim(d.affaire)) = lower(trim(f.nom)) AND NOT {SOUS_CAISSE_LIVREE}))"
+    )
+}
+
+/// Affaires où la pièce est encore à portée de main : ligne non supprimée, pas colisée, affaire pas
+/// entièrement expédiée. (Jusqu'au 2026-11-17, une pièce assignée dans la simulation à une caisse
+/// livrée était aussi écartée : faux pour une pièce décolisée restée sur place — USACM109.)
+/// Calcul de secours : la page recalcule d'après le picking lu en direct quand il est lisible.
 fn requete_lister() -> String {
+    let expediee = affaire_expediee();
     format!(
         "SELECT c.ar, c.dim1_mm, c.dim2_mm, c.dim3_mm, c.poids_kg, c.ajoute_le, c.controle_le, c.controle_par,
                 c.corrige, c.corr_dim1_mm, c.corr_dim2_mm, c.corr_dim3_mm, c.corr_poids_kg, c.erp_valide_le,
@@ -97,19 +111,7 @@ fn requete_lister() -> String {
                 COALESCE((SELECT group_concat(nom, ', ') FROM (
                     SELECT DISTINCT f.nom FROM article a JOIN affaire f ON f.id = a.affaire_id
                     WHERE upper(trim(a.ar)) = c.ar AND a.supprime_intranet = 0 AND trim(COALESCE(a.colis, '')) = ''
-                      AND NOT EXISTS (
-                          SELECT 1 FROM caisse k
-                          LEFT JOIN demande d ON d.id = k.demande_id
-                          LEFT JOIN demande_caisse dc ON dc.id = k.demande_caisse_id
-                          WHERE k.id = a.caisse_id
-                            AND ((k.demande_caisse_id IS NOT NULL AND {SOUS_CAISSE_LIVREE})
-                                 OR (k.demande_caisse_id IS NULL AND k.demande_id IS NOT NULL AND {DEMANDE_LIVREE})))
-                      AND NOT (
-                          EXISTS (SELECT 1 FROM demande d WHERE lower(trim(d.affaire)) = lower(trim(f.nom)))
-                          AND NOT EXISTS (SELECT 1 FROM demande d WHERE lower(trim(d.affaire)) = lower(trim(f.nom))
-                                          AND NOT {DEMANDE_LIVREE})
-                          AND NOT EXISTS (SELECT 1 FROM demande_caisse dc JOIN demande d ON d.id = dc.demande_id
-                                          WHERE lower(trim(d.affaire)) = lower(trim(f.nom)) AND NOT {SOUS_CAISSE_LIVREE}))
+                      AND NOT {expediee}
                     ORDER BY f.nom)), '')
          FROM controle_dimension c ORDER BY c.ar"
     )
@@ -140,6 +142,60 @@ fn lister(conn: &Connection) -> Result<Vec<ControleDimension>, String> {
         })
         .map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+/// Affaires de Simulations pas entièrement expédiées : celles dont la page de contrôle lit le
+/// picking en direct (2026-11-17), pour faire entrer les nouveaux AR sans attendre une mise à jour
+/// du picking dans Simulations.
+fn affaires_a_lire(conn: &Connection) -> Result<Vec<String>, String> {
+    let mut stmt = conn
+        .prepare(&format!("SELECT f.nom FROM affaire f WHERE NOT {} ORDER BY f.nom", affaire_expediee()))
+        .map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], |r| r.get(0)).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<String>, _>>().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_affaires_controle(db: State<Db>) -> Result<Vec<String>, String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    affaires_a_lire(conn)
+}
+
+/// Article lu dans un picking en direct par la page de contrôle.
+#[derive(Debug, Deserialize)]
+pub struct ArticleErp {
+    pub ar: String,
+    pub dim1_mm: f64,
+    pub dim2_mm: f64,
+    pub dim3_mm: f64,
+    pub poids_kg: f64,
+}
+
+/// Ajoute au référentiel les AR lus en direct et rafraîchit les valeurs de l'ERP (même règle qu'à
+/// l'import du picking). Pas de verrou : c'est une copie de l'ERP, pas une saisie. Renvoie le
+/// nombre d'AR nouveaux.
+fn rafraichir(conn: &mut Connection, articles: &[ArticleErp]) -> Result<usize, String> {
+    let compter = |c: &Connection| -> Result<i64, String> {
+        c.query_row("SELECT COUNT(*) FROM controle_dimension", [], |r| r.get(0)).map_err(|e| e.to_string())
+    };
+    let avant = compter(conn)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let vus: Vec<ArticleVu> = articles
+        .iter()
+        .map(|a| ArticleVu { ar: &a.ar, dim1_mm: a.dim1_mm, dim2_mm: a.dim2_mm, dim3_mm: a.dim3_mm, poids_kg: a.poids_kg })
+        .collect();
+    enregistrer_articles(&tx, &vus)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok((compter(conn)? - avant).max(0) as usize)
+}
+
+#[tauri::command]
+pub fn rafraichir_controle_dimension(db: State<Db>, articles: Vec<ArticleErp>, trigramme: String) -> Result<usize, String> {
+    let mut guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_mut().ok_or("base de données non initialisée")?;
+    crate::commands::admin::refuser_lecteur(conn, &trigramme)?;
+    rafraichir(conn, &articles)
 }
 
 #[tauri::command]
@@ -299,6 +355,9 @@ pub fn valider_erp_controle_dimension(db: State<Db>, ars: Vec<String>, trigramme
 pub enum Cellule {
     Nombre(f64),
     Texte(String),
+    /// Formule Excel en anglais (`=IF(…)`), envoyée comme `{ "formule": "=…" }` — écarts relevé /
+    /// ERP de l'export « À contrôler », calculés dans Excel une fois les mesures saisies.
+    Formule { formule: String },
 }
 
 /// Feuille exportée : titre de l'onglet, en-têtes, lignes. Le contenu est choisi côté frontend
@@ -366,6 +425,10 @@ fn ecrire_xlsx(chemin: &std::path::Path, feuille: &FeuilleExport) -> Result<(), 
                 Cellule::Texte(t) => {
                     ws.write_string_with_format(r, col, t, fmt).map_err(err)?;
                     t.chars().count()
+                }
+                Cellule::Formule { formule } => {
+                    ws.write_formula_with_format(r, col, formule.as_str(), fmt).map_err(err)?;
+                    8
                 }
             };
             if let Some(l) = largeurs.get_mut(c) {
@@ -472,11 +535,13 @@ mod tests {
         let fichier = dir.join("export.xlsx");
         let feuille: FeuilleExport = serde_json::from_str(
             r##"{"nom": "À contrôler", "entetes": ["Article", "Longueur (mm)", "Longueur relevée"],
-                "lignes": [["AR_X_2", 610, ""], ["AR_X_1", 400.5, ""]], "fonds": ["", "#DCE4EE", ""]}"##,
+                "lignes": [["AR_X_2", 610, ""], ["AR_X_1", 400.5, {"formule": "=IF(C3=\"\",\"\",C3-1)"}]],
+                "fonds": ["", "#DCE4EE", ""]}"##,
         )
         .unwrap();
         assert!(matches!(feuille.lignes[0][1], Cellule::Nombre(n) if n == 610.0));
         assert!(matches!(&feuille.lignes[0][2], Cellule::Texte(t) if t.is_empty()));
+        assert!(matches!(&feuille.lignes[1][2], Cellule::Formule { formule } if formule.starts_with("=IF(")));
         ecrire_xlsx(&fichier, &feuille).unwrap();
         assert_eq!(nombre_avec_point(610.0), "610");
         assert_eq!(nombre_avec_point(400.5), "400.5");
@@ -489,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn affaires_expediees_ou_caisse_livree_masquees() {
+    fn affaires_expediees_masquees_et_lecture_directe() {
         let dir = std::env::temp_dir().join(format!("caisses-test-controle-aff-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let conn = crate::db::open_at(&dir);
@@ -521,10 +586,25 @@ mod tests {
         enregistrer_articles(&conn, &vus).unwrap();
         let affaires = |ar: &str| lister(&conn).unwrap().into_iter().find(|c| c.ar == ar).unwrap().affaires;
         assert_eq!(affaires("AR_A"), "ENCOURS"); // EXPEDIEE masquée
-        assert_eq!(affaires("AR_B"), ""); // dans la caisse déjà livrée
+        // Assignée à la caisse livrée mais pas colisée : encore sur place (USACM109, 2026-11-17).
+        assert_eq!(affaires("AR_B"), "PARTIEL");
         assert_eq!(affaires("AR_C"), "PARTIEL"); // caisse détaillée à livrer
         assert_eq!(affaires("AR_D"), "PARTIEL"); // non rangée, affaire pas entièrement expédiée
         assert_eq!(affaires("AR_E"), "SANSLIGNE"); // affaire sans ligne de Gestion des caisses
+        // Affaires lues en direct : toutes sauf l'affaire entièrement expédiée.
+        assert_eq!(affaires_a_lire(&conn).unwrap(), ["ENCOURS", "PARTIEL", "SANSLIGNE"]);
+        // Rafraîchissement depuis un picking lu en direct : nouvel AR + valeurs ERP mises à jour.
+        let mut conn = conn;
+        let n = rafraichir(
+            &mut conn,
+            &[
+                ArticleErp { ar: "AR_NEUF".into(), dim1_mm: 500.0, dim2_mm: 500.0, dim3_mm: 1.0, poids_kg: 2.0 },
+                ArticleErp { ar: "ar_a".into(), dim1_mm: 410.0, dim2_mm: 400.0, dim3_mm: 1.0, poids_kg: 1.0 },
+            ],
+        )
+        .unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(lister(&conn).unwrap().iter().find(|c| c.ar == "AR_A").unwrap().dim1_mm, 410.0);
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -26,7 +26,8 @@ use commands::carton_conso::{
 };
 use commands::demande_alerte::{list_demande_alertes, set_demande_alerte};
 use commands::controle_dimension::{
-    corriger_controle_dimension, exporter_controle_xlsx, get_reglages_controle, list_controle_dimension, set_reglages_controle,
+    corriger_controle_dimension, exporter_controle_xlsx, get_reglages_controle, list_affaires_controle, list_controle_dimension,
+    rafraichir_controle_dimension, set_reglages_controle,
     valider_controle_dimension, valider_erp_controle_dimension,
 };
 use commands::livraison::{list_livraisons, set_livraison};
@@ -169,6 +170,8 @@ pub fn run() {
             list_demande_alertes,
             set_demande_alerte,
             list_controle_dimension,
+            list_affaires_controle,
+            rafraichir_controle_dimension,
             get_reglages_controle,
             set_reglages_controle,
             valider_controle_dimension,

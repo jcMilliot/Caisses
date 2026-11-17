@@ -33,6 +33,50 @@ export const LIBELLE_RUBRIQUE: Record<GenreRubrique, { titre: string; icone: str
 
 export const NOTES_MISE_A_JOUR: NoteVersion[] = [
   {
+    version: "0.24.0",
+    date: "17/11/2026",
+    resume: "Le contrôle dimensionnel se met à jour tout seul depuis l'intranet, et l'export calcule les écarts.",
+    rubriques: [
+      {
+        genre: "ameliore",
+        points: [
+          {
+            icone: "📏",
+            titre: "Contrôle dimensionnel : toujours à jour",
+            texte:
+              "À l'ouverture de la page, l'application relit l'intranet pour **toutes les affaires en cours** : les nouveaux articles apparaissent sans avoir à ouvrir chaque affaire dans Simulations, et les colonnes « Affaires » et « Dispo pour ctrl » sont à jour.",
+            details: [
+              "Le bouton **« Actualiser depuis l'intranet »** relit tout à la demande.",
+              "Une pièce **décolisée** revient avec son affaire ; une pièce colisée depuis disparaît.",
+            ],
+          },
+          {
+            icone: "📄",
+            titre: "Export « À contrôler » : écarts calculés",
+            texte:
+              "Quatre colonnes **« Écart »** (longueur, largeur, hauteur, poids) suivent les valeurs actuelles : elles se remplissent toutes seules quand on saisit les mesures dans le fichier, avec un **point** pour les décimales.",
+          },
+          {
+            icone: "📦",
+            titre: "Simulations : pièces décolisées libérées",
+            texte:
+              "Une pièce qui n'est pas dans un colis n'est plus verrouillée, même si elle était prévue dans une caisse déjà livrée : on peut la mettre dans la caisse qui part ensuite.",
+          },
+        ],
+      },
+      {
+        genre: "corrige",
+        points: [
+          {
+            icone: "🔧",
+            titre: "Message de l'intranet plus clair",
+            texte: "Quand l'intranet répond de façon inhabituelle pour une affaire, le message dit maintenant ce qu'il a renvoyé.",
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: "0.23.0",
     date: "17/11/2026",
     resume: "Les caisses de stock et de récup ne passent plus par S2C, et l'export du contrôle dimensionnel est plus pratique à remplir.",

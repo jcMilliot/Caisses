@@ -408,6 +408,38 @@ async fn post_affaire(db: &Db, session: &IntranetSession, chemin: &str, business
 }
 
 /// Lit le picking de l'affaire `business` sur l'intranet (toutes les lignes, sans filtre).
+/// Réponse de `picking/get` sans liste « picking » (vu sur une affaire envoyée en partie,
+/// 2026-11-17) : dit ce que l'intranet a renvoyé (message, clés et leur type), pour pouvoir
+/// adapter la lecture. Jamais traitée comme un picking vide : une mise à jour marquerait alors
+/// toutes les lignes comme supprimées.
+fn decrire_reponse_sans_picking(json: &Value) -> String {
+    let detail = match json {
+        Value::Object(o) => {
+            if let Some(m) = o.get("message").and_then(Value::as_str) {
+                format!("message : « {m} »")
+            } else {
+                let cles: Vec<String> = o
+                    .iter()
+                    .map(|(k, v)| {
+                        let t = match v {
+                            Value::Null => "vide".to_string(),
+                            Value::Array(a) => format!("liste de {}", a.len()),
+                            Value::Object(_) => "objet".to_string(),
+                            _ => "valeur".to_string(),
+                        };
+                        format!("{k} ({t})")
+                    })
+                    .collect();
+                if cles.is_empty() { "réponse vide".to_string() } else { format!("reçu : {}", cles.join(", ")) }
+            }
+        }
+        Value::Array(a) => format!("reçu une liste de {} éléments", a.len()),
+        Value::Null => "réponse vide".to_string(),
+        _ => "réponse inattendue".to_string(),
+    };
+    format!("Réponse de l'intranet sans « picking » ({detail})")
+}
+
 #[tauri::command]
 pub async fn fetch_picking_intranet(
     db: State<'_, Db>,
@@ -415,7 +447,7 @@ pub async fn fetch_picking_intranet(
     business: String,
 ) -> Result<Vec<LignePicking>, String> {
     let json = post_affaire(&db, &session, "customer-client/contracts/picking/get", business.trim()).await?;
-    let lignes = json.get("picking").and_then(Value::as_array).ok_or("Réponse de l'intranet sans « picking »")?;
+    let lignes = json.get("picking").and_then(Value::as_array).ok_or_else(|| decrire_reponse_sans_picking(&json))?;
     Ok(lignes.iter().map(lire_ligne).collect())
 }
 
@@ -720,6 +752,9 @@ mod tests {
         let stock: Value = serde_json::from_str(r#"{"ARAVF":"AR_S","QTSTL":3,"moved":"1.000"}"#).unwrap();
         let p = lire_ligne(&stock);
         assert_eq!((p.qte_stock, p.qte_mouvementee), (3.0, 1.0));
+        // Réponse sans « picking » : message explicite.
+        let r: Value = serde_json::from_str(r#"{"shipment":[1,2],"picking":null}"#).unwrap();
+        assert_eq!(decrire_reponse_sans_picking(&r), "Réponse de l'intranet sans « picking » (reçu : picking (vide), shipment (liste de 2))");
     }
 
     #[test]

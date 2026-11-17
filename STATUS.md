@@ -3,7 +3,7 @@ projet: Caisses
 statut: en cours
 priorite: normale
 mis_a_jour: 2026-11-17
-prochaine_etape: Publier le brouillon de la release 0.23.0 (soumission Defender si bloqué), puis vérifier sur la version installée
+prochaine_etape: Publier le brouillon de la release 0.24.0 (soumission Defender si bloqué), puis vérifier le contrôle dimensionnel en ligne (lecture en direct, écarts de l'export, USACM109)
 ---
 
 ## Résumé
@@ -12,6 +12,8 @@ Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier
 ## Reste à faire
 - [ ] Contrôle dimensionnel : « Dispo pour ctrl », décimales à point, export réordonné avec fond ERP — à vérifier à l'écran
 - [ ] Gestion des caisses : caisse de stock / récup sans demande à S2C (date grisée, pas d'affiche) — codé le 2026-11-17, à vérifier
+- [ ] Contrôle dimensionnel : lecture du picking en direct (nouveaux AR, Affaires, dispo) — codé le 2026-11-17, à vérifier ; réponse « sans picking » de USACM109 à relever
+- [ ] Simulations : article non colisé jamais verrouillé (décolisé resté sur place) — codé le 2026-11-17, à vérifier
 - [ ] Point sur la documentation utilisateur avec l'utilisateur
 
 ## Fait

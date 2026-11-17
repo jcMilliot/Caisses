@@ -18,6 +18,11 @@ const A_FAIRE: Point[] = [
 
 const A_VERIFIER: Point[] = [
   {
+    titre: "Contrôle dimensionnel : lecture en direct",
+    detail:
+      "À l'ouverture de la page, l'application relit le picking de toutes les affaires en cours : les nouveaux articles apparaissent sans ouvrir chaque affaire dans Simulations, et une pièce décolisée revient avec son affaire. Le picking de USACM109 renvoie une réponse inhabituelle : relever le message affiché.",
+  },
+  {
     titre: "Caisse de stock ou de récup : pas de demande à S2C",
     detail:
       "Dans Gestion des caisses, une ligne avec une caisse de stock ou de récup a sa date demandée à S2C grisée et non exigée, et ne crée plus d'affiche. Une ligne ACHSTOCK cochée apparaît dans le bloc ACHSTOCK de Demandes d'achats, avec la référence de la caisse, et dans la copie du mail.",

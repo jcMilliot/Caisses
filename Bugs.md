@@ -10,6 +10,20 @@ racine, le fix, et un lien vers l'entrée de journal correspondante pour le dét
 
 ---
 
+## Contrôle dimensionnel : pièce décolisée restée sur place absente de la colonne « Affaires »
+
+- **Symptôme** (USACM109, envoi en partiel, 2026-11-17) : deux articles colisés dans la caisse A
+  puis décolisés (ils ne sont pas partis) n'apparaissaient plus avec leur affaire dans le contrôle
+  dimensionnel, donc jamais « Dispo pour ctrl ».
+- **Cause** : la colonne écartait aussi une pièce **assignée dans la simulation à une caisse liée à
+  une ligne livrée** — considérée comme partie. L'assignation de la simulation n'est qu'un plan :
+  la pièce décolisée y était restée.
+- **Fix** (2026-11-17) : règle retirée (`controle_dimension.rs::requete_lister`) ; seuls comptent
+  l'état colisé et l'affaire entièrement expédiée, et la page recalcule d'après le picking lu en
+  direct.
+- **Piège** : l'assignation à une caisse dans Simulations ne dit pas où est la pièce ; se fier au
+  picking (colis) et à Gestion des caisses (livraison).
+
 ## Demandes d'achats : ligne ACHSTOCK affichée « — » au lieu de la référence AR_CAISS_
 
 - **Symptôme** (vu en relisant le code le 2026-11-17) : dans le bloc ACHSTOCK de Demandes d'achats

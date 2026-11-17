@@ -2663,6 +2663,51 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   signature de la mise à jour par le workflow GitHub). Soumission Microsoft Defender à faire dès
   publication si l'installeur est bloqué.
 
+### 2026-11-17 — Contrôle dimensionnel : lecture du picking en direct, cas USACM109
+
+- **Retours de l'utilisateur** : des articles physiquement dispo n'apparaissaient pas (picking pas
+  mis à jour dans Simulations) ; sur USACM109 (envoi en partiel), deux articles décolisés (A → vide)
+  n'étaient plus rattachés à l'affaire ; la mise à jour du picking de USACM109 échoue (« Réponse de
+  l'intranet sans « picking » »).
+- **Lecture en direct** (proposition acceptée par l'utilisateur) : à l'ouverture de la page et par
+  « Actualiser depuis l'intranet », lecture du picking de **toutes les affaires de Simulations pas
+  entièrement expédiées** (`list_affaires_controle`, 3 à la fois) → nouveaux AR + valeurs ERP
+  (`rafraichir_controle_dimension`, même règle qu'à l'import, pas de verrou, refusé aux Lecteurs —
+  la page ne l'appelle pas pour eux) ; « Affaires » et « Dispo pour ctrl » calculées sur le
+  picking en direct (ligne présente, non supprimée, pas colisée), repli sur la base pour une
+  affaire au picking illisible (`domain/controleDimension.ts::lirePickingControle`,
+  `indexPresences`, `dispoControle`). Les articles de Simulations ne sont pas touchés.
+- **Règle « caisse livrée » retirée** de la colonne « Affaires » (cf. [Bugs.md](Bugs.md)) : une
+  pièce assignée dans la simulation à une caisse livrée mais décolisée était écartée à tort.
+- **Réponse sans « picking »** : le message dit maintenant ce que l'intranet a renvoyé (message,
+  clés et leur type — `intranet.rs::decrire_reponse_sans_picking`). Jamais traitée comme un
+  picking vide (une mise à jour marquerait toutes les lignes supprimées). Forme réelle de la
+  réponse de USACM109 **à relever par l'utilisateur** pour adapter la lecture.
+- **Simulations — articles décolisés libérés** (décision de l'utilisateur, même jour) : un article
+  **non colisé** n'est plus jamais figé, même assigné dans le Picking à une caisse livrée
+  (`envois.ts::articlesFiges`) ; il peut être déplacé vers la caisse qui part ensuite. Restent
+  figés : colisé + assigné à une caisse livrée, ou colisé dans un colis / une lettre rangé(e) dans
+  une caisse colisage livrée. Conséquence acceptée : sur une affaire expédiée sans colisage, les
+  articles partis ne sont plus verrouillés. Simulations seulement (le contrôle dimensionnel ne lit
+  pas les articles figés).
+- **Export « À contrôler » — écarts** (demande du même jour) : 4 colonnes « Écart longueur /
+  largeur / hauteur / poids » après les valeurs ERP, en **formules Excel** (mesures saisies à la
+  main dans le fichier) : relevé − ERP, vide tant que la mesure n'est pas saisie. ERP écrite en
+  texte avec point → relue par `NUMBERVALUE(…, ".")` (indépendant de la langue d'Excel) ; mesure
+  saisie nombre ou texte, virgule ou point (`domain/controleDimension.ts::formuleEcart`,
+  `Cellule::Formule`). **L'écart est rendu en texte avec un point** (demande de
+  l'utilisateur : son outil ne lit que le point) — `SUBSTITUTE(ROUND(…;3)&"";",";".")`.
+  **Formules non ouvertes dans Excel.**
+- Validation : `cargo test --lib` (22, + affaires lues, rafraîchissement, message sans picking),
+  `npx tsc --noEmit`, `npx vite build`, logique en direct vérifiée sur 4 cas (fichier jetable).
+  **Non testé contre le vrai intranet ni vu à l'écran.** Sur la base de test, l'utilisateur n'a
+  rien vu de particulier (réponse « sans picking » de USACM109 non reproduite).
+- **Release 0.24.0** (même jour, à la demande de l'utilisateur) : ce bloc. Aucune migration. Note
+  en tête de `notesMiseAJour.ts`. Validation avant tag : `cargo check`, `cargo test --lib` (22),
+  `npx tsc --noEmit`, `npx vite build`, `npm run tauri build -- --debug` (installeurs produits ;
+  signature de la mise à jour par le workflow GitHub). Soumission Microsoft Defender à faire dès
+  publication si l'installeur est bloqué.
+
 ## Prochaines étapes
 
 ### Fait
