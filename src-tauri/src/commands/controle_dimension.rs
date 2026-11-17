@@ -309,6 +309,10 @@ pub struct FeuilleExport {
     pub nom: String,
     pub entetes: Vec<String>,
     pub lignes: Vec<Vec<Cellule>>,
+    /// Couleur de fond par colonne (« #RRGGBB », "" = aucune) — ex. valeurs de l'ERP en
+    /// bleu-gris clair (2026-11-17). Absent = aucune.
+    #[serde(default)]
+    pub fonds: Vec<String>,
 }
 
 /// 610 → « 610 », 400.5 → « 400.5 », 2.1234 → « 2.123 » (3 décimales au plus, zéros inutiles
@@ -328,24 +332,39 @@ fn ecrire_xlsx(chemin: &std::path::Path, feuille: &FeuilleExport) -> Result<(), 
     ws.set_name(feuille.nom.chars().take(31).collect::<String>()).map_err(err)?;
     let entete = Format::new().set_bold().set_border(FormatBorder::Thin).set_background_color("#E8EEF7");
     let cadre = Format::new().set_border(FormatBorder::Thin);
+    let fond_de = |c: usize| feuille.fonds.get(c).map(|f| f.trim()).filter(|f| f.len() == 7 && f.starts_with('#'));
+    // Une mise en forme par colonne : cadre, plus son fond s'il y en a un.
+    let formats: Vec<Format> = (0..feuille.entetes.len())
+        .map(|c| match fond_de(c) {
+            Some(f) => cadre.clone().set_background_color(f),
+            None => cadre.clone(),
+        })
+        .collect();
+    let formats_entete: Vec<Format> = (0..feuille.entetes.len())
+        .map(|c| match fond_de(c) {
+            Some(f) => entete.clone().set_background_color(f),
+            None => entete.clone(),
+        })
+        .collect();
     let mut largeurs: Vec<usize> = feuille.entetes.iter().map(|t| t.chars().count()).collect();
     for (c, t) in feuille.entetes.iter().enumerate() {
-        ws.write_string_with_format(0, c as u16, t, &entete).map_err(err)?;
+        ws.write_string_with_format(0, c as u16, t, &formats_entete[c]).map_err(err)?;
     }
     for (i, ligne) in feuille.lignes.iter().enumerate() {
         let r = (i + 1) as u32;
         for (c, cellule) in ligne.iter().enumerate() {
             let col = c as u16;
+            let fmt = formats.get(c).unwrap_or(&cadre);
             let longueur = match cellule {
                 // Nombres écrits en texte avec un point décimal (demande de l'utilisateur,
                 // 2026-11-17 : un vrai nombre s'affiche « 400,5 » dans un Excel en français).
                 Cellule::Nombre(n) => {
                     let t = nombre_avec_point(*n);
-                    ws.write_string_with_format(r, col, &t, &cadre).map_err(err)?;
+                    ws.write_string_with_format(r, col, &t, fmt).map_err(err)?;
                     t.len()
                 }
                 Cellule::Texte(t) => {
-                    ws.write_string_with_format(r, col, t, &cadre).map_err(err)?;
+                    ws.write_string_with_format(r, col, t, fmt).map_err(err)?;
                     t.chars().count()
                 }
             };
@@ -452,8 +471,8 @@ mod tests {
         // Export Excel écrit un fichier.
         let fichier = dir.join("export.xlsx");
         let feuille: FeuilleExport = serde_json::from_str(
-            r#"{"nom": "À contrôler", "entetes": ["Article", "Longueur (mm)", "Longueur relevée"],
-                "lignes": [["AR_X_2", 610, ""], ["AR_X_1", 400.5, ""]]}"#,
+            r##"{"nom": "À contrôler", "entetes": ["Article", "Longueur (mm)", "Longueur relevée"],
+                "lignes": [["AR_X_2", 610, ""], ["AR_X_1", 400.5, ""]], "fonds": ["", "#DCE4EE", ""]}"##,
         )
         .unwrap();
         assert!(matches!(feuille.lignes[0][1], Cellule::Nombre(n) if n == 610.0));

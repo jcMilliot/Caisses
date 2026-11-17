@@ -15,6 +15,8 @@ import {
   ouvertureImposee,
   motifOuvertureImposee,
   stockAutorisePourEnvoi,
+  sansDemandeS2c,
+  MOTIF_SANS_DEMANDE_S2C,
 } from "../domain/demandeOptions";
 import { dateEstDansLePasse } from "../domain/dates";
 import SelectOuAutre from "./SelectOuAutre";
@@ -334,6 +336,9 @@ export default function AjouterDemandesDialog({ caissesStock, optionsPersonnalis
                 <input
                   type="date"
                   value={ligne.date_demandee_s2c}
+                  // Caisse de stock / récup : pas de demande à S2C (2026-11-17).
+                  disabled={sansDemandeS2c(ligne, ligne.affaire)}
+                  title={sansDemandeS2c(ligne, ligne.affaire) ? MOTIF_SANS_DEMANDE_S2C : undefined}
                   onFocus={() => (dateS2cAvantSaisie.current = ligne.date_demandee_s2c)}
                   onChange={(e) => majLigne(index, { date_demandee_s2c: e.target.value })}
                   onBlur={(e) => verifierDateDemandeeS2c(index, e.target.value, dateS2cAvantSaisie.current)}

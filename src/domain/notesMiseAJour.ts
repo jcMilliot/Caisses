@@ -33,6 +33,43 @@ export const LIBELLE_RUBRIQUE: Record<GenreRubrique, { titre: string; icone: str
 
 export const NOTES_MISE_A_JOUR: NoteVersion[] = [
   {
+    version: "0.23.0",
+    date: "17/11/2026",
+    resume: "Les caisses de stock et de récup ne passent plus par S2C, et l'export du contrôle dimensionnel est plus pratique à remplir.",
+    rubriques: [
+      {
+        genre: "ameliore",
+        points: [
+          {
+            icone: "📋",
+            titre: "Gestion des caisses : caisse de stock ou de récup",
+            texte:
+              "Une ligne qui utilise une caisse **de stock** ou **de récup** ne demande rien à S2C : la **date demandée à S2C** est grisée et n'est plus obligatoire pour cocher « OK pour être commandée », et **aucune affiche** n'est créée.",
+            details: [
+              "Les lignes **ACHSTOCK** (caisses achetées pour le stock) ne changent pas : la date reste demandée et la ligne apparaît dans la copie du mail.",
+            ],
+          },
+          {
+            icone: "📏",
+            titre: "Contrôle dimensionnel : export « À contrôler »",
+            texte:
+              "Les colonnes sont dans l'ordre du relevé : **Affaire**, **Article**, les quatre mesures à noter, puis les valeurs actuelles sur **fond bleu-gris** pour les distinguer.",
+          },
+        ],
+      },
+      {
+        genre: "corrige",
+        points: [
+          {
+            icone: "🛒",
+            titre: "Demandes d'achats : référence des caisses ACHSTOCK",
+            texte: "La référence de la caisse commandée pour le stock s'affiche de nouveau, dans la liste comme dans la copie du mail (elle apparaissait parfois en « — »).",
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: "0.22.0",
     date: "17/11/2026",
     resume: "Le contrôle dimensionnel indique les pièces qu'on peut aller mesurer tout de suite.",

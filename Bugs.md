@@ -10,6 +10,18 @@ racine, le fix, et un lien vers l'entrée de journal correspondante pour le dét
 
 ---
 
+## Demandes d'achats : ligne ACHSTOCK affichée « — » au lieu de la référence AR_CAISS_
+
+- **Symptôme** (vu en relisant le code le 2026-11-17) : dans le bloc ACHSTOCK de Demandes d'achats
+  et dans la copie du mail, une ligne ACHSTOCK dont la caisse est choisie dans le menu Stock
+  affiche « — » à la place de sa référence `AR_CAISS_…`.
+- **Cause** : `rendreBlocAchstock` et la liste lisaient `demande.stock`, ancienne colonne texte que
+  l'app n'écrit plus depuis le menu Stock (`caisse_stock_id`).
+- **Fix** (2026-11-17) : `affiches.ts::referenceAchstock` — nom de la caisse liée par
+  `caisse_stock_id`, à défaut l'ancien texte ; `DemandesAchatsList` charge les caisses en stock.
+- **Piège** : ne jamais lire `stock` seul pour la caisse d'une ligne — toujours `caisse_stock_id`
+  d'abord (même règle que `estCaisseEnStock`, `stockAffiche`).
+
 ## Simulations : nouvelle caisse sans caisse détaillée, dimensions de la ligne mère écrasées
 
 - **Symptôme** (affaire de la base de test, 2026-11-16) : une caisse créée dans la simulation

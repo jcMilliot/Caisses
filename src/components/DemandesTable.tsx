@@ -35,6 +35,8 @@ import {
   appliquerReglesCaisse,
   champsManquantsPourCommande,
   champsManquantsPourCommandeSousCaisse,
+  sansDemandeS2c,
+  MOTIF_SANS_DEMANDE_S2C,
 } from "../domain/demandeOptions";
 import { PALETTE_CAISSES } from "../domain/palette";
 import { confirmerAction } from "../data/confirm";
@@ -749,6 +751,8 @@ export default function DemandesTable({
       ? depassementMesuresMax4C(demande.type_envoi_caisse, demande.longueur_mm, demande.largeur_mm, demande.hauteur_mm)
       : undefined;
     const ouvertureVerrouillee = champ === "type_ouverture" && ouvertureImposee(demande) !== null;
+    // Caisse de stock / récup : pas de demande à S2C, case grisée (2026-11-17).
+    const sansS2c = champ === "date_demandee_s2c" && sansDemandeS2c(demande, demande.affaire);
     // Type d'ouverture : alerte seulement si la caisse en stock choisie a changé l'ouverture
     // (plus d'alerte systématique, ni pour les 4C) ; l'explication reste en infobulle.
     const avertissement =
@@ -757,11 +761,12 @@ export default function DemandesTable({
           ? ALERTE_OUVERTURE_DIFFERENTE
           : undefined
         : (avertissementMousse ?? avertissementMesures4C);
-    const nonEditable = figee || ouvertureVerrouillee;
+    const nonEditable = figee || ouvertureVerrouillee || sansS2c;
     return (
       <td
         style={{
           ...td,
+          ...(sansS2c ? { color: "var(--text-faint)", background: "rgba(32, 30, 26, 0.04)" } : null),
           textAlign: align,
           cursor: nonEditable ? "default" : "text",
           padding: enEdition ? 2 : td.padding,
@@ -773,7 +778,7 @@ export default function DemandesTable({
           fontWeight: champ === "affaire" ? 700 : undefined,
         }}
         className={estNombre ? "mono" : undefined}
-        title={avertissement ?? (ouvertureVerrouillee ? motifOuvertureImposee(demande) : undefined)}
+        title={sansS2c ? MOTIF_SANS_DEMANDE_S2C : (avertissement ?? (ouvertureVerrouillee ? motifOuvertureImposee(demande) : undefined))}
         onClick={() => {
           if (nonEditable || enEdition) return;
           if (estDim && onEditerDimensions) onEditerDimensions(demande);
@@ -808,7 +813,9 @@ export default function DemandesTable({
           />
         ) : (
           <>
-            {champ === "affaire"
+            {sansS2c
+              ? "—"
+              : champ === "affaire"
               ? morceauxAffaire(String(valeurAffichee)).map((m, i) => (
                   <Fragment key={i}>
                     {i > 0 && <wbr />}
@@ -1307,7 +1314,8 @@ function SousLigneCaisse({
     const estDate = CHAMPS_DATE_SOUS_LIGNE.has(champSousLigne);
     const verrouille = CHAMPS_VERROUILLES_SOUS_LIGNE.has(champSousLigne);
     const ouvertureVerrouillee = champSousLigne === "type_ouverture" && ouvertureImposee(caisse) !== null;
-    const editable = !readOnly && !verrouille && !ouvertureVerrouillee;
+    const sansS2c = champSousLigne === "date_demandee_s2c" && sansDemandeS2c(caisse, mere.affaire);
+    const editable = !readOnly && !verrouille && !ouvertureVerrouillee && !sansS2c;
     const valeurBrute = caisse[champSousLigne] as string | number;
     const valeurAffichee = estDim
       ? ((valeurBrute as number) / 1000).toFixed(2)
@@ -1322,12 +1330,15 @@ function SousLigneCaisse({
       <td
         style={{
           ...style,
+          ...(sansS2c ? { color: "var(--text-faint)", background: "rgba(32, 30, 26, 0.04)" } : null),
           cursor: editable ? "text" : "default",
           padding: enEdition ? 2 : style.padding,
         }}
         className={estNombre ? "mono" : undefined}
         title={
-          verrouille
+          sansS2c
+            ? MOTIF_SANS_DEMANDE_S2C
+            : verrouille
             ? "Repris de la demande — non modifiable ici"
             : ouvertureVerrouillee
               ? ouvertureChangee
@@ -1388,7 +1399,7 @@ function SousLigneCaisse({
           />
         ) : (
           <>
-            {valeurAffichee || "—"}
+            {sansS2c ? "—" : valeurAffichee || "—"}
             {avertissementMesures4C && <AvertissementBadge texte={avertissementMesures4C} rouge />}
             {ouvertureVerrouillee && ouvertureChangee && <AvertissementBadge texte={ALERTE_OUVERTURE_DIFFERENTE} />}
           </>

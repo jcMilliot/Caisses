@@ -6,6 +6,8 @@ export interface FeuilleExportControle {
   nom: string;
   entetes: string[];
   lignes: (string | number)[][];
+  /** Couleur de fond par colonne (« #RRGGBB », "" = aucune). */
+  fonds?: string[];
 }
 
 export const controleDimensionApi = {

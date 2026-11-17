@@ -264,8 +264,26 @@ export function estDemandeCaisseValidee(c: DemandeCaisse, _demandeMere?: Demande
 // sans ces infos serait incomplète.
 type DemandePourCommande = Pick<
   Demande,
-  "affaire" | "longueur_mm" | "largeur_mm" | "hauteur_mm" | "quantite" | "date_demandee_s2c" | "type_ouverture"
+  | "affaire"
+  | "longueur_mm"
+  | "largeur_mm"
+  | "hauteur_mm"
+  | "quantite"
+  | "date_demandee_s2c"
+  | "type_ouverture"
+  | "caisse_stock_id"
+  | "stock"
 >;
+
+/** Caisse de stock ou de récup sur une ligne d'affaire (pas ACHSTOCK) : rien à demander à S2C
+ *  — pas de date demandée à S2C, pas d'affiche (demande de l'utilisateur, 2026-11-17). Une ligne
+ *  ACHSTOCK (caisses commandées pour le stock) reste commandée à S2C. */
+export function sansDemandeS2c(ligne: Pick<Demande, "caisse_stock_id" | "stock">, affaire: string): boolean {
+  if (affaire.trim().toUpperCase().includes("ACHSTOCK")) return false;
+  return ligne.caisse_stock_id != null || ligne.stock.trim() !== "";
+}
+
+export const MOTIF_SANS_DEMANDE_S2C = "Caisse de stock ou de récup : pas de demande à S2C.";
 
 // Libellés des champs manquants pour cette demande précise — pour un message d'alerte qui dit
 // exactement ce qui ne va pas, plutôt que de lister toutes les conditions possibles à chaque
@@ -277,7 +295,7 @@ export function champsManquantsPourCommande(d: DemandePourCommande): string[] {
   if (d.largeur_mm <= 0) manquants.push("Largeur");
   if (d.hauteur_mm <= 0) manquants.push("Hauteur");
   if (d.quantite <= 0) manquants.push("Qté");
-  if (d.date_demandee_s2c.trim() === "") manquants.push("Date demandée à S2C");
+  if (d.date_demandee_s2c.trim() === "" && !sansDemandeS2c(d, d.affaire)) manquants.push("Date demandée à S2C");
   if (d.type_ouverture.trim() === "") manquants.push("Type ouverture");
   return manquants;
 }

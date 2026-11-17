@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { demandesApi } from "../data/demandes";
 import { demandeCaisseApi } from "../data/demandeCaisse";
+import { caisseStockApi } from "../data/caisseStock";
 import { useSectionLock } from "../hooks/useSectionLock";
 import LockBanner from "../components/LockBanner";
 import AfficheCaisseCard, { type AfficheCaisseCardHandle } from "../components/AfficheCaisseCard";
@@ -12,9 +13,10 @@ import {
   MENTION_SOUDURE_4C,
   demandesAchstockAEnvoyer,
   rendreBlocAchstock,
+  referenceAchstock,
 } from "../domain/affiches";
 import type { AfficheCaisse, CategorieEnvoi } from "../domain/affiches";
-import type { Demande, DemandeCaisse } from "../domain/types";
+import type { CaisseStock, Demande, DemandeCaisse } from "../domain/types";
 
 interface Props {
   trigramme: string;
@@ -25,6 +27,7 @@ export default function DemandesAchatsList({ trigramme }: Props) {
   const readOnly = lock.status !== "held";
   const [demandes, setDemandes] = useState<Demande[]>([]);
   const [demandeCaisses, setDemandeCaisses] = useState<DemandeCaisse[]>([]);
+  const [caissesStock, setCaissesStock] = useState<CaisseStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [copieGroupee, setCopieGroupee] = useState(false);
@@ -33,7 +36,8 @@ export default function DemandesAchatsList({ trigramme }: Props) {
   async function reload() {
     setLoading(true);
     try {
-      const [d, dc] = await Promise.all([demandesApi.list(), demandeCaisseApi.listAll()]);
+      const [d, dc, cs] = await Promise.all([demandesApi.list(), demandeCaisseApi.listAll(), caisseStockApi.list()]);
+      setCaissesStock(cs);
       setDemandes(d);
       setDemandeCaisses(dc);
     } finally {
@@ -161,7 +165,7 @@ export default function DemandesAchatsList({ trigramme }: Props) {
           blocsTexte.push("Ainsi que :");
         }
         auMoinsUnBloc = true;
-        const blocsAchstockTexte = achstockSelectionnees.map((d) => rendreBlocAchstock(d));
+        const blocsAchstockTexte = achstockSelectionnees.map((d) => rendreBlocAchstock(d, caissesStock));
         blocsHtml.push(blocsAchstockTexte.map((b) => `<div style="margin:0 0 14px;">${versHtml(b)}</div>`).join("\n"));
         blocsTexte.push(blocsAchstockTexte.join("\n\n"));
       }
@@ -274,7 +278,7 @@ export default function DemandesAchatsList({ trigramme }: Props) {
                     style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", cursor: "pointer", fontSize: 13 }}
                   >
                     <input type="checkbox" checked={selection.has(cle)} onChange={(e) => handleToggleSelection(cle, e.target.checked)} />
-                    <span style={{ fontWeight: 600 }}>{d.stock.trim() || "—"}</span>
+                    <span style={{ fontWeight: 600 }}>{referenceAchstock(d, caissesStock)}</span>
                     <span style={{ color: "var(--text-muted)" }}>
                       Qté {d.quantite} · {d.affaire}
                     </span>

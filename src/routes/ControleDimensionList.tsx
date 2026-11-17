@@ -19,6 +19,8 @@ import type { ControleDimension, ReglagesControle } from "../domain/types";
 
 // Pickings lus en même temps (plusieurs dizaines d'affaires possibles, intranet à ménager).
 const LECTURES_SIMULTANEES = 3;
+// Fond des valeurs de l'ERP dans l'export « À contrôler » : bleu-gris clair (2026-11-17).
+const FOND_ERP = "#DCE4EE";
 
 interface Props {
   trigramme: string;
@@ -217,34 +219,23 @@ export default function ControleDimensionList({ trigramme }: Props) {
     enregistrerXlsx(
       {
         nom: "À contrôler",
+        // Ordre et colonnes demandés le 2026-11-17 : Affaire, Article, mesures relevées (vides, à
+        // remplir sur place), puis valeurs de l'ERP sur fond bleu-gris clair. Plus de « Dispo pour
+        // ctrl » ni de « Conforme » (le filtre « Dispo pour ctrl seulement » reste appliqué).
         entetes: [
+          "Affaire",
           "Article",
-          "Affaires",
-          "Dispo pour ctrl",
+          "Longueur relevée (mm)",
+          "Largeur relevée (mm)",
+          "Hauteur relevée (mm)",
+          "Poids relevé (kg)",
           "Longueur ERP (mm)",
           "Largeur ERP (mm)",
           "Hauteur ERP (mm)",
           "Poids ERP (kg)",
-          "Conforme",
-          "Longueur relevée",
-          "Largeur relevée",
-          "Hauteur relevée",
-          "Poids relevé",
         ],
-        lignes: aControlerAffiches.map((c) => [
-          c.ar,
-          c.affaires,
-          texteDispo(dispos.get(c.ar)),
-          c.dim1_mm,
-          c.dim2_mm,
-          c.dim3_mm,
-          c.poids_kg,
-          "",
-          "",
-          "",
-          "",
-          "",
-        ]),
+        lignes: aControlerAffiches.map((c) => [c.affaires, c.ar, "", "", "", "", c.dim1_mm, c.dim2_mm, c.dim3_mm, c.poids_kg]),
+        fonds: ["", "", "", "", "", "", FOND_ERP, FOND_ERP, FOND_ERP, FOND_ERP],
       },
       `articles-a-controler-${jour()}.xlsx`,
     );
@@ -523,11 +514,6 @@ export default function ControleDimensionList({ trigramme }: Props) {
       )}
     </div>
   );
-}
-
-function texteDispo(d: DispoControle | undefined): string {
-  if (!d || d.etat === "chargement") return "";
-  return d.etat === "oui" ? "Oui" : d.etat === "non" ? "Non" : "?";
 }
 
 // Dispo pour ctrl : pièce en stock ou mouvementée dans le picking d'une des affaires listées.

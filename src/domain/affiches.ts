@@ -1,5 +1,5 @@
-import type { Demande, DemandeCaisse } from "./types";
-import { estCaisse4B, estCaisse4C, necessiteNimp15, estDemandeValidee, estDemandeCaisseValidee } from "./demandeOptions";
+import type { CaisseStock, Demande, DemandeCaisse } from "./types";
+import { estCaisse4B, estCaisse4C, necessiteNimp15, estDemandeValidee, estDemandeCaisseValidee, sansDemandeS2c } from "./demandeOptions";
 import { dateIsoVersAffichage } from "./dates";
 
 export interface AfficheCaisse {
@@ -77,7 +77,8 @@ export function construireAffiches(demandes: Demande[], demandeCaisses: DemandeC
   for (const d of demandes) {
     if (estDemandeAchstock(d)) continue;
 
-    if (d.ok_pour_passer_cde && !estDemandeValidee(d)) {
+    // Caisse de stock / récup : rien à commander à S2C, pas d'affiche (2026-11-17).
+    if (d.ok_pour_passer_cde && !estDemandeValidee(d) && !sansDemandeS2c(d, d.affaire)) {
       affiches.push({
         cle: `demande:${d.id}`,
         demandeId: d.id,
@@ -99,7 +100,7 @@ export function construireAffiches(demandes: Demande[], demandeCaisses: DemandeC
     // commandée », indépendante de la mère (qui peut être commandée, voire livrée, avant elle).
     for (const sc of demandeCaisses) {
       if (sc.demande_id !== d.id) continue;
-      if (!sc.ok_pour_passer_cde || estDemandeCaisseValidee(sc)) continue;
+      if (!sc.ok_pour_passer_cde || estDemandeCaisseValidee(sc) || sansDemandeS2c(sc, d.affaire)) continue;
       affiches.push({
         cle: `demande_caisse:${sc.id}`,
         demandeId: d.id,
@@ -249,9 +250,17 @@ export function demandesAchstockAEnvoyer(demandes: Demande[]): Demande[] {
   return demandes.filter((d) => d.ok_pour_passer_cde && !estDemandeValidee(d) && estDemandeAchstock(d));
 }
 
-export function rendreBlocAchstock(demande: Demande): string {
+/** Référence de la caisse commandée pour le stock : caisse choisie dans le menu Stock, à défaut
+ *  l'ancien texte de la colonne `stock` (lignes reprises de l'Excel). Avant le 2026-11-17, seul
+ *  le texte était lu : une ligne créée avec le menu Stock affichait « — ». */
+export function referenceAchstock(demande: Demande, caissesStock: Pick<CaisseStock, "id" | "nom">[]): string {
+  const liee = demande.caisse_stock_id != null ? caissesStock.find((c) => c.id === demande.caisse_stock_id) : undefined;
+  return liee?.nom ?? (demande.stock.trim() || "—");
+}
+
+export function rendreBlocAchstock(demande: Demande, caissesStock: Pick<CaisseStock, "id" | "nom">[]): string {
   return [
-    demande.stock.trim() || "—",
+    referenceAchstock(demande, caissesStock),
     `Qté : ${demande.quantite}`,
     `Affaire : ${demande.affaire}`,
     `Délais : ${dateIsoVersAffichage(demande.date_demandee_s2c) || demande.date_demandee_s2c || "—"}`,

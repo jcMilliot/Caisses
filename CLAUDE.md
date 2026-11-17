@@ -2637,6 +2637,32 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   workflow GitHub). Soumission Microsoft Defender à faire dès publication si l'installeur est
   bloqué.
 
+### 2026-11-17 — Caisse de stock / récup sans demande à S2C ; export « À contrôler » réordonné
+
+- **Demande de l'utilisateur (Gestion des caisses)** : une ligne qui utilise une caisse de stock
+  ou de récup ne demande rien à S2C. **Décisions** : « Date demandée à S2C » grisée (« — »,
+  infobulle) et **plus exigée** pour « OK pour être commandée » ; **pas d'affiche** dans Demandes
+  d'achats ; une ligne **ACHSTOCK** (caisses commandées pour le stock) reste commandée à S2C :
+  date exigée, ligne du bloc ACHSTOCK dans la copie du mail (comportement déjà en place).
+- `demandeOptions.ts::sansDemandeS2c` (caisse liée par `caisse_stock_id` ou ancien texte `stock`,
+  hors ACHSTOCK — affaire de la mère pour une caisse détaillée), utilisé par
+  `champsManquantsPourCommande`, `construireAffiches` (mère et caisses détaillées), les cellules
+  de `DemandesTable` et le dialogue de création (champ désactivé).
+- **Bug trouvé au passage** (cf. [Bugs.md](Bugs.md)) : la ligne ACHSTOCK affichait « — » au lieu
+  de sa référence quand la caisse est choisie dans le menu Stock → `affiches.ts::referenceAchstock`.
+- **Export « À contrôler »** (demande du même jour) : colonnes Affaire, Article, Longueur /
+  Largeur / Hauteur / Poids relevés (vides), puis les 4 valeurs de l'ERP **sur fond bleu-gris
+  clair** (`#DCE4EE`, `FeuilleExport.fonds`, une couleur par colonne) ; « Dispo pour ctrl » et
+  « Conforme » retirées (le filtre « Dispo pour ctrl seulement » s'applique toujours). Couleur
+  dans l'export seulement, pas dans le tableau de l'app (lecture de l'assistant).
+- Validation : `cargo test --lib` (22, + fond par colonne), `npx tsc --noEmit`, `npx vite build`,
+  règle S2C et référence ACHSTOCK vérifiées sur 7 cas (fichier jetable). **Non vu à l'écran.**
+- **Release 0.23.0** (même jour, à la demande de l'utilisateur) : ce bloc. Aucune migration. Note
+  en tête de `notesMiseAJour.ts`. Validation avant tag : `cargo check`, `cargo test --lib` (22),
+  `npx tsc --noEmit`, `npx vite build`, `npm run tauri build -- --debug` (installeurs produits ;
+  signature de la mise à jour par le workflow GitHub). Soumission Microsoft Defender à faire dès
+  publication si l'installeur est bloqué.
+
 ## Prochaines étapes
 
 ### Fait
