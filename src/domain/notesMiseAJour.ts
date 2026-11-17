@@ -33,6 +33,39 @@ export const LIBELLE_RUBRIQUE: Record<GenreRubrique, { titre: string; icone: str
 
 export const NOTES_MISE_A_JOUR: NoteVersion[] = [
   {
+    version: "0.22.0",
+    date: "17/11/2026",
+    resume: "Le contrôle dimensionnel indique les pièces qu'on peut aller mesurer tout de suite.",
+    rubriques: [
+      {
+        genre: "nouveau",
+        points: [
+          {
+            icone: "📏",
+            titre: "Contrôle dimensionnel : « Dispo pour ctrl »",
+            texte:
+              "Une nouvelle colonne **« Dispo pour ctrl »** dit, pour chaque article à contrôler, si la pièce est **en stock** ou **déjà sortie** dans une des affaires listées. L'affaire où la trouver ressort **en vert**.",
+            details: [
+              "L'information est relue à chaque ouverture de la page ; le bouton **« Actualiser la dispo »** la relit à la demande.",
+              "La case **« Dispo pour ctrl seulement »** ne garde que les pièces disponibles, à l'écran comme dans l'export Excel.",
+              "Un « ? » signale une affaire dont l'information n'a pas pu être lue.",
+            ],
+          },
+        ],
+      },
+      {
+        genre: "corrige",
+        points: [
+          {
+            icone: "📄",
+            titre: "Export Excel",
+            texte: "Les nombres des exports du contrôle dimensionnel s'écrivent avec un **point** (400.5) et non plus une virgule.",
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: "0.21.1",
     date: "17/11/2026",
     resume: "Le contrôle dimensionnel n'indique plus les affaires déjà expédiées.",

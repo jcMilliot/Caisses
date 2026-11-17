@@ -15,6 +15,10 @@ export interface LignePicking {
   qte_initiale: number | null;
   // `pack_tag` si la ligne est colisée (`pack_ctrl` = 1), sinon vide.
   colis: string;
+  // `QTSTL` (quantité en stock) et `moved` (quantité mouvementée), 0 si absents — contrôle
+  // dimensionnel, colonne « Dispo pour ctrl » (2026-11-17).
+  qte_stock: number;
+  qte_mouvementee: number;
 }
 
 export interface ArticleIntranet {

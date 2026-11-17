@@ -71,3 +71,63 @@ export function repartirControles(
 export function nbAControler(lignes: ControleDimension[], reglages: ReglagesControle, maintenant: Date = new Date()): number {
   return repartirControles(lignes, reglages, maintenant).aControler.length;
 }
+
+// --- Dispo pour ctrl (2026-11-17) -----------------------------------------------------------
+// Lu en direct dans le picking de l'intranet des affaires de la colonne « Affaires » (décision
+// de l'utilisateur : pas à la mise à jour du picking, qu'on n'ouvre pas pour toutes les affaires).
+
+/** Affaires de la colonne « Affaires » (texte « A, B, C »). */
+export function affairesDe(c: Pick<ControleDimension, "affaires">): string[] {
+  return c.affaires
+    .split(",")
+    .map((a) => a.trim())
+    .filter((a) => a !== "");
+}
+
+/** Ligne du picking utile ici : AR, quantité (null = supprimée), colis, stock, mouvement. */
+export interface LigneStockPicking {
+  ar: string;
+  quantite: number | null;
+  colis: string;
+  qte_stock: number;
+  qte_mouvementee: number;
+}
+
+/** AR d'une affaire disponibles pour un contrôle : ligne présente, pas colisée, en stock ou
+ *  mouvementée (quantité > 0). AR en majuscules. */
+export function arsDisponibles(picking: LigneStockPicking[]): Set<string> {
+  const r = new Set<string>();
+  for (const l of picking) {
+    if (l.quantite === null || l.colis.trim() !== "") continue;
+    if (l.qte_stock > 0 || l.qte_mouvementee > 0) r.add(l.ar.trim().toUpperCase());
+  }
+  return r;
+}
+
+export type EtatPicking = { etat: "chargement" } | { etat: "ok"; dispos: Set<string> } | { etat: "erreur"; message: string };
+
+export interface DispoControle {
+  /** "oui" : dispo dans au moins une affaire ; "non" : nulle part (ou aucune affaire) ;
+   *  "inconnu" : pas de réponse exploitable ; "chargement" : picking pas encore lu. */
+  etat: "oui" | "non" | "inconnu" | "chargement";
+  /** Affaires où la pièce est dispo. */
+  affaires: string[];
+}
+
+export function dispoControle(c: Pick<ControleDimension, "ar" | "affaires">, pickings: Map<string, EtatPicking>): DispoControle {
+  const affaires = affairesDe(c);
+  if (affaires.length === 0) return { etat: "non", affaires: [] };
+  const ar = c.ar.trim().toUpperCase();
+  const dispo: string[] = [];
+  let enCours = false;
+  let erreur = false;
+  for (const a of affaires) {
+    const p = pickings.get(a.toUpperCase());
+    if (!p || p.etat === "chargement") enCours = true;
+    else if (p.etat === "erreur") erreur = true;
+    else if (p.dispos.has(ar)) dispo.push(a);
+  }
+  if (dispo.length > 0) return { etat: "oui", affaires: dispo };
+  if (enCours) return { etat: "chargement", affaires: [] };
+  return { etat: erreur ? "inconnu" : "non", affaires: [] };
+}

@@ -2608,6 +2608,35 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   (installeurs produits ; signature de la mise à jour faite par le workflow GitHub). Soumission
   Microsoft Defender à faire dès publication si l'installeur est bloqué.
 
+### 2026-11-17 — Contrôle dimensionnel : colonne « Dispo pour ctrl », décimales à point
+
+- **Demande de l'utilisateur** : une colonne « Dispo pour ctrl » dans « À contrôler », qui regarde
+  dans le picking des affaires de la colonne « Affaires » si la pièce est **en stock** (`QTSTL`)
+  ou **mouvementée** (`moved`), nombres (clés fournies par l'utilisateur, notées dans
+  `docs/prive/intranet-api.md`). **Décisions** : oui si dispo dans au moins une affaire ; non si
+  aucune affaire listée ou ni stock ni mouvement ; affaires dispo mises en évidence + filtre
+  « dispo seulement » ; **lecture en direct à l'ouverture de la page** (option B : on n'ouvre pas
+  toutes les affaires de Simulations pour mettre à jour leur picking), + « Actualiser la dispo ».
+- **Choix de l'assistant** : dispo = ligne du picking présente (`QTARF` non nul), **non colisée**,
+  `QTSTL` > 0 ou `moved` > 0 ; seules les affaires des articles **à contrôler** sont interrogées,
+  3 lectures à la fois ; picking illisible → « ? » + texte orange (« oui » reste possible grâce à
+  une autre affaire) ; colonne « Dispo pour ctrl » aussi dans l'export « À contrôler » ;
+  rien n'est stocké en base. `LignePicking` (Rust et TS) porte `qte_stock` / `qte_mouvementee`
+  (0 si absents) ; logique dans `domain/controleDimension.ts` (`arsDisponibles`,
+  `dispoControle`).
+- **Décimales de l'export Excel** (retour du même jour) : nombres écrits **en texte avec un point**
+  (`400.5`, 3 décimales au plus, `controle_dimension.rs::nombre_avec_point`) — un vrai nombre
+  s'affichait « 400,5 » dans un Excel en français. Vaut pour les deux exports.
+- Validation : `cargo test --lib` (22, + lecture de `QTSTL` / `moved`, format des nombres),
+  `npx tsc --noEmit`, `npx vite build`, `arsDisponibles` / `dispoControle` vérifiés sur 7 cas
+  (fichier jetable). **Non testé contre le vrai intranet ni vu à l'écran.**
+- **Release 0.22.0** (même jour, à la demande de l'utilisateur) : « Dispo pour ctrl » + décimales
+  à point. Aucune migration. Note en tête de `notesMiseAJour.ts`. Validation avant tag :
+  `cargo check`, `cargo test --lib` (22), `npx tsc --noEmit`, `npx vite build`,
+  `npm run tauri build -- --debug` (installeurs produits ; signature de la mise à jour par le
+  workflow GitHub). Soumission Microsoft Defender à faire dès publication si l'installeur est
+  bloqué.
+
 ## Prochaines étapes
 
 ### Fait

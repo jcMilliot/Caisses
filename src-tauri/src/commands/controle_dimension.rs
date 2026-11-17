@@ -311,6 +311,14 @@ pub struct FeuilleExport {
     pub lignes: Vec<Vec<Cellule>>,
 }
 
+/// 610 → « 610 », 400.5 → « 400.5 », 2.1234 → « 2.123 » (3 décimales au plus, zéros inutiles
+/// retirés, toujours un point).
+fn nombre_avec_point(n: f64) -> String {
+    let t = format!("{n:.3}");
+    let t = t.trim_end_matches('0').trim_end_matches('.');
+    if t == "-0" { "0".to_string() } else { t.to_string() }
+}
+
 fn ecrire_xlsx(chemin: &std::path::Path, feuille: &FeuilleExport) -> Result<(), String> {
     use rust_xlsxwriter::{Format, FormatBorder, Workbook};
     let err = |e: rust_xlsxwriter::XlsxError| e.to_string();
@@ -329,9 +337,12 @@ fn ecrire_xlsx(chemin: &std::path::Path, feuille: &FeuilleExport) -> Result<(), 
         for (c, cellule) in ligne.iter().enumerate() {
             let col = c as u16;
             let longueur = match cellule {
+                // Nombres écrits en texte avec un point décimal (demande de l'utilisateur,
+                // 2026-11-17 : un vrai nombre s'affiche « 400,5 » dans un Excel en français).
                 Cellule::Nombre(n) => {
-                    ws.write_number_with_format(r, col, *n, &cadre).map_err(err)?;
-                    n.to_string().len()
+                    let t = nombre_avec_point(*n);
+                    ws.write_string_with_format(r, col, &t, &cadre).map_err(err)?;
+                    t.len()
                 }
                 Cellule::Texte(t) => {
                     ws.write_string_with_format(r, col, t, &cadre).map_err(err)?;
@@ -448,6 +459,10 @@ mod tests {
         assert!(matches!(feuille.lignes[0][1], Cellule::Nombre(n) if n == 610.0));
         assert!(matches!(&feuille.lignes[0][2], Cellule::Texte(t) if t.is_empty()));
         ecrire_xlsx(&fichier, &feuille).unwrap();
+        assert_eq!(nombre_avec_point(610.0), "610");
+        assert_eq!(nombre_avec_point(400.5), "400.5");
+        assert_eq!(nombre_avec_point(2.12345), "2.123");
+        assert_eq!(nombre_avec_point(0.0), "0");
         assert!(fichier.metadata().unwrap().len() > 0);
 
         drop(conn);

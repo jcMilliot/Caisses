@@ -1,11 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { controleDimensionApi, type FeuilleExportControle } from "../data/controleDimension";
 import { confirmerAction } from "../data/confirm";
 import { useSectionLock } from "../hooks/useSectionLock";
 import LockBanner from "../components/LockBanner";
 import { formaterHorodatage } from "../domain/dates";
-import { etatControle, prochainControle, repartirControles } from "../domain/controleDimension";
+import {
+  affairesDe,
+  arsDisponibles,
+  dispoControle,
+  etatControle,
+  prochainControle,
+  repartirControles,
+  type DispoControle,
+  type EtatPicking,
+} from "../domain/controleDimension";
+import { intranetApi } from "../data/intranet";
 import type { ControleDimension, ReglagesControle } from "../domain/types";
+
+// Pickings lus en même temps (plusieurs dizaines d'affaires possibles, intranet à ménager).
+const LECTURES_SIMULTANEES = 3;
 
 interface Props {
   trigramme: string;
@@ -41,6 +54,11 @@ export default function ControleDimensionList({ trigramme }: Props) {
   const [mesures, setMesures] = useState<ControleDimension | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; texte: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  // Picking de l'intranet de chaque affaire de la colonne « Affaires » (clé : nom en majuscules),
+  // lu à l'ouverture de la page et par « Actualiser » (décision de l'utilisateur, 2026-11-17).
+  const [pickings, setPickings] = useState<Map<string, EtatPicking>>(new Map());
+  const [actualisation, setActualisation] = useState(0);
+  const [dispoSeulement, setDispoSeulement] = useState(false);
 
   async function reload() {
     const [l, r] = await Promise.all([controleDimensionApi.list(), controleDimensionApi.getReglages()]);
@@ -77,7 +95,64 @@ export default function ControleDimensionList({ trigramme }: Props) {
       filtreCorriges === "toutes" ? true : filtreCorriges === "a_reporter" ? !c.erp_valide_le : !!c.erp_valide_le,
     ),
   );
-  const aControlerAffiches = filtrer(listes.aControler);
+  // Affaires à interroger : celles des articles à contrôler.
+  const affairesAControler = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of listes.aControler) for (const a of affairesDe(c)) m.set(a.toUpperCase(), a);
+    return [...m.entries()];
+  }, [listes.aControler]);
+
+  // Une lecture lancée va jusqu'au bout même si la liste change entre-temps (sinon l'affaire
+  // resterait « en cours ») ; seul le départ de la page l'interrompt.
+  const monteRef = useRef(true);
+  useEffect(() => {
+    monteRef.current = true;
+    return () => {
+      monteRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    // Seulement les affaires pas encore lues (« Actualiser » vide la liste d'abord).
+    const aLire = affairesAControler.filter(([cle]) => !pickings.has(cle));
+    if (aLire.length === 0) return;
+    setPickings((p) => {
+      const n = new Map(p);
+      for (const [cle] of aLire) n.set(cle, { etat: "chargement" });
+      return n;
+    });
+    const file = [...aLire];
+    const lire = async () => {
+      for (let suivant = file.shift(); suivant && monteRef.current; suivant = file.shift()) {
+        const [cle, nom] = suivant;
+        let etat: EtatPicking;
+        try {
+          etat = { etat: "ok", dispos: arsDisponibles(await intranetApi.fetchPicking(nom)) };
+        } catch (e) {
+          etat = { etat: "erreur", message: String(e) };
+        }
+        if (monteRef.current) setPickings((p) => new Map(p).set(cle, etat));
+      }
+    };
+    for (let i = 0; i < LECTURES_SIMULTANEES; i++) void lire();
+    // `pickings` lu seulement pour ne pas relire ce qui l'est déjà.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [affairesAControler, actualisation]);
+
+  function actualiserDispo() {
+    setPickings(new Map());
+    setActualisation((n) => n + 1);
+  }
+
+  const dispos = useMemo(() => {
+    const m = new Map<string, DispoControle>();
+    for (const c of listes.aControler) m.set(c.ar, dispoControle(c, pickings));
+    return m;
+  }, [listes.aControler, pickings]);
+  const pickingsEnCours = [...pickings.values()].filter((p) => p.etat === "chargement").length;
+  const pickingsEnErreur = affairesAControler.filter(([cle]) => pickings.get(cle)?.etat === "erreur");
+
+  const aControlerAffiches = filtrer(listes.aControler).filter((c) => !dispoSeulement || dispos.get(c.ar)?.etat === "oui");
   const selectionnables = corrigesAffiches.filter((c) => !c.erp_valide_le);
   const selectionVisible = selectionnables.filter((c) => selection.has(c.ar));
 
@@ -145,6 +220,7 @@ export default function ControleDimensionList({ trigramme }: Props) {
         entetes: [
           "Article",
           "Affaires",
+          "Dispo pour ctrl",
           "Longueur ERP (mm)",
           "Largeur ERP (mm)",
           "Hauteur ERP (mm)",
@@ -155,7 +231,20 @@ export default function ControleDimensionList({ trigramme }: Props) {
           "Hauteur relevée",
           "Poids relevé",
         ],
-        lignes: aControlerAffiches.map((c) => [c.ar, c.affaires, c.dim1_mm, c.dim2_mm, c.dim3_mm, c.poids_kg, "", "", "", "", ""]),
+        lignes: aControlerAffiches.map((c) => [
+          c.ar,
+          c.affaires,
+          texteDispo(dispos.get(c.ar)),
+          c.dim1_mm,
+          c.dim2_mm,
+          c.dim3_mm,
+          c.poids_kg,
+          "",
+          "",
+          "",
+          "",
+          "",
+        ]),
       },
       `articles-a-controler-${jour()}.xlsx`,
     );
@@ -273,6 +362,22 @@ export default function ControleDimensionList({ trigramme }: Props) {
           </>
         )}
         {onglet === "a_controler" && (
+          <>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <input type="checkbox" checked={dispoSeulement} onChange={(e) => setDispoSeulement(e.target.checked)} />
+              Dispo pour ctrl seulement
+            </label>
+            <button
+              className="btn btn-sm"
+              disabled={pickingsEnCours > 0 || affairesAControler.length === 0}
+              title="Relire le picking de l'intranet des affaires listées"
+              onClick={actualiserDispo}
+            >
+              {pickingsEnCours > 0 ? `Lecture des pickings… (${pickingsEnCours})` : "Actualiser la dispo"}
+            </button>
+          </>
+        )}
+        {onglet === "a_controler" && (
           <button
             className="btn"
             style={{ marginLeft: "auto" }}
@@ -285,16 +390,29 @@ export default function ControleDimensionList({ trigramme }: Props) {
         )}
       </div>
 
+      {onglet === "a_controler" && pickingsEnErreur.length > 0 && pickingsEnCours === 0 && (
+        <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--warn-text)" }}>
+          Picking illisible pour {pickingsEnErreur.map(([, nom]) => nom).join(", ")} : dispo inconnue (
+          {(() => {
+            const p = pickings.get(pickingsEnErreur[0][0]);
+            return p?.etat === "erreur" ? p.message : "";
+          })()}
+          ).
+        </p>
+      )}
+
       {lignes === null || reglages === null ? (
         <p style={{ color: "var(--text-muted)" }}>Chargement…</p>
       ) : onglet === "a_controler" ? (
         <TableauControle
           lignes={aControlerAffiches}
-          vide="Aucun article à contrôler."
-          colonnesFin={["État", ""]}
+          vide={dispoSeulement ? "Aucun article dispo pour un contrôle." : "Aucun article à contrôler."}
+          affairesEnEvidence={(c) => dispos.get(c.ar)?.affaires ?? []}
+          colonnesFin={["Dispo pour ctrl", "État", ""]}
           cellulesFin={(c) => {
             const etat = etatControle(c, reglages.duree_mois);
             return [
+              <PastilleDispo dispo={dispos.get(c.ar)} />,
               etat === "recontrole" ? (
                 <span className="badge badge-warn" title={`Dernier contrôle le ${formaterHorodatage(c.controle_le ?? "")}`}>
                   À recontrôler
@@ -407,6 +525,33 @@ export default function ControleDimensionList({ trigramme }: Props) {
   );
 }
 
+function texteDispo(d: DispoControle | undefined): string {
+  if (!d || d.etat === "chargement") return "";
+  return d.etat === "oui" ? "Oui" : d.etat === "non" ? "Non" : "?";
+}
+
+// Dispo pour ctrl : pièce en stock ou mouvementée dans le picking d'une des affaires listées.
+function PastilleDispo({ dispo }: { dispo: DispoControle | undefined }) {
+  if (!dispo || dispo.etat === "chargement") return <span style={{ color: "var(--text-faint)" }}>…</span>;
+  if (dispo.etat === "oui")
+    return (
+      <span className="badge badge-ok" title={`En stock ou mouvementée : ${dispo.affaires.join(", ")}`}>
+        Oui
+      </span>
+    );
+  if (dispo.etat === "non")
+    return (
+      <span className="badge badge-muted" title="Ni en stock ni mouvementée dans les affaires listées">
+        Non
+      </span>
+    );
+  return (
+    <span className="badge badge-warn" title="Picking de l'intranet illisible">
+      ?
+    </span>
+  );
+}
+
 function fmtMm(n: number): string {
   return n.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
 }
@@ -430,9 +575,12 @@ function TableauControle({
   cellulesFin,
   mesuresCorrigees,
   selection,
+  affairesEnEvidence,
 }: {
   lignes: ControleDimension[];
   vide: string;
+  /** Affaires à faire ressortir dans la colonne « Affaires » (pièce dispo pour un contrôle). */
+  affairesEnEvidence?: (c: ControleDimension) => string[];
   colonnesFin: string[];
   cellulesFin: (c: ControleDimension) => React.ReactNode[];
   /** Affiche « valeur de l'ERP → valeur relevée » quand elles diffèrent. */
@@ -498,7 +646,24 @@ function TableauControle({
                 </td>
               )}
               <td style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{c.ar}</td>
-              <td style={{ fontSize: 12.5, color: "var(--text-muted)", maxWidth: 260 }}>{c.affaires || "—"}</td>
+              <td style={{ fontSize: 12.5, color: "var(--text-muted)", maxWidth: 260 }}>
+                {affairesDe(c).length === 0
+                  ? "—"
+                  : affairesDe(c).map((a, i) => {
+                      const dispo = affairesEnEvidence?.(c).includes(a);
+                      return (
+                        <span key={a}>
+                          {i > 0 && ", "}
+                          <span
+                            style={dispo ? { color: "var(--ok-text)", fontWeight: 700 } : undefined}
+                            title={dispo ? "Pièce en stock ou mouvementée dans cette affaire" : undefined}
+                          >
+                            {a}
+                          </span>
+                        </span>
+                      );
+                    })}
+              </td>
               <td className="mono" style={{ textAlign: "right" }}>{valeur(c.dim1_mm, c.corr_dim1_mm, fmtMm)}</td>
               <td className="mono" style={{ textAlign: "right" }}>{valeur(c.dim2_mm, c.corr_dim2_mm, fmtMm)}</td>
               <td className="mono" style={{ textAlign: "right" }}>{valeur(c.dim3_mm, c.corr_dim3_mm, fmtMm)}</td>

@@ -312,6 +312,10 @@ pub struct LignePicking {
     pub qte_initiale: Option<i64>,
     /// `pack_tag` si la ligne est colisée (`pack_ctrl` = 1), sinon vide.
     pub colis: String,
+    /// `QTSTL` — quantité en stock (2026-11-17, contrôle dimensionnel « Dispo pour ctrl »).
+    pub qte_stock: f64,
+    /// `moved` — quantité mouvementée (idem).
+    pub qte_mouvementee: f64,
 }
 
 fn nombre(v: Option<&Value>) -> Option<f64> {
@@ -349,6 +353,8 @@ fn lire_ligne(l: &Value) -> LignePicking {
         // `pack_ctrl` (nombre) : 0 = non colisé, 1 = colisé ; `pack_tag` (texte, ex. "2") :
         // lettre = caisse, chiffre = colis — 2026-10-07 / 14.
         colis: if l.get("pack_ctrl").and_then(Value::as_i64) == Some(1) { texte(l.get("pack_tag")) } else { String::new() },
+        qte_stock: nombre(l.get("QTSTL")).unwrap_or(0.0),
+        qte_mouvementee: nombre(l.get("moved")).unwrap_or(0.0),
     }
 }
 
@@ -709,6 +715,11 @@ mod tests {
         let p = lire_ligne(&supprimee);
         assert_eq!(p.quantite, None);
         assert_eq!(p.normm, None);
+        assert_eq!((p.qte_stock, p.qte_mouvementee), (0.0, 0.0));
+        // Stock / mouvement (contrôle dimensionnel) : nombres, texte accepté aussi.
+        let stock: Value = serde_json::from_str(r#"{"ARAVF":"AR_S","QTSTL":3,"moved":"1.000"}"#).unwrap();
+        let p = lire_ligne(&stock);
+        assert_eq!((p.qte_stock, p.qte_mouvementee), (3.0, 1.0));
     }
 
     #[test]
