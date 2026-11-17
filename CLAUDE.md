@@ -2590,6 +2590,24 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   `npx vite build`, `npm run tauri build -- --debug` (dossier de compilation à part).
   Soumission Microsoft Defender à faire dès publication si l'installeur est bloqué.
 
+### 2026-11-17 — Contrôle dimensionnel : affaires expédiées retirées de la colonne « Affaires »
+
+- **Retour de l'utilisateur** après publication de la 0.21.0 : la colonne « Affaires » listait des
+  affaires déjà expédiées (pièce partie, impossible à contrôler).
+- `controle_dimension.rs::requete_lister` : une affaire n'est plus citée si **toutes ses lignes de
+  Gestion des caisses sont livrées** (mère et caisses détaillées, même règle que
+  `estDemandeValidee` / `estDemandeCaisseValidee`, nom comparé trim + casse), ni si la pièce est
+  **rangée dans une caisse liée à une ligne livrée** (envoi en partiel). Affaire sans ligne de
+  Gestion des caisses : toujours citée. Lecture de l'assistant de « dans affaire » = la colonne,
+  à confirmer. Export « À contrôler » concerné aussi (même donnée).
+- Validation : `cargo test --lib` (22, + affaire expédiée / caisse livrée / envoi partiel / sans
+  ligne). **Non vu à l'écran.**
+- **Release 0.21.1** (même jour, à la demande de l'utilisateur) : ce correctif seul, aucune
+  migration, note en tête de `notesMiseAJour.ts`. Validation avant tag : `cargo check`,
+  `cargo test --lib` (22), `npx tsc --noEmit`, `npx vite build`, `npm run tauri build -- --debug`
+  (installeurs produits ; signature de la mise à jour faite par le workflow GitHub). Soumission
+  Microsoft Defender à faire dès publication si l'installeur est bloqué.
+
 ## Prochaines étapes
 
 ### Fait

@@ -26,7 +26,8 @@ corrections dans l'ERP (export Excel, validation une à une ou par sélection).
   validité ; dimensions **et** poids corrigeables ; **les articles de Simulations ne sont pas
   modifiés** — la correction passe par l'ERP, et la mise à jour du picking reprend les bonnes
   valeurs ; export Excel = Article, Longueur, Largeur, Hauteur, Poids (valeurs relevées) ;
-  colonne « Affaires » = affaires où la pièce **n'est pas colisée** (on ne rouvre pas un colis
+  colonne « Affaires » = affaires où la pièce **n'est pas colisée**, ni rangée dans une caisse
+  déjà livrée, ni dans une affaire entièrement expédiée (2026-11-17) (on ne rouvre pas un colis
   pour contrôler) — une pièce colisée partout reste à contrôler, sans nom d'affaire, jusqu'à sa
   prochaine réception.
 - Choix de l'assistant : mesures identiques à l'ERP au « Corriger » = simple validation ; la

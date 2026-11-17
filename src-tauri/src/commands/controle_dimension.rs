@@ -79,19 +79,44 @@ pub(crate) fn enregistrer_articles(conn: &Connection, articles: &[ArticleVu]) ->
     Ok(())
 }
 
+// Ligne livrée / rapatriée (même règle que `estDemandeValidee` / `estDemandeCaisseValidee` :
+// une sous-caisse n'est livrée que par sa propre observation depuis 0050).
+const DEMANDE_LIVREE: &str = "(COALESCE(d.validee, 0) = 1 OR lower(COALESCE(d.observations, '')) LIKE '%livré%' OR lower(COALESCE(d.observations, '')) LIKE '%livre%'
+     OR lower(COALESCE(d.observations, '')) LIKE '%rapatrié%' OR lower(COALESCE(d.observations, '')) LIKE '%rapatrie%')";
+const SOUS_CAISSE_LIVREE: &str = "(lower(COALESCE(dc.observations, '')) LIKE '%livré%' OR lower(COALESCE(dc.observations, '')) LIKE '%livre%'
+     OR lower(COALESCE(dc.observations, '')) LIKE '%rapatrié%' OR lower(COALESCE(dc.observations, '')) LIKE '%rapatrie%')";
+
+/// Affaires où la pièce est encore à portée de main (2026-11-16 / 17) : ligne non supprimée, pas
+/// colisée, pas rangée dans une caisse déjà livrée (envoi en partiel), et affaire pas entièrement
+/// expédiée (au moins une ligne de Gestion des caisses de ce nom, toutes livrées).
+fn requete_lister() -> String {
+    format!(
+        "SELECT c.ar, c.dim1_mm, c.dim2_mm, c.dim3_mm, c.poids_kg, c.ajoute_le, c.controle_le, c.controle_par,
+                c.corrige, c.corr_dim1_mm, c.corr_dim2_mm, c.corr_dim3_mm, c.corr_poids_kg, c.erp_valide_le,
+                c.erp_valide_par,
+                COALESCE((SELECT group_concat(nom, ', ') FROM (
+                    SELECT DISTINCT f.nom FROM article a JOIN affaire f ON f.id = a.affaire_id
+                    WHERE upper(trim(a.ar)) = c.ar AND a.supprime_intranet = 0 AND trim(COALESCE(a.colis, '')) = ''
+                      AND NOT EXISTS (
+                          SELECT 1 FROM caisse k
+                          LEFT JOIN demande d ON d.id = k.demande_id
+                          LEFT JOIN demande_caisse dc ON dc.id = k.demande_caisse_id
+                          WHERE k.id = a.caisse_id
+                            AND ((k.demande_caisse_id IS NOT NULL AND {SOUS_CAISSE_LIVREE})
+                                 OR (k.demande_caisse_id IS NULL AND k.demande_id IS NOT NULL AND {DEMANDE_LIVREE})))
+                      AND NOT (
+                          EXISTS (SELECT 1 FROM demande d WHERE lower(trim(d.affaire)) = lower(trim(f.nom)))
+                          AND NOT EXISTS (SELECT 1 FROM demande d WHERE lower(trim(d.affaire)) = lower(trim(f.nom))
+                                          AND NOT {DEMANDE_LIVREE})
+                          AND NOT EXISTS (SELECT 1 FROM demande_caisse dc JOIN demande d ON d.id = dc.demande_id
+                                          WHERE lower(trim(d.affaire)) = lower(trim(f.nom)) AND NOT {SOUS_CAISSE_LIVREE}))
+                    ORDER BY f.nom)), '')
+         FROM controle_dimension c ORDER BY c.ar"
+    )
+}
+
 fn lister(conn: &Connection) -> Result<Vec<ControleDimension>, String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT c.ar, c.dim1_mm, c.dim2_mm, c.dim3_mm, c.poids_kg, c.ajoute_le, c.controle_le, c.controle_par,
-                    c.corrige, c.corr_dim1_mm, c.corr_dim2_mm, c.corr_dim3_mm, c.corr_poids_kg, c.erp_valide_le,
-                    c.erp_valide_par,
-                    COALESCE((SELECT group_concat(nom, ', ') FROM (
-                        SELECT DISTINCT f.nom FROM article a JOIN affaire f ON f.id = a.affaire_id
-                        WHERE upper(trim(a.ar)) = c.ar AND a.supprime_intranet = 0 AND trim(COALESCE(a.colis, '')) = ''
-                        ORDER BY f.nom)), '')
-             FROM controle_dimension c ORDER BY c.ar",
-        )
-        .map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&requete_lister()).map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map([], |r| {
             Ok(ControleDimension {
@@ -425,6 +450,47 @@ mod tests {
         ecrire_xlsx(&fichier, &feuille).unwrap();
         assert!(fichier.metadata().unwrap().len() > 0);
 
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn affaires_expediees_ou_caisse_livree_masquees() {
+        let dir = std::env::temp_dir().join(format!("caisses-test-controle-aff-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let conn = crate::db::open_at(&dir);
+        conn.execute_batch(
+            "INSERT INTO affaire (id, nom) VALUES (1, 'EXPEDIEE'), (2, 'PARTIEL'), (3, 'ENCOURS'), (4, 'SANSLIGNE');
+             -- EXPEDIEE : seule ligne livrée, sans caisse détaillée en attente.
+             INSERT INTO demande (id, affaire, observations) VALUES (1, 'expediee ', 'Livré');
+             -- PARTIEL : mère livrée, une caisse détaillée encore à livrer.
+             INSERT INTO demande (id, affaire, observations) VALUES (2, 'PARTIEL', 'Livré');
+             INSERT INTO demande_caisse (id, demande_id, nom, observations) VALUES (20, 2, 'PARTIEL', '');
+             INSERT INTO demande (id, affaire, observations) VALUES (3, 'ENCOURS', '');
+             INSERT INTO caisse (id, affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm, demande_id) VALUES
+                 (10, 2, 'PARTIEL', 1000, 1000, 1000, 2);
+             INSERT INTO caisse (id, affaire_id, nom, longueur_mm, largeur_mm, hauteur_mm, demande_caisse_id) VALUES
+                 (11, 2, 'PARTIEL', 1000, 1000, 1000, 20);
+             INSERT INTO article (affaire_id, caisse_id, ar, reference, designation, dim1_mm, dim2_mm, dim3_mm, poids_unitaire_kg, quantite, ordre) VALUES
+                 (1, NULL, 'AR_A', '', '', 400, 400, 1, 1, 1, 0),
+                 (2, 10, 'AR_B', '', '', 400, 400, 1, 1, 1, 0),
+                 (2, 11, 'AR_C', '', '', 400, 400, 1, 1, 1, 1),
+                 (2, NULL, 'AR_D', '', '', 400, 400, 1, 1, 1, 2),
+                 (3, NULL, 'AR_A', '', '', 400, 400, 1, 1, 1, 0),
+                 (4, NULL, 'AR_E', '', '', 400, 400, 1, 1, 1, 0);",
+        )
+        .unwrap();
+        let vus: Vec<_> = ["AR_A", "AR_B", "AR_C", "AR_D", "AR_E"]
+            .iter()
+            .map(|ar| ArticleVu { ar, dim1_mm: 400.0, dim2_mm: 400.0, dim3_mm: 1.0, poids_kg: 1.0 })
+            .collect();
+        enregistrer_articles(&conn, &vus).unwrap();
+        let affaires = |ar: &str| lister(&conn).unwrap().into_iter().find(|c| c.ar == ar).unwrap().affaires;
+        assert_eq!(affaires("AR_A"), "ENCOURS"); // EXPEDIEE masquée
+        assert_eq!(affaires("AR_B"), ""); // dans la caisse déjà livrée
+        assert_eq!(affaires("AR_C"), "PARTIEL"); // caisse détaillée à livrer
+        assert_eq!(affaires("AR_D"), "PARTIEL"); // non rangée, affaire pas entièrement expédiée
+        assert_eq!(affaires("AR_E"), "SANSLIGNE"); // affaire sans ligne de Gestion des caisses
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
     }

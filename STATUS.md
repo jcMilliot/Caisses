@@ -2,12 +2,12 @@
 projet: Caisses
 statut: en cours
 priorite: normale
-mis_a_jour: 2026-11-16
-prochaine_etape: Publier le brouillon de la release 0.21.0 (soumission Defender si bloqué)
+mis_a_jour: 2026-11-17
+prochaine_etape: Publier le brouillon de la release 0.21.1 (soumission Defender si bloqué)
 ---
 
 ## Résumé
-Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.21.0 préparée le 2026-11-16 (brouillon à publier).
+Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.21.0 publiée le 2026-11-16.
 
 ## Reste à faire
 - [ ] Point sur la documentation utilisateur avec l'utilisateur

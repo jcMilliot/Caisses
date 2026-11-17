@@ -33,6 +33,28 @@ export const LIBELLE_RUBRIQUE: Record<GenreRubrique, { titre: string; icone: str
 
 export const NOTES_MISE_A_JOUR: NoteVersion[] = [
   {
+    version: "0.21.1",
+    date: "17/11/2026",
+    resume: "Le contrôle dimensionnel n'indique plus les affaires déjà expédiées.",
+    rubriques: [
+      {
+        genre: "corrige",
+        points: [
+          {
+            icone: "📏",
+            titre: "Contrôle dimensionnel : où trouver la pièce",
+            texte:
+              "La colonne **« Affaires »** ne cite plus que les affaires où la pièce est encore là : plus d'affaire **déjà expédiée**, ni de pièce rangée dans une caisse **déjà livrée**.",
+            details: [
+              "Si une affaire part en plusieurs fois, elle reste indiquée tant qu'une caisse est encore à livrer.",
+              "Une pièce qui n'est plus nulle part reste dans la liste à contrôler, sans affaire : on attend sa prochaine arrivée.",
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: "0.21.0",
     date: "16/11/2026",
     resume: "Un nouvel outil pour vérifier les mesures des grands articles, et l'ajout d'une caisse après une première expédition.",
