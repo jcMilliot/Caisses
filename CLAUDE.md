@@ -2712,6 +2712,14 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   récup sans demande à S2C, lecture du picking en direct, articles décolisés libérés). Plus de
   souci avec USACM109 (réponse « sans picking » non revue, rien à adapter pour l'instant).
 
+### 2026-11-19 — Demandes d'achats : affiche visible à travers la barre de navigation
+
+- Retour de l'utilisateur : une affiche qui défile au-dessus du titre collant réapparaissait en
+  partie. Cause et correctif : cf. [Bugs.md](Bugs.md) (barre de navigation translucide, fond du
+  bandeau prolongé dessous par un `boxShadow`).
+- Idée notée le même jour : conditionnement des AR (cf. « À réfléchir plus tard »).
+- Validation : `npx tsc --noEmit`, `npx vite build`. Validé par l'utilisateur le même jour.
+
 ## Prochaines étapes
 
 ### Fait
@@ -3381,6 +3389,17 @@ bien celui souhaité, aucun changement de code nécessaire.
 
 ### À réfléchir plus tard
 
+- **Conditionnement des AR** (idée de l'utilisateur du 2026-11-19, **rien de développé**) :
+  information « conditionnement » par AR — **Boîte**, **Sachet** ou **sans**. Pour un sachet,
+  saisir des **dimensions « hors sachet »** (la pièce elle-même), qui **priment** sur les
+  dimensions de l'article pour le calcul du volume. Pallierait le cas des pièces en sachet dont
+  on a relevé les dimensions du sachet (cf. « Accepter » de l'alerte « ligne plus volumineuse que
+  le carton », 2026-10-27). À trancher avant de coder : conditionnement porté par l'AR (comme le
+  contrôle dimensionnel, valable pour toutes les affaires) ou par la ligne d'une affaire ; saisi
+  où (Simulations, Contrôle dimensionnel) ; « Boîte » change-t-il quelque chose au calcul ; les
+  dimensions hors sachet valent-elles aussi pour l'alerte « ne rentre pas dans le carton » et
+  pour « Dim. max articles » / la suggestion de caisse, ou pour le volume seulement ; effet sur
+  l'acceptation de volume existante (`piece_acceptee_volume`).
 - **API de l'intranet** — **import des articles codé le 2026-10-07**, **connexion à Caisses par
   le compte intranet codée le 2026-10-08** (cf. journal). **Détails (adresse,
   champs, réponses, décisions) dans `docs/prive/intranet-api.md`, fichier local non versionné**

@@ -56,6 +56,11 @@ const A_VERIFIER: Point[] = [
 
 const A_DECIDER: Point[] = [
   {
+    titre: "Conditionnement des articles",
+    detail:
+      "Idée : indiquer pour chaque article s'il est livré en boîte, en sachet ou sans conditionnement. Pour un sachet, saisir les dimensions de la pièce hors sachet, qui serviraient au calcul du volume à la place des dimensions de l'article.",
+  },
+  {
     titre: "Aide au dimensionnement des caisses",
     detail:
       "Idée : proposer des dimensions de caisse à partir des plus grands articles, avec une marge. Marge à définir (en cm ou en %, différente pour les caisses 4C ?).",

@@ -10,6 +10,18 @@ racine, le fix, et un lien vers l'entrée de journal correspondante pour le dét
 
 ---
 
+## Demandes d'achats : une affiche qui défile réapparaît au-dessus du titre collant
+
+- **Symptôme** (2026-11-19) : avec plusieurs affiches, le titre « Affiche(s) à envoyer » reste bien
+  fixe, mais une affiche qui passe au-dessus de lui redevient en partie visible.
+- **Cause** : la barre de navigation est translucide (fond à 92 % + flou, refonte visuelle) ; le
+  bandeau collant se cale juste dessous. Une affiche cachée par le bandeau (opaque) passe ensuite
+  derrière la barre et se voit à travers.
+- **Fix** (2026-11-19) : le bandeau peint son fond aussi sous la barre (`boxShadow` décalé de
+  `--nav-h` vers le haut, `DemandesAchatsList.tsx`) — la barre reste translucide ailleurs.
+- **Piège** : tout bandeau collant sous la barre de navigation a le même défaut ; reprendre ce
+  `boxShadow` si un autre écran le montre (ex. bandeau récap de Simulations).
+
 ## Contrôle dimensionnel : pièce décolisée restée sur place absente de la colonne « Affaires »
 
 - **Symptôme** (USACM109, envoi en partiel, 2026-11-17) : deux articles colisés dans la caisse A

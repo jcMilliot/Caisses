@@ -195,6 +195,9 @@ export default function DemandesAchatsList({ trigramme }: Props) {
           top: "calc(var(--nav-h) - 1px)",
           zIndex: 40,
           background: "var(--bg)",
+          // La barre de navigation est translucide : sans ce fond peint au-dessus du bandeau
+          // (sous la barre, zIndex 50), une affiche qui défile réapparaissait à travers elle.
+          boxShadow: "0 calc(-1 * var(--nav-h)) 0 var(--bg)",
         }}
       >
         <div>
