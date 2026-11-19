@@ -23,21 +23,6 @@ const A_FAIRE: Point[] = [
 
 const A_VERIFIER: Point[] = [
   {
-    titre: "Contrôle dimensionnel : lecture en direct",
-    detail:
-      "À l'ouverture de la page, l'application relit le picking de toutes les affaires en cours : les nouveaux articles apparaissent sans ouvrir chaque affaire dans Simulations, et une pièce décolisée revient avec son affaire. Le picking de USACM109 renvoie une réponse inhabituelle : relever le message affiché.",
-  },
-  {
-    titre: "Caisse de stock ou de récup : pas de demande à S2C",
-    detail:
-      "Dans Gestion des caisses, une ligne avec une caisse de stock ou de récup a sa date demandée à S2C grisée et non exigée, et ne crée plus d'affiche. Une ligne ACHSTOCK cochée apparaît dans le bloc ACHSTOCK de Demandes d'achats, avec la référence de la caisse, et dans la copie du mail.",
-  },
-  {
-    titre: "Contrôle dimensionnel : « Dispo pour ctrl »",
-    detail:
-      "À l'ouverture de la page, l'application lit le picking des affaires listées et indique si la pièce y est en stock ou a été mouvementée (affaire en vert). Vérifier quelques articles connus, le filtre « Dispo pour ctrl seulement », « Actualiser la dispo », et les nombres à point dans l'export Excel.",
-  },
-  {
     titre: "Dossier de la base",
     detail:
       "Admin › Paramètres › « Dossier de la base » : noter le chemin pour les nouveaux postes. Sur un nouveau poste, coller ce chemin au premier démarrage. Un changement de dossier se fait app fermée sur les autres postes ; ils suivent à leur prochain démarrage.",

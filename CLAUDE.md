@@ -2707,6 +2707,10 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   `npx tsc --noEmit`, `npx vite build`, `npm run tauri build -- --debug` (installeurs produits ;
   signature de la mise à jour par le workflow GitHub). Soumission Microsoft Defender à faire dès
   publication si l'installeur est bloqué.
+- **2026-11-19 — validé par l'utilisateur** sur la version installée : les blocs des 0.22.0 à
+  0.24.0 (« Dispo pour ctrl », décimales à point, export réordonné et écarts, caisse de stock /
+  récup sans demande à S2C, lecture du picking en direct, articles décolisés libérés). Plus de
+  souci avec USACM109 (réponse « sans picking » non revue, rien à adapter pour l'instant).
 
 ## Prochaines étapes
 

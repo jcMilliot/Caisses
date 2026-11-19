@@ -3,17 +3,13 @@ projet: Caisses
 statut: en cours
 priorite: normale
 mis_a_jour: 2026-11-19
-prochaine_etape: Vérifier le contrôle dimensionnel en ligne sur la 0.24.0 installée (lecture en direct, écarts de l'export, réponse « sans picking » de USACM109)
+prochaine_etape: Point sur la documentation utilisateur, ou validation automatique du contrôle dimensionnel (plus tard)
 ---
 
 ## Résumé
 Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.24.0 publiée le 2026-11-17.
 
 ## Reste à faire
-- [ ] Contrôle dimensionnel : « Dispo pour ctrl », décimales à point, export réordonné avec fond ERP — à vérifier à l'écran
-- [ ] Gestion des caisses : caisse de stock / récup sans demande à S2C (date grisée, pas d'affiche) — codé le 2026-11-17, à vérifier
-- [ ] Contrôle dimensionnel : lecture du picking en direct (nouveaux AR, Affaires, dispo) — codé le 2026-11-17, à vérifier ; réponse « sans picking » de USACM109 à relever
-- [ ] Simulations : article non colisé jamais verrouillé (décolisé resté sur place) — codé le 2026-11-17, à vérifier
 - [ ] Contrôle dimensionnel : AR dont l'ERP change à l'actualisation → Validé ; retirer « Corriger » et l'onglet Dimensions corrigées (plus tard)
 - [ ] Point sur la documentation utilisateur avec l'utilisateur
 
@@ -34,6 +30,8 @@ Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier
 - [x] Contrôle dimensionnel (0.21.0, migration 0052, 2026-11-16) — validé par l'utilisateur le 2026-11-16
 - [x] Envoi en partiel : caisse détaillée créée depuis Simulations quand la mère est livrée — validé le 2026-11-16
 - [x] Envoi en partiel : article livré modifié par le picking — cas non censé arriver, rien à faire (2026-11-16)
+- [x] Contrôle dimensionnel : « Dispo pour ctrl », export réordonné avec écarts, lecture du picking en direct (0.22.0-0.24.0) — validé le 2026-11-19
+- [x] Caisse de stock / récup sans demande à S2C ; articles décolisés libérés dans Simulations (0.23.0-0.24.0) — validé le 2026-11-19
 
 ## Bloqué / points d'attention
 - Base SQLite sur un dossier réseau partagé : risque connu de corruption en écritures simultanées, atténué par le verrouillage applicatif et la sauvegarde
