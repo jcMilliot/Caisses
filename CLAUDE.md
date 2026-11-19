@@ -3256,6 +3256,15 @@ est livrée : **codée le 2026-11-16** (cf. journal).
 
 *Contrôle dimensionnel (2026-11-16)* — **validé par l'utilisateur le même jour** sur ses essais.
 
+- **À faire plus tard (demande du 2026-11-17, « quand on aura des tokens »)** : simplifier le
+  circuit de correction. Quand la page s'actualise depuis l'intranet et qu'un AR **à contrôler**
+  a des dimensions ou un poids ERP **différents** de ceux enregistrés (correction faite
+  directement dans l'ERP), le **passer directement en « Validé »** (validité comptée depuis ce
+  jour). Supprimer alors le bouton **« Corriger… »** et l'onglet **« Dimensions corrigées »**
+  (export des corrections compris). À trancher au moment de coder : un changement d'ERP sans
+  contrôle physique doit-il aussi valider ? que deviennent les corrections en attente déjà
+  saisies ? garder une trace de l'ancien → nouveau (journal) ?
+
 *Retours utilisateur 2026-10-27 — Simulations : import du picking et colisage* — mise à jour
 automatique, bouton, onglets, repère d'étapes et cote égale **faits le même jour** (cf. journal).
 Restent :

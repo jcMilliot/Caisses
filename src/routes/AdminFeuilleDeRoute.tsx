@@ -10,6 +10,11 @@ interface Point {
 
 const A_FAIRE: Point[] = [
   {
+    titre: "Contrôle dimensionnel : validation automatique",
+    detail:
+      "Quand la page relit l'intranet et qu'un article à contrôler a de nouvelles dimensions ou un nouveau poids (corrigés directement dans l'ERP), le passer tout seul en « Validé ». Le bouton « Corriger… » et l'onglet « Dimensions corrigées » disparaîtraient.",
+  },
+  {
     titre: "Documentation",
     detail:
       "Faire le point ensemble : ajouter l'import du picking depuis l'intranet (mise à jour à l'ouverture d'une affaire, lignes supprimées, numéro de besoin), les onglets Picking / Colisage en cours, et revoir la section « Récupérer les articles ».",
