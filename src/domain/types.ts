@@ -51,6 +51,18 @@ export interface Article {
   supprime_intranet: boolean;
   // 0041 — colis de l'intranet (`pack_tag` si `pack_ctrl` = 1), vide sinon.
   colis: string;
+  // Petits volumes (2026-11-23) : posé par `useAffaire` (pas stocké dans `article`) pour une pièce
+  // en sachet — dimensions de la pièce hors sachet et coefficient de volume (1 + marge sachet).
+  // Remplace les dimensions de l'ERP dans les calculs (volume, « rentre dans le carton », dim. max,
+  // suggestion) ; l'affichage et la saisie gardent celles de l'ERP.
+  hors_sachet?: HorsSachetArticle;
+}
+
+export interface HorsSachetArticle {
+  dim1_mm: number;
+  dim2_mm: number;
+  dim3_mm: number;
+  coef: number;
 }
 
 export interface NewArticle {
@@ -378,9 +390,20 @@ export interface ControleDimension {
   erp_valide_par: string;
   /** Affaires de Simulations où l'AR apparaît, séparées par « , ». */
   affaires: string;
+  /** Petits volumes (0053) : "" = pas encore traité. */
+  conditionnement: Conditionnement;
+  hs_dim1_mm: number | null;
+  hs_dim2_mm: number | null;
+  hs_dim3_mm: number | null;
+  conditionnement_le: string | null;
+  conditionnement_par: string;
 }
+
+export type Conditionnement = "" | "carton" | "sachet" | "gros_volume";
 
 export interface ReglagesControle {
   seuil_mm: number;
   duree_mois: number;
+  /** Majoration du volume d'une pièce en sachet, en %. */
+  marge_sachet_pct: number;
 }

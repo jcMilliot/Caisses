@@ -1,5 +1,5 @@
 import { call } from "./client";
-import type { ControleDimension, ReglagesControle } from "../domain/types";
+import type { Conditionnement, ControleDimension, ReglagesControle } from "../domain/types";
 import type { ArticleErp } from "../domain/controleDimension";
 
 /** Feuille Excel exportée : nombre ou texte par cellule ("" = case vide à remplir à la main). */
@@ -24,6 +24,19 @@ export const controleDimensionApi = {
   corriger: (ar: string, dim1Mm: number, dim2Mm: number, dim3Mm: number, poidsKg: number, trigramme: string) =>
     call<void>("corriger_controle_dimension", { ar, dim1Mm, dim2Mm, dim3Mm, poidsKg, trigramme }),
   validerErp: (ars: string[], trigramme: string) => call<number>("valider_erp_controle_dimension", { ars, trigramme }),
+  /** Petits volumes : "" remet à traiter ; "sachet" exige les dimensions hors sachet. */
+  setConditionnement: (ar: string, conditionnement: Conditionnement, hors: [number, number, number] | null, trigramme: string) =>
+    call<void>("set_conditionnement_controle", {
+      ar,
+      conditionnement,
+      hsDim1Mm: hors?.[0] ?? null,
+      hsDim2Mm: hors?.[1] ?? null,
+      hsDim3Mm: hors?.[2] ?? null,
+      trigramme,
+    }),
+  /** Pièces en sachet (dimensions hors sachet) et marge sachet, pour les calculs de Simulations. */
+  listHorsSachet: () =>
+    call<{ marge_sachet_pct: number; pieces: { ar: string; dim1_mm: number; dim2_mm: number; dim3_mm: number }[] }>("list_hors_sachet"),
   /** Chemin du fichier écrit, `null` si l'enregistrement est annulé. */
   exporterXlsx: (feuille: FeuilleExportControle, nomFichier: string) =>
     call<string | null>("exporter_controle_xlsx", { feuille, nomFichier }),

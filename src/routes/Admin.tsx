@@ -412,6 +412,7 @@ function ControleParametres() {
   const [actuel, setActuel] = useState<ReglagesControle | null>(null);
   const [seuil, setSeuil] = useState("");
   const [duree, setDuree] = useState("");
+  const [marge, setMarge] = useState("");
   const [message, setMessage] = useState<{ ok: boolean; texte: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -422,22 +423,26 @@ function ControleParametres() {
         setActuel(r);
         setSeuil(String(r.seuil_mm));
         setDuree(String(r.duree_mois));
+        setMarge(String(r.marge_sachet_pct));
       })
       .catch((e) => setMessage({ ok: false, texte: String(e) }));
   }, []);
 
   const s = Number(seuil.replace(",", "."));
   const d = Number(duree);
-  const valide = Number.isFinite(s) && s > 0 && Number.isInteger(d) && d >= 1 && d <= 120;
-  const modifie = actuel !== null && valide && (s !== actuel.seuil_mm || d !== actuel.duree_mois);
+  const m = Number(marge.replace(",", "."));
+  const valide =
+    Number.isFinite(s) && s > 0 && Number.isInteger(d) && d >= 1 && d <= 120 && marge.trim() !== "" && Number.isFinite(m) && m >= 0 && m <= 100;
+  const modifie =
+    actuel !== null && valide && (s !== actuel.seuil_mm || d !== actuel.duree_mois || m !== actuel.marge_sachet_pct);
 
   async function enregistrer() {
     if (!modifie) return;
     setBusy(true);
     setMessage(null);
     try {
-      await controleDimensionApi.setReglages({ seuil_mm: s, duree_mois: d });
-      setActuel({ seuil_mm: s, duree_mois: d });
+      await controleDimensionApi.setReglages({ seuil_mm: s, duree_mois: d, marge_sachet_pct: m });
+      setActuel({ seuil_mm: s, duree_mois: d, marge_sachet_pct: m });
       setMessage({ ok: true, texte: "Réglages du contrôle dimensionnel enregistrés." });
     } catch (e) {
       setMessage({ ok: false, texte: String(e) });
@@ -468,6 +473,17 @@ function ControleParametres() {
         <p style={aideStyle}>
           Un article est à contrôler quand 2 de ses 3 dimensions atteignent le seuil. Une fois validé, il revient dans la
           liste à contrôler au bout de la durée de validité.
+        </p>
+        <label style={labelStyle}>
+          <span style={libelleStyle}>Petits volumes : marge sachet</span>
+          <span style={champUniteStyle}>
+            <input className="input" type="number" min={0} max={100} value={marge} onChange={(e) => setMarge(e.target.value)} style={{ width: 90 }} />
+            <span style={uniteStyle}>%</span>
+          </span>
+        </label>
+        <p style={aideStyle}>
+          Pour une pièce en sachet, le volume est calculé avec les dimensions de la pièce hors sachet, majoré de cette marge
+          pour la place prise par le sachet.
         </p>
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button className="btn btn-primary" onClick={enregistrer} disabled={!modifie || busy}>

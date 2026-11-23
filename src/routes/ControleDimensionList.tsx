@@ -14,11 +14,13 @@ import {
   formuleEcart,
   prochainControle,
   repartirControles,
+  repartirPetitsVolumes,
+  LIBELLE_CONDITIONNEMENT,
   type DispoControle,
   type EtatPicking,
 } from "../domain/controleDimension";
 import { intranetApi } from "../data/intranet";
-import type { ControleDimension, ReglagesControle } from "../domain/types";
+import type { Conditionnement, ControleDimension, ReglagesControle } from "../domain/types";
 
 // Pickings lus en même temps (plusieurs dizaines d'affaires possibles, intranet à ménager).
 const LECTURES_SIMULTANEES = 3;
@@ -31,8 +33,31 @@ interface Props {
 
 type Onglet = "a_controler" | "valides" | "corriges";
 type FiltreCorriges = "a_reporter" | "reportees" | "toutes";
+// Deux parties (2026-11-23) : contrôles annuels (gros articles, revalidés chaque année) et petits
+// volumes (conditionnement indiqué une fois).
+type Partie = "annuels" | "petits";
+type OngletPv = "a_traiter" | "traites";
 
 const CLE_ONGLET = "caisses:onglet:controle";
+const CLE_PARTIE = "caisses:partie:controle";
+
+function lireStockage<T extends string>(cle: string, valeurs: readonly T[], defaut: T): T {
+  try {
+    const v = localStorage.getItem(cle);
+    if (v && (valeurs as readonly string[]).includes(v)) return v as T;
+  } catch {
+    /* stockage indisponible */
+  }
+  return defaut;
+}
+
+function ecrireStockage(cle: string, v: string) {
+  try {
+    localStorage.setItem(cle, v);
+  } catch {
+    /* stockage indisponible */
+  }
+}
 
 // Contrôle dimensionnel (2026-11-16, ADR 0004) : les AR des pickings dont 2 dimensions sur 3
 // dépassent le seuil de l'Admin sont à recontrôler à la main. Conforme → validé pour la durée de
@@ -44,15 +69,12 @@ export default function ControleDimensionList({ trigramme }: Props) {
   const readOnly = lock.status !== "held";
   const [lignes, setLignes] = useState<ControleDimension[] | null>(null);
   const [reglages, setReglages] = useState<ReglagesControle | null>(null);
-  const [onglet, setOnglet] = useState<Onglet>(() => {
-    try {
-      const v = localStorage.getItem(CLE_ONGLET);
-      if (v === "a_controler" || v === "valides" || v === "corriges") return v;
-    } catch {
-      /* stockage indisponible */
-    }
-    return "a_controler";
-  });
+  const [onglet, setOnglet] = useState<Onglet>(() =>
+    lireStockage<Onglet>(CLE_ONGLET, ["a_controler", "valides", "corriges"], "a_controler"),
+  );
+  const [partie, setPartie] = useState<Partie>(() => lireStockage<Partie>(CLE_PARTIE, ["annuels", "petits"], "annuels"));
+  const [ongletPv, setOngletPv] = useState<OngletPv>("a_traiter");
+  const [conditionnementDe, setConditionnementDe] = useState<{ ligne: ControleDimension; initial: Conditionnement } | null>(null);
   const [recherche, setRecherche] = useState("");
   const [filtreCorriges, setFiltreCorriges] = useState<FiltreCorriges>("a_reporter");
   const [selection, setSelection] = useState<Set<string>>(new Set());
@@ -62,6 +84,7 @@ export default function ControleDimensionList({ trigramme }: Props) {
   const [pickings, setPickings] = useState<Map<string, EtatPicking>>(new Map());
   const [actualisation, setActualisation] = useState(0);
   const [dispoSeulement, setDispoSeulement] = useState(false);
+  const [affaireDispo, setAffaireDispo] = useState("");
 
   async function reload() {
     const [l, r] = await Promise.all([controleDimensionApi.list(), controleDimensionApi.getReglages()]);
@@ -76,15 +99,21 @@ export default function ControleDimensionList({ trigramme }: Props) {
   function choisirOnglet(o: Onglet) {
     setOnglet(o);
     setSelection(new Set());
-    try {
-      localStorage.setItem(CLE_ONGLET, o);
-    } catch {
-      /* stockage indisponible */
-    }
+    ecrireStockage(CLE_ONGLET, o);
+  }
+
+  function choisirPartie(p: Partie) {
+    setPartie(p);
+    setSelection(new Set());
+    ecrireStockage(CLE_PARTIE, p);
   }
 
   const listes = useMemo(
     () => (lignes && reglages ? repartirControles(lignes, reglages) : { aControler: [], valides: [], corriges: [] }),
+    [lignes, reglages],
+  );
+  const petits = useMemo(
+    () => (lignes && reglages ? repartirPetitsVolumes(lignes, reglages) : { aTraiter: [], traites: [] }),
     [lignes, reglages],
   );
   const nbAReporter = listes.corriges.filter((c) => !c.erp_valide_le).length;
@@ -165,20 +194,45 @@ export default function ControleDimensionList({ trigramme }: Props) {
   const presences = useMemo(() => indexPresences(pickings, nomsAffaires), [pickings, nomsAffaires]);
   const dispos = useMemo(() => {
     const m = new Map<string, DispoControle>();
-    for (const c of listes.aControler) m.set(c.ar, dispoControle(c, pickings, presences));
+    for (const c of [...listes.aControler, ...petits.aTraiter]) m.set(c.ar, dispoControle(c, pickings, presences));
     return m;
-  }, [listes.aControler, pickings, presences]);
+  }, [listes.aControler, petits.aTraiter, pickings, presences]);
   const pickingsEnCours = [...pickings.values()].filter((p) => p.etat === "chargement").length;
   const pickingsEnErreur = [...nomsAffaires.entries()].filter(([cle]) => pickings.get(cle)?.etat === "erreur");
   /** Affaires affichées pour un article à contrôler (picking en direct, sinon base). */
   const affairesAffichees = (c: ControleDimension) => dispos.get(c.ar)?.affairesAffichees ?? affairesDe(c);
+
+  /** Filtre « Affaire » (2026-11-23) : seulement les pièces dispo dans l'affaire choisie. */
+  const dispoDansAffaire = (c: ControleDimension) =>
+    affaireDispo === "" || (dispos.get(c.ar)?.affaires ?? []).includes(affaireDispo);
 
   const aControlerAffiches = listes.aControler
     .filter((c) => {
       const r = recherche.trim().toUpperCase();
       return r === "" || c.ar.toUpperCase().includes(r) || affairesAffichees(c).join(", ").toUpperCase().includes(r);
     })
-    .filter((c) => !dispoSeulement || dispos.get(c.ar)?.etat === "oui");
+    .filter((c) => !dispoSeulement || dispos.get(c.ar)?.etat === "oui")
+    .filter((c) => dispoDansAffaire(c));
+  const correspond = (c: ControleDimension, affaires: string[]) => {
+    const r = recherche.trim().toUpperCase();
+    return r === "" || c.ar.toUpperCase().includes(r) || affaires.join(", ").toUpperCase().includes(r);
+  };
+  // Petits volumes à traiter : seulement les pièces des pickings en cours (on ne retrouve pas une
+  // pièce qui n'est dans aucune affaire) ; les autres attendent leur prochaine réception.
+  const pvATraiterEnCours = petits.aTraiter.filter((c) => affairesAffichees(c).length > 0);
+  const pvATraiterAffiches = pvATraiterEnCours
+    .filter((c) => correspond(c, affairesAffichees(c)))
+    .filter((c) => !dispoSeulement || dispos.get(c.ar)?.etat === "oui")
+    .filter((c) => dispoDansAffaire(c));
+  // Affaires proposées au filtre : celles où au moins une pièce de la liste en cours est dispo
+  // (en stock ou mouvementée), avec leur nombre de pièces dispo.
+  const affairesDispo = useMemo(() => {
+    const n = new Map<string, number>();
+    const liste = partie === "annuels" ? listes.aControler : petits.aTraiter;
+    for (const c of liste) for (const a of dispos.get(c.ar)?.affaires ?? []) n.set(a, (n.get(a) ?? 0) + 1);
+    return [...n.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [partie, listes.aControler, petits.aTraiter, dispos]);
+  const pvTraitesAffiches = petits.traites.filter((c) => correspond(c, affairesDe(c)));
   const selectionnables = corrigesAffiches.filter((c) => !c.erp_valide_le);
   const selectionVisible = selectionnables.filter((c) => selection.has(c.ar));
 
@@ -286,6 +340,15 @@ export default function ControleDimensionList({ trigramme }: Props) {
     );
   }
 
+  // Listes qui montrent la dispo des pièces (et relisent les pickings).
+  const listeAvecDispo = (partie === "annuels" && onglet === "a_controler") || (partie === "petits" && ongletPv === "a_traiter");
+
+  async function enregistrerConditionnement(c: ControleDimension, cond: Conditionnement, hors: [number, number, number] | null) {
+    const texte =
+      cond === "" ? `${c.ar} : remis à traiter.` : `${c.ar} : ${LIBELLE_CONDITIONNEMENT[cond].toLowerCase()} enregistré.`;
+    await action(() => controleDimensionApi.setConditionnement(c.ar, cond, hors, trigramme), texte);
+  }
+
   const ONGLETS: { id: Onglet; label: string; n: number }[] = [
     { id: "a_controler", label: "À contrôler", n: listes.aControler.length },
     { id: "valides", label: "Validés", n: listes.valides.length },
@@ -298,9 +361,11 @@ export default function ControleDimensionList({ trigramme }: Props) {
         <div>
           <h1 className="page-title">Contrôle dimensionnel</h1>
           <p className="page-subtitle">
-            {reglages
-              ? `Articles dont 2 dimensions sur 3 atteignent ${fmtMm(reglages.seuil_mm)} mm, à recontrôler à la main. Un contrôle validé reste valable ${reglages.duree_mois} mois.`
-              : "Articles à recontrôler à la main."}
+            {!reglages
+              ? "Articles à recontrôler à la main."
+              : partie === "annuels"
+                ? `Articles dont 2 dimensions sur 3 atteignent ${fmtMm(reglages.seuil_mm)} mm, à recontrôler à la main. Un contrôle validé reste valable ${reglages.duree_mois} mois.`
+                : `Articles plus petits (moins de 2 dimensions sur 3 à ${fmtMm(reglages.seuil_mm)} mm) : indiquer une fois s'ils sont livrés en carton, en sachet ou sans emballage. Pour un sachet, les dimensions de la pièce hors sachet servent aux calculs de Simulations (volume majoré de ${fmtMm(reglages.marge_sachet_pct)} %).`}
           </p>
         </div>
       </div>
@@ -335,20 +400,43 @@ export default function ControleDimensionList({ trigramme }: Props) {
         </div>
       )}
 
-      <div className="tabs" style={{ marginBottom: 16 }}>
-        {ONGLETS.map((o) => (
-          <button key={o.id} className={onglet === o.id ? "tab actif" : "tab"} onClick={() => choisirOnglet(o.id)}>
-            {o.label}
-            {o.n > 0 && (
-              <span
-                className={o.id === "a_controler" ? "badge badge-danger" : o.id === "corriges" ? "badge badge-warn" : "badge badge-muted"}
-                style={{ marginLeft: 8 }}
-              >
-                {o.n}
+      <div className="tabs" style={{ marginBottom: 14 }}>
+        {(
+          [
+            ["annuels", "Contrôles annuels", listes.aControler.length],
+            ["petits", "Petits volumes", pvATraiterEnCours.length],
+          ] as [Partie, string, number][]
+        ).map(([id, label, n]) => (
+          <button key={id} className={partie === id ? "tab actif" : "tab"} onClick={() => choisirPartie(id)}>
+            {label}
+            {n > 0 && (
+              <span className={id === "annuels" ? "badge badge-danger" : "badge badge-warn"} style={{ marginLeft: 8 }}>
+                {n}
               </span>
             )}
           </button>
         ))}
+      </div>
+
+      <div className="segmented" style={{ marginBottom: 14 }}>
+        {partie === "annuels"
+          ? ONGLETS.map((o) => (
+              <button key={o.id} className={onglet === o.id ? "actif" : undefined} onClick={() => choisirOnglet(o.id)}>
+                {o.label}
+                {o.n > 0 && ` (${o.n})`}
+              </button>
+            ))
+          : (
+              [
+                ["a_traiter", "À traiter", pvATraiterEnCours.length],
+                ["traites", "Traités", petits.traites.length],
+              ] as [OngletPv, string, number][]
+            ).map(([id, label, n]) => (
+              <button key={id} className={ongletPv === id ? "actif" : undefined} onClick={() => setOngletPv(id)}>
+                {label}
+                {n > 0 && ` (${n})`}
+              </button>
+            ))}
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", marginBottom: 12 }}>
@@ -359,7 +447,7 @@ export default function ControleDimensionList({ trigramme }: Props) {
           onChange={(e) => setRecherche(e.target.value)}
           style={{ width: 300 }}
         />
-        {onglet === "corriges" && (
+        {partie === "annuels" && onglet === "corriges" && (
           <>
             <div className="segmented">
               {(
@@ -397,12 +485,28 @@ export default function ControleDimensionList({ trigramme }: Props) {
             </span>
           </>
         )}
-        {onglet === "a_controler" && (
+        {listeAvecDispo && (
           <>
             <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
               <input type="checkbox" checked={dispoSeulement} onChange={(e) => setDispoSeulement(e.target.checked)} />
               Dispo pour ctrl seulement
             </label>
+            <select
+              value={affaireDispo}
+              onChange={(e) => setAffaireDispo(e.target.value)}
+              title="N'afficher que les pièces dispo (en stock ou mouvementées) dans cette affaire"
+              style={{ minWidth: 200 }}
+            >
+              <option value="">Toutes les affaires</option>
+              {affaireDispo !== "" && !affairesDispo.some(([a]) => a === affaireDispo) && (
+                <option value={affaireDispo}>{affaireDispo} (aucune pièce dispo)</option>
+              )}
+              {affairesDispo.map(([a, n]) => (
+                <option key={a} value={a}>
+                  {a} ({n} dispo)
+                </option>
+              ))}
+            </select>
             <button
               className="btn btn-sm"
               disabled={pickingsEnCours > 0}
@@ -413,7 +517,7 @@ export default function ControleDimensionList({ trigramme }: Props) {
             </button>
           </>
         )}
-        {onglet === "a_controler" && (
+        {partie === "annuels" && onglet === "a_controler" && (
           <button
             className="btn"
             style={{ marginLeft: "auto" }}
@@ -426,7 +530,7 @@ export default function ControleDimensionList({ trigramme }: Props) {
         )}
       </div>
 
-      {onglet === "a_controler" && pickingsEnErreur.length > 0 && pickingsEnCours === 0 && (
+      {listeAvecDispo && pickingsEnErreur.length > 0 && pickingsEnCours === 0 && (
         <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--warn-text)" }}>
           Picking illisible pour {pickingsEnErreur.map(([, nom]) => nom).join(", ")} : dispo inconnue (
           {(() => {
@@ -439,6 +543,76 @@ export default function ControleDimensionList({ trigramme }: Props) {
 
       {lignes === null || reglages === null ? (
         <p style={{ color: "var(--text-muted)" }}>Chargement…</p>
+      ) : partie === "petits" && ongletPv === "a_traiter" ? (
+        <TableauControle
+          lignes={pvATraiterAffiches}
+          vide={dispoSeulement ? "Aucun petit volume dispo à traiter." : "Aucun petit volume à traiter dans les pickings en cours."}
+          affairesEnEvidence={(c) => dispos.get(c.ar)?.affaires ?? []}
+          affairesDe={affairesAffichees}
+          colonnesFin={["Dispo pour ctrl", ""]}
+          cellulesFin={(c) => [
+            <PastilleDispo dispo={dispos.get(c.ar)} />,
+            <span style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+              <button
+                className="btn btn-sm btn-pastel-green"
+                disabled={readOnly || busy}
+                title="Pièce livrée en carton ou en boîte : les dimensions de l'ERP sont justes"
+                onClick={() => enregistrerConditionnement(c, "carton", null)}
+              >
+                Carton
+              </button>
+              <button
+                className="btn btn-sm btn-pastel-blue"
+                disabled={readOnly || busy}
+                title="Saisir les dimensions de la pièce hors sachet"
+                onClick={() => setConditionnementDe({ ligne: c, initial: "sachet" })}
+              >
+                Sachet…
+              </button>
+              <button
+                className="btn btn-sm"
+                disabled={readOnly || busy}
+                title="Pièce livrée sans emballage : les dimensions de l'ERP sont justes"
+                onClick={() => enregistrerConditionnement(c, "gros_volume", null)}
+              >
+                Sans emballage
+              </button>
+            </span>,
+          ]}
+        />
+      ) : partie === "petits" ? (
+        <TableauControle
+          lignes={pvTraitesAffiches}
+          vide="Aucun petit volume traité."
+          colonnesFin={["Conditionnement", "Hors sachet (mm)", "Traité", ""]}
+          cellulesFin={(c) => [
+            c.conditionnement === "" ? null : (
+              <span className={c.conditionnement === "sachet" ? "badge badge-info" : "badge badge-muted"}>
+                {LIBELLE_CONDITIONNEMENT[c.conditionnement]}
+              </span>
+            ),
+            c.conditionnement === "sachet" && c.hs_dim1_mm !== null && c.hs_dim2_mm !== null && c.hs_dim3_mm !== null ? (
+              <span className="mono" style={{ whiteSpace: "nowrap" }}>
+                {fmtMm(c.hs_dim1_mm)} × {fmtMm(c.hs_dim2_mm)} × {fmtMm(c.hs_dim3_mm)}
+              </span>
+            ) : (
+              <span style={{ color: "var(--text-faint)" }}>—</span>
+            ),
+            <span style={{ whiteSpace: "nowrap" }}>
+              {formaterHorodatage(c.conditionnement_le ?? "").slice(0, 10)}
+              {c.conditionnement_par && <span style={{ color: "var(--text-muted)" }}> · {c.conditionnement_par}</span>}
+            </span>,
+            <span style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                className="btn btn-sm"
+                disabled={readOnly || busy}
+                onClick={() => setConditionnementDe({ ligne: c, initial: c.conditionnement })}
+              >
+                Modifier…
+              </button>
+            </span>,
+          ]}
+        />
       ) : onglet === "a_controler" ? (
         <TableauControle
           lignes={aControlerAffiches}
@@ -541,6 +715,19 @@ export default function ControleDimensionList({ trigramme }: Props) {
               </span>
             ),
           ]}
+        />
+      )}
+
+      {conditionnementDe && (
+        <ConditionnementDialog
+          ligne={conditionnementDe.ligne}
+          initial={conditionnementDe.initial}
+          onClose={() => setConditionnementDe(null)}
+          onEnregistrer={(cond, hors) => {
+            const c = conditionnementDe.ligne;
+            setConditionnementDe(null);
+            enregistrerConditionnement(c, cond, hors);
+          }}
         />
       )}
 
@@ -780,6 +967,100 @@ function MesuresDialog({
           <button type="submit" className="btn btn-success-solid" disabled={!valide}>
             Enregistrer
           </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// Petits volumes : choix du conditionnement ; pour un sachet, dimensions de la pièce hors sachet
+// (dans le même sens que celles de l'ERP), utilisées par les calculs de Simulations.
+function ConditionnementDialog({
+  ligne,
+  initial,
+  onClose,
+  onEnregistrer,
+}: {
+  ligne: ControleDimension;
+  initial: Conditionnement;
+  onClose: () => void;
+  onEnregistrer: (conditionnement: Conditionnement, horsSachet: [number, number, number] | null) => void;
+}) {
+  const [choix, setChoix] = useState<Exclude<Conditionnement, "">>(initial === "" ? "sachet" : initial);
+  const [textes, setTextes] = useState(
+    [ligne.hs_dim1_mm, ligne.hs_dim2_mm, ligne.hs_dim3_mm].map((n) => (n === null ? "" : String(n))),
+  );
+  const valeurs = textes.map((t) => Number(t.replace(",", ".").trim()));
+  const dimsValides = textes.every((t) => t.trim() !== "") && valeurs.every((n) => Number.isFinite(n) && n > 0);
+  const valide = choix !== "sachet" || dimsValides;
+  const erp = [ligne.dim1_mm, ligne.dim2_mm, ligne.dim3_mm];
+  const libelles = ["Longueur (mm)", "Largeur (mm)", "Hauteur (mm)"];
+  const choixPossibles: [Exclude<Conditionnement, "">, string][] = [
+    ["carton", "Carton ou boîte : les dimensions de l'ERP sont justes"],
+    ["sachet", "Sachet : saisir les dimensions de la pièce hors sachet"],
+    ["gros_volume", "Sans emballage : les dimensions de l'ERP sont justes"],
+  ];
+
+  return (
+    <div className="modal-overlay" style={{ zIndex: 400 }} onClick={onClose}>
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valide) onEnregistrer(choix, choix === "sachet" ? (valeurs as [number, number, number]) : null);
+        }}
+        onKeyDown={(e) => e.key === "Escape" && onClose()}
+        className="panel"
+        style={{ padding: 22, width: 480, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", display: "grid", gap: 14, boxShadow: "var(--shadow-lg)" }}
+      >
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Conditionnement — {ligne.ar}</h3>
+        <div style={{ display: "grid", gap: 6 }}>
+          {choixPossibles.map(([id, label]) => (
+            <label key={id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13.5 }}>
+              <input type="radio" name="conditionnement" checked={choix === id} onChange={() => setChoix(id)} />
+              {label}
+            </label>
+          ))}
+        </div>
+        {choix === "sachet" && (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+              {libelles.map((label, i) => (
+                <label key={label} style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--text-muted)" }}>
+                  {label}
+                  <input
+                    className="input mono"
+                    inputMode="decimal"
+                    autoFocus={i === 0}
+                    value={textes[i]}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onChange={(e) => setTextes((t) => t.map((x, j) => (j === i ? e.target.value : x)))}
+                    style={{ width: "100%", minWidth: 0, boxSizing: "border-box" }}
+                  />
+                  <span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>ERP : {fmtMm(erp[i])}</span>
+                </label>
+              ))}
+            </div>
+            <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-muted)" }}>
+              Dimensions d'une pièce, sans le sachet, dans le même sens que celles de l'ERP. Le volume de la ligne sera
+              calculé avec ces dimensions et la quantité du picking, majoré de la marge sachet.
+            </p>
+          </>
+        )}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {initial !== "" && (
+            <button type="button" className="btn btn-ghost" onClick={() => onEnregistrer("", null)} title="Remettre l'article dans « À traiter »">
+              Remettre à traiter
+            </button>
+          )}
+          <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <button type="button" className="btn" onClick={onClose}>
+              Annuler
+            </button>
+            <button type="submit" className="btn btn-success-solid" disabled={!valide}>
+              Enregistrer
+            </button>
+          </span>
         </div>
       </form>
     </div>

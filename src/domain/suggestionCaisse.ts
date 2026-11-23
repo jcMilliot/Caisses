@@ -1,4 +1,4 @@
-import { volumeInterneM3, volumeUnitaireM3 } from "./calculs";
+import { dimsCalcul, volumeInterneM3, volumeUnitaireM3 } from "./calculs";
 import { estArCaiss } from "./caisseStock";
 import { estDemandeCaisseValidee, estDemandeValidee, necessiteNimp15, stockAutorisePourEnvoi } from "./demandeOptions";
 import type { Article, Caisse, CaisseStock, Demande, DemandeCaisse } from "./types";
@@ -62,9 +62,9 @@ export function suggererCaisseStock(params: {
   if (ligne && exigeNimp15(ligne)) return null;
   const volume = articles.reduce((s, a) => s + volumeUnitaireM3(a) * a.quantite, 0);
   if (volume <= 0) return null;
-  const dim1 = Math.max(...articles.map((a) => a.dim1_mm));
-  const dim2 = Math.max(...articles.map((a) => a.dim2_mm));
-  const dim3 = Math.max(...articles.map((a) => a.dim3_mm));
+  const dim1 = Math.max(...articles.map((a) => dimsCalcul(a).dim1_mm));
+  const dim2 = Math.max(...articles.map((a) => dimsCalcul(a).dim2_mm));
+  const dim3 = Math.max(...articles.map((a) => dimsCalcul(a).dim3_mm));
 
   const candidates = caissesStock.filter((cs) => {
     const disponible = estArCaiss(cs.nom) ? cs.quantite > 0 : recupDisponible(cs, demandes, demandeCaisses, liens);

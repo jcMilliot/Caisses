@@ -52,14 +52,14 @@ const A_VERIFIER: Point[] = [
     detail:
       "Options › « Affichage compact » : le tableau Gestion des caisses occupe exactement la largeur de l'écran, sans défilement horizontal. Hors compact, il peut dépasser.",
   },
+  {
+    titre: "Contrôle dimensionnel : petits volumes",
+    detail:
+      "Dans la partie « Petits volumes », indiquer carton, sachet ou sans emballage pour quelques articles. Pour un sachet, saisir les dimensions de la pièce hors sachet, puis ouvrir une affaire qui l'utilise : « Hors sachet : … mm » apparaît sous les dimensions, et le volume et le remplissage des caisses baissent en conséquence.",
+  },
 ];
 
 const A_DECIDER: Point[] = [
-  {
-    titre: "Conditionnement des articles",
-    detail:
-      "Idée : indiquer pour chaque article s'il est livré en boîte, en sachet ou sans conditionnement. Pour un sachet, saisir les dimensions de la pièce hors sachet, qui serviraient au calcul du volume à la place des dimensions de l'article.",
-  },
   {
     titre: "Aide au dimensionnement des caisses",
     detail:

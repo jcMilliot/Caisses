@@ -33,6 +33,52 @@ export const LIBELLE_RUBRIQUE: Record<GenreRubrique, { titre: string; icone: str
 
 export const NOTES_MISE_A_JOUR: NoteVersion[] = [
   {
+    version: "0.25.0",
+    date: "23/11/2026",
+    resume: "Les pièces livrées en sachet sont comptées à leur vraie taille, et le tableau des articles tient dans l'écran.",
+    rubriques: [
+      {
+        genre: "nouveau",
+        points: [
+          {
+            icone: "🛍️",
+            titre: "Contrôle dimensionnel : petits volumes",
+            texte:
+              "Une nouvelle partie **« Petits volumes »** liste les articles plus petits. On indique **une seule fois** comment chaque pièce est livrée : **Carton**, **Sachet** ou **Sans emballage**.",
+            details: [
+              "Pour un sachet, on saisit les dimensions **d'une pièce sans son sachet**.",
+              "Dans Simulations, le volume de ces pièces est alors calculé avec ces dimensions et la quantité, plus une petite marge pour le sachet (10 %, réglable par un administrateur).",
+              "Le tableau des articles garde les dimensions habituelles et rappelle en dessous « Hors sachet : … ».",
+            ],
+          },
+          {
+            icone: "🗂️",
+            titre: "Contrôle dimensionnel : une affaire à la fois",
+            texte:
+              "Un menu permet de choisir une affaire pour n'afficher que les pièces **disponibles** dans cette affaire. L'export Excel suit ce choix.",
+          },
+        ],
+      },
+      {
+        genre: "ameliore",
+        points: [
+          {
+            icone: "↔️",
+            titre: "Simulations : tableau des articles sans défilement sur le côté",
+            texte:
+              "Le tableau tient toujours dans la largeur de l'écran. On peut élargir ou rétrécir une colonne en faisant glisser le bord de son titre (double-clic pour revenir à la largeur d'origine).",
+          },
+          {
+            icone: "🔎",
+            titre: "Filtres des colonnes",
+            texte:
+              "La recherche trouve maintenant tout ce qui **contient** le texte tapé, pas seulement ce qui commence par lui.",
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: "0.24.1",
     date: "23/11/2026",
     resume: "Petite correction d'affichage dans Demandes d'achats.",

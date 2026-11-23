@@ -5,7 +5,8 @@ import { caissesApi } from "../data/caisses";
 import { caisseStockApi } from "../data/caisseStock";
 import { poidsCaisseApi } from "../data/poidsCaisse";
 import { lireReglagesPoids, poidsDeLaCaisse, REGLAGES_POIDS_DEFAUT } from "../domain/poidsCaisse";
-import { articlesParCaisse, calculerCaisse, POIDS_MAX_KG_M2_DEFAUT } from "../domain/calculs";
+import { appliquerHorsSachet, articlesParCaisse, calculerCaisse, POIDS_MAX_KG_M2_DEFAUT } from "../domain/calculs";
+import { controleDimensionApi } from "../data/controleDimension";
 import type { Affaire, Article, Caisse, CaisseCalculee, CaisseStock, NewArticle } from "../domain/types";
 
 export function useAffaire(affaireId: number, trigramme: string) {
@@ -20,13 +21,15 @@ export function useAffaire(affaireId: number, trigramme: string) {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const [affaires, arts, cais] = await Promise.all([
+      const [affaires, arts, cais, hs] = await Promise.all([
         affairesApi.list(),
         articlesApi.list(affaireId),
         caissesApi.list(affaireId),
+        // Pièces en sachet (Contrôle dimensionnel › Petits volumes) : sans réponse, calcul sur l'ERP.
+        controleDimensionApi.listHorsSachet().catch(() => ({ marge_sachet_pct: 0, pieces: [] })),
       ]);
       setAffaire(affaires.find((a) => a.id === affaireId) ?? null);
-      setTousArticles(arts);
+      setTousArticles(appliquerHorsSachet(arts, hs.pieces, hs.marge_sachet_pct));
       setCaisses(cais);
     } finally {
       setLoading(false);

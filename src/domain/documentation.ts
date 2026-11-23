@@ -153,7 +153,7 @@ export const SECTIONS_DOC: SectionDoc[] = [
         "Les mesures des articles sont prises à la main et peuvent être fausses. Chaque article importé dans Simulations (picking ou collage) est retenu avec ses dimensions et son poids. Ceux dont **2 dimensions sur 3 atteignent ou dépassent le seuil** (350 mm par défaut, réglé dans l'Admin) sont à recontrôler.",
       ),
       li(
-        "Onglet **À contrôler** : quand on a l'article sous la main, on le mesure. « Conforme » si les mesures correspondent ; sinon « Corriger… » et saisir les mesures relevées. Les pièces ne pouvant pas toujours être approchées de l'ordinateur, À l'ouverture de la page (et par « Actualiser depuis l'intranet »), l'application relit le picking de l'intranet de toutes les affaires en cours de Simulations : les nouveaux articles entrent dans la liste et les colonnes « Affaires » et « Dispo pour ctrl » sont à jour, sans avoir à ouvrir chaque affaire. « Dispo pour ctrl » indique si la pièce est en stock ou a été mouvementée — l'affaire concernée ressort en vert ; « Dispo pour ctrl seulement » filtre la liste. « Exporter en Excel » donne la liste (avec les affaires où trouver la pièce — pas celles où elle est déjà dans un colis, dans une caisse livrée ou dans une affaire expédiée — et des colonnes vides pour noter les mesures), à imprimer ou à ouvrir sur une tablette. Tant qu'il y a des articles à contrôler, la carte de l'accueil est entourée d'un halo rouge.",
+        "Onglet **À contrôler** : quand on a l'article sous la main, on le mesure. « Conforme » si les mesures correspondent ; sinon « Corriger… » et saisir les mesures relevées. Les pièces ne pouvant pas toujours être approchées de l'ordinateur, À l'ouverture de la page (et par « Actualiser depuis l'intranet »), l'application relit le picking de l'intranet de toutes les affaires en cours de Simulations : les nouveaux articles entrent dans la liste et les colonnes « Affaires » et « Dispo pour ctrl » sont à jour, sans avoir à ouvrir chaque affaire. « Dispo pour ctrl » indique si la pièce est en stock ou a été mouvementée — l'affaire concernée ressort en vert ; « Dispo pour ctrl seulement » filtre la liste, et le menu des affaires n'affiche que les pièces dispo dans l'affaire choisie. « Exporter en Excel » donne la liste (avec les affaires où trouver la pièce — pas celles où elle est déjà dans un colis, dans une caisse livrée ou dans une affaire expédiée — et des colonnes vides pour noter les mesures), à imprimer ou à ouvrir sur une tablette. Tant qu'il y a des articles à contrôler, la carte de l'accueil est entourée d'un halo rouge.",
       ),
       li(
         "Onglet **Validés** : un contrôle reste valable 12 mois (durée réglée dans l'Admin), puis l'article revient dans « À contrôler ».",
@@ -163,6 +163,10 @@ export const SECTIONS_DOC: SectionDoc[] = [
       ),
       li(
         "Les articles de Simulations ne sont pas modifiés par cet outil : ils prennent les bonnes mesures à la mise à jour du picking, une fois l'ERP corrigé.",
+      ),
+      // Ajouté en fin de section (2026-11-23) : un point inséré plus haut décalerait les textes modifiés.
+      li(
+        "Partie **Petits volumes** : les articles sous le seuil des contrôles annuels. On indique une seule fois, sans rappel, comment chaque pièce est livrée : **Carton** (carton ou boîte, les dimensions de l'ERP sont justes), **Sachet** ou **Sans emballage** (les dimensions de l'ERP sont justes). Pour un sachet, on saisit les dimensions d'une pièce hors sachet : dans Simulations, le volume de la ligne est alors calculé avec ces dimensions et la quantité, majoré d'une petite marge pour le sachet (10 % par défaut, réglée dans l'Admin). Le tableau du Picking garde les dimensions de l'ERP et rappelle en dessous « Hors sachet : … mm ». « À traiter » ne montre que les pièces des pickings en cours ; « Traités » permet de modifier un choix.",
       ),
     ],
   },

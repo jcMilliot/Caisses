@@ -409,6 +409,22 @@ table {
 
 /* Icône de tri / filtre des en-têtes de tableau (DemandesTable, ArticlesTable) : discrète au repos, nette au
    survol de l'en-tête, toujours visible quand la colonne est triée ou filtrée. */
+/* Poignée de redimensionnement d'une colonne (tableau des articles de Simulations, 2026-11-23). */
+.poignee-colonne {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+}
+.poignee-colonne:hover {
+  background: var(--accent);
+  opacity: 0.35;
+}
+
 .btn-filtre-colonne {
   opacity: 0.45;
   transition: opacity 0.12s ease, background 0.12s ease;
@@ -812,6 +828,12 @@ table {
   background: var(--danger-bg);
   color: var(--danger-text);
   border-color: #efc0b6;
+}
+
+.badge-info {
+  background: var(--info-bg);
+  color: var(--info-text);
+  border-color: var(--info-border);
 }
 
 /* Accueil : cartes des 4 sections et listes de la colonne de droite. */

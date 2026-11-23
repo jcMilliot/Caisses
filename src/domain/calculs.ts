@@ -10,8 +10,33 @@ const EPAISSEUR_MOUSSE_M = 0.025;
 // (bois) n'est pas calculé : il est couvert par la marge prise sur ce seuil.
 export const POIDS_MAX_KG_M2_DEFAUT = 400;
 
-export function volumeUnitaireM3(article: Pick<Article, "dim1_mm" | "dim2_mm" | "dim3_mm">): number {
-  return (article.dim1_mm * article.dim2_mm * article.dim3_mm) / MM3_TO_M3;
+type DimsArticle = Pick<Article, "dim1_mm" | "dim2_mm" | "dim3_mm"> & Partial<Pick<Article, "hors_sachet">>;
+
+/** Dimensions qui servent aux calculs : celles de la pièce hors sachet si elle est en sachet
+ *  (Contrôle dimensionnel › Petits volumes, 2026-11-23), sinon celles de l'ERP. */
+export function dimsCalcul(article: DimsArticle): Pick<Article, "dim1_mm" | "dim2_mm" | "dim3_mm"> {
+  return article.hors_sachet ?? article;
+}
+
+/** Volume d'une pièce ; en sachet : pièce hors sachet × (1 + marge sachet). */
+export function volumeUnitaireM3(article: DimsArticle): number {
+  const d = dimsCalcul(article);
+  return ((d.dim1_mm * d.dim2_mm * d.dim3_mm) / MM3_TO_M3) * (article.hors_sachet?.coef ?? 1);
+}
+
+/** Pose les dimensions hors sachet sur les articles en sachet (AR comparé en majuscules). */
+export function appliquerHorsSachet<T extends Pick<Article, "ar">>(
+  articles: T[],
+  pieces: { ar: string; dim1_mm: number; dim2_mm: number; dim3_mm: number }[],
+  margeSachetPct: number,
+): (T & { hors_sachet?: Article["hors_sachet"] })[] {
+  if (pieces.length === 0) return articles;
+  const parAr = new Map(pieces.map((p) => [p.ar.trim().toUpperCase(), p]));
+  const coef = 1 + margeSachetPct / 100;
+  return articles.map((a) => {
+    const p = parAr.get(a.ar.trim().toUpperCase());
+    return p ? { ...a, hors_sachet: { dim1_mm: p.dim1_mm, dim2_mm: p.dim2_mm, dim3_mm: p.dim3_mm, coef } } : a;
+  });
 }
 
 // Champs de l'article considérés comme "donnée manquante" pour le bouton "Manque
@@ -96,12 +121,12 @@ export function calculerCaisse(
   if (caisse.longueur_mm > 0 || caisse.largeur_mm > 0 || caisse.hauteur_mm > 0) {
     for (const a of articlesDeLaCaisse) {
       const depassements: ArticleTropGrand["depassements"] = [];
-      if (a.dim1_mm - caisse.longueur_mm > 0.5)
-        depassements.push({ axe: "longueur", article: a.dim1_mm, caisse: caisse.longueur_mm });
-      if (a.dim2_mm - caisse.largeur_mm > 0.5)
-        depassements.push({ axe: "largeur", article: a.dim2_mm, caisse: caisse.largeur_mm });
-      if (a.dim3_mm - caisse.hauteur_mm > 0.5)
-        depassements.push({ axe: "hauteur", article: a.dim3_mm, caisse: caisse.hauteur_mm });
+      if (dimsCalcul(a).dim1_mm - caisse.longueur_mm > 0.5)
+        depassements.push({ axe: "longueur", article: dimsCalcul(a).dim1_mm, caisse: caisse.longueur_mm });
+      if (dimsCalcul(a).dim2_mm - caisse.largeur_mm > 0.5)
+        depassements.push({ axe: "largeur", article: dimsCalcul(a).dim2_mm, caisse: caisse.largeur_mm });
+      if (dimsCalcul(a).dim3_mm - caisse.hauteur_mm > 0.5)
+        depassements.push({ axe: "hauteur", article: dimsCalcul(a).dim3_mm, caisse: caisse.hauteur_mm });
       if (depassements.length > 0) articlesTropGrands.push({ article: a, depassements });
     }
   }
@@ -127,9 +152,9 @@ export function calculerCaisse(
     tauxRemplissage,
     estSurcharge,
     niveauAlerte,
-    dim1MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, a.dim1_mm), 0),
-    dim2MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, a.dim2_mm), 0),
-    dim3MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, a.dim3_mm), 0),
+    dim1MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, dimsCalcul(a).dim1_mm), 0),
+    dim2MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, dimsCalcul(a).dim2_mm), 0),
+    dim3MaxMm: articlesDeLaCaisse.reduce((max, a) => Math.max(max, dimsCalcul(a).dim3_mm), 0),
     articlesTropGrands,
     poidsCaisse,
     surfaceFondM2,
@@ -149,9 +174,9 @@ export interface RecapAffaire {
 
 export function calculerRecapAffaire(articles: Article[]): RecapAffaire {
   return {
-    dim1MaxMm: articles.reduce((max, a) => Math.max(max, a.dim1_mm), 0),
-    dim2MaxMm: articles.reduce((max, a) => Math.max(max, a.dim2_mm), 0),
-    dim3MaxMm: articles.reduce((max, a) => Math.max(max, a.dim3_mm), 0),
+    dim1MaxMm: articles.reduce((max, a) => Math.max(max, dimsCalcul(a).dim1_mm), 0),
+    dim2MaxMm: articles.reduce((max, a) => Math.max(max, dimsCalcul(a).dim2_mm), 0),
+    dim3MaxMm: articles.reduce((max, a) => Math.max(max, dimsCalcul(a).dim3_mm), 0),
     volumeTotalM3: articles.reduce((sum, a) => sum + volumeUnitaireM3(a) * a.quantite, 0),
     poidsTotalKg: articles.reduce((sum, a) => sum + a.poids_unitaire_kg * a.quantite, 0),
   };

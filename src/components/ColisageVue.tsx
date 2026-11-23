@@ -1,3 +1,4 @@
+import { avecHorsSachet, texteDimsCalcul } from "./HorsSachet";
 import { useState } from "react";
 import type { CartonConso } from "../domain/types";
 import {
@@ -270,7 +271,7 @@ function BlocColis({
           {controle.lignesTropVolumineuses.map((a) => (
             <div key={`v${a.id}`} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
               <span>
-                ⚠ {a.ar || a.reference} ({a.dim1_mm} × {a.dim2_mm} × {a.dim3_mm} mm × {a.quantite}) :{" "}
+                ⚠ {a.ar || a.reference} ({texteDimsCalcul(a)} × {a.quantite}) :{" "}
                 {formaterVolumeM3(volumeUnitaireM3(a) * a.quantite)} m³ à elle seule, plus que le carton — dimensions à vérifier
                 dans l'intranet (celles de la boîte ?).
               </span>
@@ -289,7 +290,7 @@ function BlocColis({
           {controle.piecesTropGrandes.map((a) => (
             <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
               <span>
-                ⚠ {a.ar || a.reference} ({a.dim1_mm} × {a.dim2_mm} × {a.dim3_mm} mm) ne rentre pas dans le carton (intérieur{" "}
+                ⚠ {a.ar || a.reference} ({texteDimsCalcul(a)}) ne rentre pas dans le carton (intérieur{" "}
                 {carton!.longueur_mm} × {carton!.largeur_mm} × {carton!.hauteur_mm} mm).
               </span>
               {!readOnly && (
@@ -312,7 +313,7 @@ function BlocColis({
           {controle.piecesAcceptees.map((a) => (
             <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span>
-                ✓ {a.ar || a.reference} ({a.dim1_mm} × {a.dim2_mm} × {a.dim3_mm} mm) : dépasse sur les 3 axes, accepté (en diagonale).
+                ✓ {a.ar || a.reference} ({texteDimsCalcul(a)}) : dépasse sur les 3 axes, accepté (en diagonale).
               </span>
               {!readOnly && (
                 <button className="btn btn-sm" style={{ padding: "1px 8px" }} onClick={() => colisage.accepterPiece(a.id, "dimensions", null)}>
@@ -324,7 +325,7 @@ function BlocColis({
           {controle.lignesVolumeAcceptees.map((a) => (
             <div key={`v${a.id}`} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span>
-                ✓ {a.ar || a.reference} ({a.dim1_mm} × {a.dim2_mm} × {a.dim3_mm} mm × {a.quantite}) : plus volumineuse que le carton,
+                ✓ {a.ar || a.reference} ({texteDimsCalcul(a)} × {a.quantite}) : plus volumineuse que le carton,
                 acceptée.
               </span>
               {!readOnly && (
@@ -382,9 +383,9 @@ function BlocColis({
                     </td>
                     <td style={tdStyle}>{a.reference}</td>
                     <td style={tdStyle}>{a.designation}</td>
-                    <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{a.dim1_mm}</td>
-                    <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{a.dim2_mm}</td>
-                    <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{a.dim3_mm}</td>
+                    <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{avecHorsSachet(a.dim1_mm, a.hors_sachet?.dim1_mm)}</td>
+                    <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{avecHorsSachet(a.dim2_mm, a.hors_sachet?.dim2_mm)}</td>
+                    <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{avecHorsSachet(a.dim3_mm, a.hors_sachet?.dim3_mm)}</td>
                     <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{a.poids_unitaire_kg.toFixed(3)}</td>
                     <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{a.quantite}</td>
                   </tr>

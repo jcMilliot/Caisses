@@ -33,21 +33,24 @@ pub fn list_remplissage_affaires(db: State<Db>) -> Result<Vec<RemplissageCaisse>
 }
 
 fn remplissages(conn: &rusqlite::Connection) -> Result<Vec<RemplissageCaisse>, String> {
+    // Volume d'une ligne : dimensions hors sachet + marge pour une pièce en sachet (2026-11-23).
+    let marge = crate::commands::controle_dimension::marge_sachet(conn)?;
     let mut stmt = conn
-        .prepare(
+        .prepare(&format!(
             "WITH occ AS (
-                 SELECT caisse_id, SUM(dim1_mm * dim2_mm * dim3_mm * quantite) / 1e9 AS vol
-                 FROM article WHERE caisse_id IS NOT NULL GROUP BY caisse_id
+                 SELECT a.caisse_id, SUM({vol}) AS vol
+                 FROM article a WHERE a.caisse_id IS NOT NULL GROUP BY a.caisse_id
              )
              SELECT c.affaire_id, a.nom, c.id, c.nom, occ.vol, c.longueur_mm * c.largeur_mm * c.hauteur_mm / 1e9,
                     c.demande_id, c.demande_caisse_id, c.longueur_mm, c.largeur_mm, c.hauteur_mm
              FROM caisse c JOIN occ ON occ.caisse_id = c.id JOIN affaire a ON a.id = c.affaire_id
              WHERE c.longueur_mm > 0 AND c.largeur_mm > 0 AND c.hauteur_mm > 0
              ORDER BY c.affaire_id, c.ordre, c.id",
-        )
+            vol = crate::commands::controle_dimension::VOLUME_ARTICLE_SQL
+        ))
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([], |r| {
+        .query_map([marge], |r| {
             Ok(RemplissageCaisse {
                 affaire_id: r.get(0)?,
                 affaire_nom: r.get(1)?,

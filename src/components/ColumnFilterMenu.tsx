@@ -98,8 +98,9 @@ export default function ColumnFilterMenu({ valeurs, selection, onApply, triActif
   const valeursFiltrees = useMemo(() => {
     const q = recherche.trim().toLowerCase();
     if (!q) return valeurs;
-    // Correspondance « commence par » (retour utilisateur du 2026-09-11), recalculée à chaque lettre.
-    return valeurs.filter((v) => v.toLowerCase().startsWith(q));
+    // Correspondance « contient » (retour du 2026-11-23, remplace « commence par » du 2026-09-11),
+    // recalculée à chaque lettre : « BINDE » trouve toutes les valeurs qui contiennent BINDE.
+    return valeurs.filter((v) => v.toLowerCase().includes(q));
   }, [valeurs, recherche]);
 
   function changerRecherche(q: string) {
@@ -107,7 +108,7 @@ export default function ColumnFilterMenu({ valeurs, selection, onApply, triActif
     // La sélection suit la recherche : valider n'applique que les valeurs trouvées (sinon les
     // valeurs masquées restaient cochées en arrière-plan).
     const query = q.trim().toLowerCase();
-    setSelectionLocale(new Set(query ? valeurs.filter((v) => v.toLowerCase().startsWith(query)) : valeurs));
+    setSelectionLocale(new Set(query ? valeurs.filter((v) => v.toLowerCase().includes(query)) : valeurs));
   }
 
   function toggleValeur(v: string) {

@@ -1,5 +1,5 @@
 import type { Article, CaisseCalculee, CaisseColisage, CartonConso } from "./types";
-import { volumeUnitaireM3 } from "./calculs";
+import { dimsCalcul, volumeUnitaireM3 } from "./calculs";
 
 // Onglet Colisage de Simulations (2026-10-14). `article.colis` = `pack_tag` de l'intranet :
 // un chiffre = un colis (carton choisi dans Consommable › Cartons conso), une lettre = pièces
@@ -71,8 +71,9 @@ function dimsTriees(d1: number, d2: number, d3: number): number[] {
 // Une pièce rentre si, dimensions triées de part et d'autre, chacune tient dans celle du carton
 // (rotation libre, décision du 2026-10-14). Comparée à l'intérieur du carton : une pièce doit
 // tenir dedans. Cote égale acceptée, sans tolérance au-delà (décision du 2026-10-27).
-export function pieceRentre(a: Pick<Article, "dim1_mm" | "dim2_mm" | "dim3_mm">, carton: CartonConso): boolean {
-  const p = dimsTriees(a.dim1_mm, a.dim2_mm, a.dim3_mm);
+export function pieceRentre(a: Pick<Article, "dim1_mm" | "dim2_mm" | "dim3_mm" | "hors_sachet">, carton: CartonConso): boolean {
+  const d = dimsCalcul(a);
+  const p = dimsTriees(d.dim1_mm, d.dim2_mm, d.dim3_mm);
   const c = dimsTriees(carton.longueur_mm, carton.largeur_mm, carton.hauteur_mm);
   return p.every((d, i) => d <= c[i]);
 }

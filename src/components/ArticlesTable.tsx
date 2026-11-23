@@ -5,6 +5,7 @@ import { volumeUnitaireM3, formaterVolumeM3, champsManquants, type ChampArticleM
 import type { Article, Caisse, NewArticle } from "../domain/types";
 import ColumnFilterMenu from "./ColumnFilterMenu";
 import EditableCellInput from "./EditableCellInput";
+import { avecHorsSachet, styleHorsSachet, volumeErp } from "./HorsSachet";
 
 interface Props {
   affaireId: number;
@@ -56,6 +57,38 @@ function sauvegarderTri(affaireId: number, tri: Tri | null) {
 type Filtres = Partial<Record<ColonneTriable, string[]>>;
 
 type FiltreInfos = "Manquantes" | "Complètes";
+
+// Largeurs des colonnes (2026-11-23) : le tableau occupe toujours toute la largeur disponible (pas
+// de défilement horizontal) ; ces valeurs fixent la part de chaque colonne. Redimensionnables à la
+// souris (poignée au bord droit de l'en-tête, double-clic = largeur par défaut), mémorisées par
+// poste pour toutes les affaires.
+type ColonneLargeur = ColonneTriable | "deplacer" | "selection";
+const LARGEURS_DEFAUT: Record<ColonneLargeur, number> = {
+  deplacer: 64,
+  selection: 34,
+  ar: 130,
+  reference: 140,
+  designation: 220,
+  dim1_mm: 92,
+  dim2_mm: 92,
+  dim3_mm: 92,
+  poids_unitaire_kg: 70,
+  quantite: 52,
+  volume: 105,
+  colis: 58,
+  caisse: 110,
+};
+const CLE_LARGEURS = "caisses:largeurs:articles";
+const LARGEUR_MIN = 36;
+
+function chargerLargeurs(): Record<ColonneLargeur, number> {
+  try {
+    const v = JSON.parse(localStorage.getItem(CLE_LARGEURS) ?? "{}");
+    return { ...LARGEURS_DEFAUT, ...(typeof v === "object" && v ? v : {}) };
+  } catch {
+    return { ...LARGEURS_DEFAUT };
+  }
+}
 
 function chargerFiltreInfos(affaireId: number): FiltreInfos | null {
   try {
@@ -134,6 +167,50 @@ export default function ArticlesTable({
     sauvegarderFiltreInfos(affaireId, f);
   }
   const boutonsFiltreRef = useRef<Partial<Record<ColonneTriable, HTMLButtonElement>>>({});
+  const [largeurs, setLargeurs] = useState(chargerLargeurs);
+
+  function changerLargeur(colonne: ColonneLargeur, largeur: number | null) {
+    setLargeurs((l) => {
+      const n = { ...l, [colonne]: largeur === null ? LARGEURS_DEFAUT[colonne] : Math.max(LARGEUR_MIN, Math.round(largeur)) };
+      try {
+        localStorage.setItem(CLE_LARGEURS, JSON.stringify(n));
+      } catch {
+        /* stockage indisponible */
+      }
+      return n;
+    });
+  }
+
+  // Poignée de redimensionnement au bord droit d'un en-tête. La largeur réelle affichée (le tableau
+  // est mis à l'échelle de l'écran) sert de point de départ ; la part enregistrée suit ce rapport.
+  function poignee(colonne: ColonneLargeur) {
+    return (
+      <span
+        className="poignee-colonne"
+        title="Glisser pour élargir ou rétrécir la colonne (double-clic : largeur par défaut)"
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          changerLargeur(colonne, null);
+        }}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const th = (e.currentTarget as HTMLElement).parentElement!;
+          const depart = e.clientX;
+          const reelle = th.getBoundingClientRect().width;
+          const echelle = reelle > 0 ? largeurs[colonne] / reelle : 1;
+          const bouger = (ev: PointerEvent) => changerLargeur(colonne, (reelle + ev.clientX - depart) * echelle);
+          const finir = () => {
+            window.removeEventListener("pointermove", bouger);
+            window.removeEventListener("pointerup", finir);
+          };
+          window.addEventListener("pointermove", bouger);
+          window.addEventListener("pointerup", finir);
+        }}
+      />
+    );
+  }
 
   const caisseById = useMemo(() => new Map(caisses.map((c) => [c.id, c])), [caisses]);
   // Numéro de la caisse (ordre des cartes, 1, 2…) : les caisses d'une affaire portent toutes son
@@ -145,7 +222,7 @@ export default function ArticlesTable({
   function valeurTexte(a: Article, colonne: ColonneTriable): string {
     switch (colonne) {
       case "volume":
-        return formaterVolumeM3(volumeUnitaireM3(a));
+        return formaterVolumeM3(volumeErp(a));
       case "caisse":
         return caisseName(a.caisse_id);
       case "colis":
@@ -190,7 +267,7 @@ export default function ArticlesTable({
     const valeur = (a: Article): string | number => {
       switch (tri.colonne) {
         case "volume":
-          return volumeUnitaireM3(a);
+          return volumeErp(a);
         case "caisse":
           return a.caisse_id === null ? 0 : (numeroCaisse.get(a.caisse_id) ?? 0);
         case "colis":
@@ -387,6 +464,7 @@ export default function ArticlesTable({
             }
           />
         )}
+        {poignee(colonne)}
       </th>
     );
   }
@@ -394,10 +472,21 @@ export default function ArticlesTable({
   const yATrouFiltre = Object.keys(filtres).length > 0 || filtreInfos !== null;
 
   return (
-    <table style={{ width: "100%", fontSize: 13, borderCollapse: "separate", borderSpacing: 0 }}>
+    <table style={{ width: "100%", tableLayout: "fixed", fontSize: 13, borderCollapse: "separate", borderSpacing: 0 }}>
+      <colgroup>
+        {onStartDrag && <col style={{ width: largeurs.deplacer }} />}
+        {(["selection", "ar", "reference", "designation", "dim1_mm", "dim2_mm", "dim3_mm", "poids_unitaire_kg", "quantite", "volume", "colis", "caisse"] as ColonneLargeur[]).map((c) => (
+          <col key={c} style={{ width: largeurs[c] }} />
+        ))}
+      </colgroup>
       <thead>
         <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
-          {onStartDrag && <th style={{ ...thStyle, width: 64, textAlign: "center" }}>Déplacer</th>}
+          {onStartDrag && (
+            <th style={{ ...thStyle, textAlign: "center" }}>
+              Déplacer
+              {poignee("deplacer")}
+            </th>
+          )}
           <th style={thStyle}>
             <input
               type="checkbox"
@@ -409,6 +498,7 @@ export default function ArticlesTable({
               onChange={() => onToggleSelectAll(articlesFiltres.filter((a) => !articlesFiges?.has(a.id)).map((a) => a.id))}
               title={yATrouFiltre ? "Sélectionner les lignes affichées (filtres appliqués)" : "Tout sélectionner"}
             />
+            {poignee("selection")}
           </th>
           {thTriable("ar", "AR")}
           {thTriable("reference", "Réf. fourn.")}
@@ -489,13 +579,18 @@ export default function ArticlesTable({
                 )}
                 {cell(a, "reference", a.reference)}
                 {cell(a, "designation", a.designation)}
-                {cell(a, "dim1_mm", a.dim1_mm, "right")}
-                {cell(a, "dim2_mm", a.dim2_mm, "right")}
-                {cell(a, "dim3_mm", a.dim3_mm, "right")}
+                {cell(a, "dim1_mm", avecHorsSachet(a.dim1_mm, a.hors_sachet?.dim1_mm), "right")}
+                {cell(a, "dim2_mm", avecHorsSachet(a.dim2_mm, a.hors_sachet?.dim2_mm), "right")}
+                {cell(a, "dim3_mm", avecHorsSachet(a.dim3_mm, a.hors_sachet?.dim3_mm), "right")}
                 {cell(a, "poids_unitaire_kg", a.poids_unitaire_kg.toFixed(3), "right")}
                 {cell(a, "quantite", a.quantite, "right")}
                 <td style={{ ...tdStyle, textAlign: "right" }} className="mono">
-                  {formaterVolumeM3(volumeUnitaireM3(a))}
+                  {formaterVolumeM3(volumeErp(a))}
+                  {a.hors_sachet && (
+                    <div style={styleHorsSachet} title="Volume de la pièce hors sachet, marge sachet comprise : c'est lui qui sert aux calculs">
+                      Hors sachet : {formaterVolumeM3(volumeUnitaireM3(a))}
+                    </div>
+                  )}
                 </td>
                 {/* Colis de l'intranet (2026-10-14) : lettre = caisse, chiffre = colis. */}
                 <td style={{ ...tdStyle, textAlign: "center" }} title={a.colis ? "Colisé (intranet)" : "Non colisé"}>
@@ -572,4 +667,6 @@ const tdStyle: React.CSSProperties = {
   padding: "6px 8px",
   borderBottom: "1px solid var(--row-border-color)",
   borderRight: "1px solid var(--row-border-color)",
+  // Largeurs fixées : un texte long (référence, désignation) passe à la ligne au lieu d'élargir.
+  overflowWrap: "anywhere",
 };

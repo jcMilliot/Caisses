@@ -18,6 +18,9 @@ const CLE_SEUIL: &str = "controle_seuil_mm";
 const CLE_DUREE: &str = "controle_duree_mois";
 const SEUIL_DEFAUT: f64 = 350.0;
 const DUREE_DEFAUT: i64 = 12;
+const CLE_MARGE_SACHET: &str = "marge_sachet_pct";
+pub(crate) const MARGE_SACHET_DEFAUT: f64 = 10.0;
+const CONDITIONNEMENTS: [&str; 4] = ["", "carton", "sachet", "gros_volume"];
 
 #[derive(Debug, Serialize)]
 pub struct ControleDimension {
@@ -39,12 +42,26 @@ pub struct ControleDimension {
     /// Affaires de Simulations où la pièce est encore accessible (ligne non colisée), pour la
     /// retrouver ; séparées par « , ».
     pub affaires: String,
+    /// Petits volumes (0053) : "" | "carton" | "sachet" | "gros_volume".
+    pub conditionnement: String,
+    pub hs_dim1_mm: Option<f64>,
+    pub hs_dim2_mm: Option<f64>,
+    pub hs_dim3_mm: Option<f64>,
+    pub conditionnement_le: Option<String>,
+    pub conditionnement_par: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ReglagesControle {
     pub seuil_mm: f64,
     pub duree_mois: i64,
+    /// Majoration du volume d'une pièce en sachet, en % (2026-11-23).
+    #[serde(default = "marge_sachet_defaut")]
+    pub marge_sachet_pct: f64,
+}
+
+fn marge_sachet_defaut() -> f64 {
+    MARGE_SACHET_DEFAUT
 }
 
 /// Ligne d'un article vu à l'import (picking ou collage).
@@ -112,7 +129,8 @@ fn requete_lister() -> String {
                     SELECT DISTINCT f.nom FROM article a JOIN affaire f ON f.id = a.affaire_id
                     WHERE upper(trim(a.ar)) = c.ar AND a.supprime_intranet = 0 AND trim(COALESCE(a.colis, '')) = ''
                       AND NOT {expediee}
-                    ORDER BY f.nom)), '')
+                    ORDER BY f.nom)), ''),
+                c.conditionnement, c.hs_dim1_mm, c.hs_dim2_mm, c.hs_dim3_mm, c.conditionnement_le, c.conditionnement_par
          FROM controle_dimension c ORDER BY c.ar"
     )
 }
@@ -138,6 +156,12 @@ fn lister(conn: &Connection) -> Result<Vec<ControleDimension>, String> {
                 erp_valide_le: r.get(13)?,
                 erp_valide_par: r.get(14)?,
                 affaires: r.get(15)?,
+                conditionnement: r.get(16)?,
+                hs_dim1_mm: r.get(17)?,
+                hs_dim2_mm: r.get(18)?,
+                hs_dim3_mm: r.get(19)?,
+                conditionnement_le: r.get(20)?,
+                conditionnement_par: r.get(21)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -209,6 +233,7 @@ fn reglages(conn: &Connection) -> Result<ReglagesControle, String> {
     Ok(ReglagesControle {
         seuil_mm: lire(conn, CLE_SEUIL)?.and_then(|v| v.parse().ok()).unwrap_or(SEUIL_DEFAUT),
         duree_mois: lire(conn, CLE_DUREE)?.and_then(|v| v.parse().ok()).unwrap_or(DUREE_DEFAUT),
+        marge_sachet_pct: lire(conn, CLE_MARGE_SACHET)?.and_then(|v| v.parse().ok()).unwrap_or(MARGE_SACHET_DEFAUT),
     })
 }
 
@@ -226,6 +251,9 @@ fn verifier_reglages(r: &ReglagesControle) -> Result<(), String> {
     if !(1..=120).contains(&r.duree_mois) {
         return Err("La durée de validité doit être comprise entre 1 et 120 mois.".to_string());
     }
+    if !(0.0..=100.0).contains(&r.marge_sachet_pct) {
+        return Err("La marge sachet doit être comprise entre 0 et 100 %.".to_string());
+    }
     Ok(())
 }
 
@@ -236,7 +264,8 @@ pub fn set_reglages_controle(db: State<Db>, session: State<AdminSession>, reglag
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
     ecrire(conn, CLE_SEUIL, &reglages.seuil_mm.to_string())?;
-    ecrire(conn, CLE_DUREE, &reglages.duree_mois.to_string())
+    ecrire(conn, CLE_DUREE, &reglages.duree_mois.to_string())?;
+    ecrire(conn, CLE_MARGE_SACHET, &reglages.marge_sachet_pct.to_string())
 }
 
 fn verifier_existe(conn: &Connection, ar: &str) -> Result<(), String> {
@@ -346,6 +375,111 @@ pub fn valider_erp_controle_dimension(db: State<Db>, ars: Vec<String>, trigramme
     let mut guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_mut().ok_or("base de données non initialisée")?;
     valider_erp(conn, &ars, &trigramme)
+}
+
+/// Petits volumes (2026-11-23) : conditionnement d'un AR, choisi une fois. `sachet` exige les trois
+/// dimensions de la pièce hors sachet ; les autres choix les effacent. "" = remettre à traiter.
+fn definir_conditionnement(
+    conn: &Connection,
+    ar: &str,
+    conditionnement: &str,
+    hors_sachet: Option<[f64; 3]>,
+    trigramme: &str,
+) -> Result<(), String> {
+    require_lock(conn, SECTION, trigramme)?;
+    verifier_existe(conn, ar)?;
+    if !CONDITIONNEMENTS.contains(&conditionnement) {
+        return Err(format!("Conditionnement inconnu : « {conditionnement} »."));
+    }
+    let hs = if conditionnement == "sachet" {
+        match hors_sachet {
+            Some(d) if d.iter().all(|x| *x > 0.0 && x.is_finite()) => Some(d),
+            _ => return Err("Les trois dimensions hors sachet doivent être supérieures à 0 mm.".to_string()),
+        }
+    } else {
+        None
+    };
+    let pose = !conditionnement.is_empty();
+    let par = if pose { trigramme } else { "" };
+    conn.execute(
+        "UPDATE controle_dimension SET conditionnement = ?2, hs_dim1_mm = ?3, hs_dim2_mm = ?4, hs_dim3_mm = ?5,
+             conditionnement_le = CASE WHEN ?6 THEN datetime('now') ELSE NULL END, conditionnement_par = ?7
+         WHERE ar = ?1",
+        params![ar, conditionnement, hs.map(|d| d[0]), hs.map(|d| d[1]), hs.map(|d| d[2]), pose, par],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn set_conditionnement_controle(
+    db: State<Db>,
+    ar: String,
+    conditionnement: String,
+    hs_dim1_mm: Option<f64>,
+    hs_dim2_mm: Option<f64>,
+    hs_dim3_mm: Option<f64>,
+    trigramme: String,
+) -> Result<(), String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    let hs = match (hs_dim1_mm, hs_dim2_mm, hs_dim3_mm) {
+        (Some(a), Some(b), Some(c)) => Some([a, b, c]),
+        _ => None,
+    };
+    definir_conditionnement(conn, &ar, &conditionnement, hs, &trigramme)
+}
+
+/// Pièce en sachet : dimensions hors sachet, pour les calculs de Simulations.
+#[derive(Debug, Serialize)]
+pub struct HorsSachet {
+    pub ar: String,
+    pub dim1_mm: f64,
+    pub dim2_mm: f64,
+    pub dim3_mm: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HorsSachets {
+    pub marge_sachet_pct: f64,
+    pub pieces: Vec<HorsSachet>,
+}
+
+fn hors_sachets(conn: &Connection) -> Result<HorsSachets, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT ar, hs_dim1_mm, hs_dim2_mm, hs_dim3_mm FROM controle_dimension
+             WHERE conditionnement = 'sachet' AND hs_dim1_mm > 0 AND hs_dim2_mm > 0 AND hs_dim3_mm > 0",
+        )
+        .map_err(|e| e.to_string())?;
+    let pieces = stmt
+        .query_map([], |r| Ok(HorsSachet { ar: r.get(0)?, dim1_mm: r.get(1)?, dim2_mm: r.get(2)?, dim3_mm: r.get(3)? }))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(HorsSachets { marge_sachet_pct: reglages(conn)?.marge_sachet_pct, pieces })
+}
+
+#[tauri::command]
+pub fn list_hors_sachet(db: State<Db>) -> Result<HorsSachets, String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    hors_sachets(conn)
+}
+
+/// Volume (m³) d'une ligne d'article en SQL, dimensions hors sachet × (1 + marge) pour une pièce en
+/// sachet — même règle que `domain/calculs.ts::volumeUnitaireM3` (taux de remplissage calculé côté
+/// Rust). Alias attendus : `a` (article), `marge` (pourcentage, paramètre lié).
+pub(crate) const VOLUME_ARTICLE_SQL: &str = "(COALESCE(
+        (SELECT cd.hs_dim1_mm * cd.hs_dim2_mm * cd.hs_dim3_mm * (1 + ?1 / 100.0) FROM controle_dimension cd
+         WHERE cd.ar = upper(trim(a.ar)) AND cd.conditionnement = 'sachet'
+           AND cd.hs_dim1_mm > 0 AND cd.hs_dim2_mm > 0 AND cd.hs_dim3_mm > 0),
+        a.dim1_mm * a.dim2_mm * a.dim3_mm) * a.quantite / 1e9)";
+
+/// Marge sachet réglée (pour `VOLUME_ARTICLE_SQL`).
+pub(crate) fn marge_sachet(conn: &Connection) -> Result<f64, String> {
+    Ok(reglages(conn)?.marge_sachet_pct)
 }
 
 /// Cellule d'un export : nombre ou texte ("" = case vide, à remplir à la main sur la feuille
@@ -528,8 +662,8 @@ mod tests {
         // Réglages par défaut et vérification.
         let r = reglages(&conn).unwrap();
         assert_eq!((r.seuil_mm, r.duree_mois), (350.0, 12));
-        assert!(verifier_reglages(&ReglagesControle { seuil_mm: 0.0, duree_mois: 12 }).is_err());
-        assert!(verifier_reglages(&ReglagesControle { seuil_mm: 350.0, duree_mois: 0 }).is_err());
+        assert!(verifier_reglages(&ReglagesControle { seuil_mm: 0.0, duree_mois: 12, marge_sachet_pct: 10.0 }).is_err());
+        assert!(verifier_reglages(&ReglagesControle { seuil_mm: 350.0, duree_mois: 0, marge_sachet_pct: 10.0 }).is_err());
 
         // Export Excel écrit un fichier.
         let fichier = dir.join("export.xlsx");
@@ -610,13 +744,59 @@ mod tests {
     }
 
     #[test]
+    fn petits_volumes_conditionnement_et_volume_hors_sachet() {
+        let dir = std::env::temp_dir().join(format!("caisses-test-controle-pv-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let conn = crate::db::open_at(&dir);
+        enregistrer_articles(&conn, &[vu("AR_S", [100.0, 100.0, 100.0, 0.1]), vu("AR_C", [50.0, 50.0, 50.0, 0.1])]).unwrap();
+
+        // Sachet sans dimensions refusé ; valeur inconnue refusée.
+        assert!(definir_conditionnement(&conn, "AR_S", "sachet", None, "AJC").is_err());
+        assert!(definir_conditionnement(&conn, "AR_S", "vrac", None, "AJC").is_err());
+        definir_conditionnement(&conn, "AR_S", "sachet", Some([20.0, 10.0, 5.0]), "AJC").unwrap();
+        // Carton : les dimensions hors sachet éventuelles sont effacées.
+        definir_conditionnement(&conn, "AR_C", "carton", Some([1.0, 1.0, 1.0]), "AJC").unwrap();
+        let l = lister(&conn).unwrap();
+        let c = l.iter().find(|c| c.ar == "AR_C").unwrap();
+        assert_eq!((c.conditionnement.as_str(), c.hs_dim1_mm, c.conditionnement_par.as_str()), ("carton", None, "AJC"));
+        assert!(c.conditionnement_le.is_some());
+
+        let hs = hors_sachets(&conn).unwrap();
+        assert_eq!(hs.marge_sachet_pct, MARGE_SACHET_DEFAUT);
+        assert_eq!(hs.pieces.len(), 1);
+        assert_eq!((hs.pieces[0].ar.as_str(), hs.pieces[0].dim1_mm), ("AR_S", 20.0));
+
+        // Volume SQL d'une ligne : 20 × 10 × 5 mm × 3 pièces × 1,10 ; pièce en carton : ERP.
+        conn.execute_batch(
+            "INSERT INTO affaire (id, nom) VALUES (1, 'AFF');
+             INSERT INTO article (id, affaire_id, ar, reference, designation, dim1_mm, dim2_mm, dim3_mm, poids_unitaire_kg, quantite, ordre)
+             VALUES (1, 1, 'ar_s ', '', '', 100, 100, 100, 0.1, 3, 0), (2, 1, 'AR_C', '', '', 50, 50, 50, 0.1, 2, 1);",
+        )
+        .unwrap();
+        let vol = |id: i64| -> f64 {
+            conn.query_row(&format!("SELECT {VOLUME_ARTICLE_SQL} FROM article a WHERE a.id = ?2"), params![10.0, id], |r| r.get(0))
+                .unwrap()
+        };
+        assert!((vol(1) - 20.0 * 10.0 * 5.0 * 3.0 * 1.1 / 1e9).abs() < 1e-15);
+        assert!((vol(2) - 50.0 * 50.0 * 50.0 * 2.0 / 1e9).abs() < 1e-15);
+
+        // Remettre à traiter : tout effacé.
+        definir_conditionnement(&conn, "AR_S", "", None, "AJC").unwrap();
+        let s = lister(&conn).unwrap().into_iter().find(|c| c.ar == "AR_S").unwrap();
+        assert!(s.conditionnement.is_empty() && s.hs_dim1_mm.is_none() && s.conditionnement_le.is_none());
+        assert!(verifier_reglages(&ReglagesControle { seuil_mm: 350.0, duree_mois: 12, marge_sachet_pct: 150.0 }).is_err());
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn migration_reprend_les_articles_existants() {
         let dir = std::env::temp_dir().join(format!("caisses-test-controle-mig-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let conn = crate::db::open_at(&dir);
         conn.execute_batch(
             "DELETE FROM controle_dimension;
-             DELETE FROM _migrations WHERE nom = '0052_add_controle_dimension';
+             DELETE FROM _migrations WHERE nom IN ('0052_add_controle_dimension', '0053_add_controle_conditionnement');
              DROP TABLE controle_dimension;
              INSERT INTO affaire (id, nom) VALUES (1, 'AFFAIRE1'), (2, 'AFFAIRE2');
              INSERT INTO article (affaire_id, ar, reference, designation, dim1_mm, dim2_mm, dim3_mm, poids_unitaire_kg, quantite, ordre, colis)

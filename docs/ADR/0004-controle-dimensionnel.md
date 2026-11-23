@@ -52,3 +52,22 @@ corrections dans l'ERP (export Excel, validation une à une ou par sélection).
 - Re-contrôler un article efface la correction précédente (dernier contrôle seulement) : si un
   historique devient utile, ajouter une table de contrôles à part.
 - L'export Excel passe par `rust_xlsxwriter` (dépendance Rust ajoutée).
+
+## Complément du 2026-11-23 — Petits volumes (conditionnement)
+
+- **Contexte** : les pièces mises en sachet ont dans l'ERP les dimensions du sachet (L × l du
+  sachet à plat, hauteur dépendant de la pièce) : leur volume est faussé dans Simulations.
+- **Décision** (avec l'utilisateur) : même référentiel, colonnes ajoutées à `controle_dimension`
+  (migration 0053) — `conditionnement` (`''` à traiter, `carton`, `sachet`, `gros_volume` — libellé « Sans emballage ») et
+  dimensions de la pièce hors sachet `hs_*`, saisies une fois, sans rappel, pour les AR **sous le
+  seuil** des contrôles annuels. Pour une pièce en sachet, Simulations calcule avec les dimensions
+  hors sachet (volume, « rentre dans le carton », dim. max, suggestion) et majore le volume d'une
+  marge unique (`parametre.marge_sachet_pct`, 10 % par défaut) : la marge suit la taille du sachet
+  sans avoir à la connaître. Les articles eux-mêmes gardent les dimensions de l'ERP (affichées,
+  modifiables), les dimensions hors sachet sont posées au chargement (`useAffaire`).
+- **Écarté** : marge par taille de sachet (saisie lourde, gain faible) ; volume d'axe en
+  cylindre (π r² L sous-estime la place réellement prise dans une caisse — les axes restent des
+  pavés) ; conditionnement par ligne d'affaire (c'est une propriété de la pièce).
+- **Conséquence** : le taux de remplissage calculé côté Rust (`list_remplissage_affaires`) doit
+  suivre la même règle (`controle_dimension.rs::VOLUME_ARTICLE_SQL`) — à garder alignée avec
+  `domain/calculs.ts::volumeUnitaireM3`.

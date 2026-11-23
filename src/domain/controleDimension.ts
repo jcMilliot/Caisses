@@ -67,6 +67,33 @@ export function repartirControles(
   return r;
 }
 
+// --- Petits volumes (2026-11-23) ------------------------------------------------------------
+// AR sous le seuil des contrôles annuels (jamais dans les deux listes) : on indique une fois s'ils
+// sont livrés en carton (dimensions de l'ERP justes), en sachet (dimensions de la pièce hors sachet
+// saisies, utilisées par les calculs de Simulations) ou sans emballage (dimensions de l'ERP justes ; valeur interne `gros_volume`, libellé changé le 2026-11-23). Pas de
+// rappel. « À traiter » = pas encore indiqué ; la page n'y montre que les pièces des pickings en
+// cours.
+
+export interface ListesPetitsVolumes {
+  aTraiter: ControleDimension[];
+  traites: ControleDimension[];
+}
+
+export function repartirPetitsVolumes(lignes: ControleDimension[], reglages: ReglagesControle): ListesPetitsVolumes {
+  const r: ListesPetitsVolumes = { aTraiter: [], traites: [] };
+  for (const c of lignes) {
+    if (depasseSeuil(c, reglages.seuil_mm)) continue;
+    (c.conditionnement === "" ? r.aTraiter : r.traites).push(c);
+  }
+  return r;
+}
+
+export const LIBELLE_CONDITIONNEMENT: Record<Exclude<ControleDimension["conditionnement"], "">, string> = {
+  carton: "Carton",
+  sachet: "Sachet",
+  gros_volume: "Sans emballage",
+};
+
 /** Nombre d'articles à contrôler (carte de l'accueil). */
 export function nbAControler(lignes: ControleDimension[], reglages: ReglagesControle, maintenant: Date = new Date()): number {
   return repartirControles(lignes, reglages, maintenant).aControler.length;

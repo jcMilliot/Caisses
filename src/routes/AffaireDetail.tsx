@@ -895,7 +895,7 @@ export default function AffaireDetail({ affaireId, onBack, trigramme, estAdmin }
   );
 
   return (
-    <div style={{ maxWidth: 1600, margin: "0 auto", padding: "28px 24px 60px" }}>
+    <div style={{ maxWidth: 1920, margin: "0 auto", padding: "24px 16px 60px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24, paddingBottom: 18, borderBottom: "1px solid var(--border)" }}>
         <button className="btn btn-sm btn-ghost" onClick={onBack} title="Revenir à la liste des affaires">
           ← Affaires

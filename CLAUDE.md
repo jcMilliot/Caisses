@@ -188,7 +188,7 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-11-16 : migrations `0001` à `0046` et `0048` à `0052` publiées (0.21.0) —
+État au 2026-11-23 : migrations `0001` à `0046` et `0048` à `0053` publiées (0.25.0, `0053` = petits volumes) —
 **`0047` est réservé** à la branche `vue-3d`
 (`0047_add_placement_3d.sql`), pas de trou à combler. Pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes.
@@ -340,6 +340,9 @@ controle_dimension (ar TEXT PK COLLATE NOCASE,  -- 0052, Contrôle dimensionnel 
          -- listes à contrôler / validés / corrigés CALCULÉES (domain/controleDimension.ts) d'après
          -- parametre controle_seuil_mm (350) et controle_duree_mois (12). Ne modifie jamais
          -- les articles de Simulations.
+         -- 0053, Petits volumes : conditionnement ('' à traiter | 'carton' | 'sachet' | 'gros_volume'),
+         -- hs_dim1_mm…hs_dim3_mm NULL (pièce hors sachet), conditionnement_le, conditionnement_par ;
+         -- parametre marge_sachet_pct (10). Sachet → calculs de Simulations sur les dims hors sachet.
 
 section_lock (section_key TEXT PRIMARY KEY,  -- "demandes" | "stock" | "achats" | "alertes" | "affaire:{id}"
               titulaire, acquis_le, dernier_battement,  -- trigramme + horodatages
@@ -2725,6 +2728,73 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   (installeurs produits ; signature de la mise à jour par le workflow GitHub). Soumission
   Microsoft Defender à faire dès publication si l'installeur est bloqué.
 
+### 2026-11-23 — Contrôle dimensionnel : partie « Petits volumes » (pièces en sachet)
+
+- **Besoin** (idée du 2026-11-19, cadrée le 2026-11-23) : les pièces mises en sachet ont dans
+  l'ERP les dimensions du sachet (L × l à plat, hauteur dépendant de la pièce) : volume faussé.
+  Modèle et décisions : [ADR 0004](docs/ADR/0004-controle-dimensionnel.md) › « Complément ».
+- **Décisions de l'utilisateur** : porté par l'**AR** ; page Contrôle dimensionnel en deux
+  parties, **« Contrôles annuels »** (l'existant) et **« Petits volumes »** = AR **sous le seuil**
+  (jamais dans les deux) ; choix fait une fois, sans rappel : **Carton** (= boîte, ERP juste),
+  **Sachet** (dimensions de la pièce hors sachet saisies), **Gros volume** (rien à contrôler — libellé devenu **« Sans emballage »** le 2026-11-23, valeur interne `gros_volume` inchangée) ;
+  volume d'une ligne en sachet = pièce hors sachet × **quantité du picking** × (1 + **marge
+  sachet**, unique, **10 %** par défaut, Admin › Paramètres) ; dimensions hors sachet aussi pour
+  « ne rentre pas dans le carton », « Dim. max », l'alerte « article plus grand que la caisse » et
+  la suggestion de caisse ; **axes inchangés** (cube = place réellement prise) ; les deux
+  « Accepter » du colisage **gardés** (diagonale ; volume en filet de sécurité, à retirer s'il ne
+  sert plus) ; repère **« Hors sachet : N mm »** en petit sous chaque dimension du Picking (la valeur
+  affichée et modifiable reste celle de l'ERP), « hors sachet » sous le volume.
+- **Choix de l'assistant** : migration `0053` (colonnes sur `controle_dimension`) ; « À traiter »
+  ne montre que les pièces présentes dans un picking en cours (colonne « Affaires » non vide —
+  sinon des centaines d'AR anciens) ; dispo, recherche, « Dispo pour ctrl seulement » et
+  « Actualiser depuis l'intranet » comme les contrôles annuels ; « Traités » : type, dimensions
+  hors sachet, date · trigramme, « Modifier… » (dont « Remettre à traiter ») ; verrou « controle » ;
+  dimensions hors sachet saisies dans le même sens que celles de l'ERP ; pas de halo sur la carte
+  de l'accueil pour les petits volumes ; marge conservée à la restauration d'une sauvegarde.
+- Code : `controle_dimension.rs` (`set_conditionnement_controle`, `list_hors_sachet`,
+  `VOLUME_ARTICLE_SQL` repris par `affaires.rs::remplissages`), `domain/calculs.ts`
+  (`dimsCalcul`, `volumeUnitaireM3`, `appliquerHorsSachet`), `colisage.ts::pieceRentre`,
+  `suggestionCaisse.ts`, `hooks/useAffaire.ts`, `ArticlesTable` (repère), `ControleDimensionList`
+  (parties, `ConditionnementDialog`), `domain/controleDimension.ts::repartirPetitsVolumes`,
+  `Admin.tsx::ControleParametres` (marge). Documentation utilisateur (point ajouté en fin de section,
+  aucune clé décalée) et technique complétées.
+- Validation : `cargo test --lib` (23, + conditionnement / dims hors sachet / volume SQL / remise à
+  traiter / marge), `npx tsc --noEmit`, `npx vite build`, calculs vérifiés sur 6 cas (fichier
+  jetable : volume sachet et carton, dims ERP conservées, carton, caisse et dim. max, répartition).
+  **Non vu à l'écran.**
+- **Même jour — filtre par affaire** (demande de l'utilisateur, pour faire les contrôles affaire par
+  affaire) : menu « Toutes les affaires / <affaire> (N dispo) » à côté de « Dispo pour ctrl
+  seulement », dans « À contrôler » et « Petits volumes › À traiter » : seulement les pièces
+  **dispo** (en stock ou mouvementées) dans l'affaire choisie ; affaires proposées = celles où au
+  moins une pièce de la liste est dispo ; l'export « À contrôler » suit le filtre. Non mémorisé.
+  `npx tsc --noEmit`, `npx vite build`. **Non vu à l'écran.**
+- **Même jour — retours de l'utilisateur après essai** :
+  - **tableau du Picking sans défilement horizontal** : largeurs fixées (`tableLayout: fixed`,
+    `colgroup`), le tableau occupe toujours la largeur disponible, les textes longs passent à la
+    ligne ; colonnes **redimensionnables** (poignée au bord droit de l'en-tête, double-clic = largeur
+    par défaut), parts mémorisées par poste (`localStorage` `caisses:largeurs:articles`) ; page d'une
+    affaire élargie (1600 → 1920 px max, marges 24 → 16 px) ;
+  - **volume unitaire** : celui de l'ERP en principal, « Hors sachet : … » (marge comprise, celui des
+    calculs) dessous ; tri et filtre sur celui de l'ERP (`components/HorsSachet.tsx`, partagé) ;
+  - **recherche des filtres de colonne en « contient »** (`ColumnFilterMenu`, remplace « commence
+    par » du 2026-09-25) — vaut aussi pour Gestion des caisses ;
+  - **Colisage en cours** : AR essayé par l'utilisateur (pièce en sachet sur la base de test) — les calculs
+    prenaient déjà les dimensions hors sachet, mais le détail d'un colis et les messages d'alerte
+    montraient celles de l'ERP : même repère « Hors sachet : … mm » ajouté, messages sur les
+    dimensions des calculs. Rappel : une correction des **contrôles annuels** (« Corriger… ») ne
+    change rien dans Simulations (décision du 2026-11-16, l'ERP reste la source).
+  - `npx tsc --noEmit`, `npx vite build`. **Non vu à l'écran.**
+- **Même jour — « Gros volume » renommé « Sans emballage »** (demande de l'utilisateur) : libellé du
+  bouton, de la fenêtre, de la colonne « Conditionnement » et des documentations ; valeur stockée
+  `gros_volume` inchangée (dimensions de l'ERP justes, comme un carton).
+- **Release 0.25.0** (même jour, à la demande de l'utilisateur) : Petits volumes, filtre par
+  affaire, tableau du Picking redimensionnable sans défilement horizontal, filtres en « contient »,
+  repère hors sachet dans Colisage en cours. Migration `0053` (appliquée sur la base partagée au
+  premier lancement). Note en tête de `notesMiseAJour.ts`. Validation avant tag : `cargo check`,
+  `cargo test --lib` (23), `npx tsc --noEmit`, `npx vite build`, `npm run tauri build -- --debug`
+  (installeurs produits ; signature de la mise à jour par le workflow GitHub). Soumission Microsoft
+  Defender à faire dès publication si l'installeur est bloqué.
+
 ## Prochaines étapes
 
 ### Fait
@@ -3394,17 +3464,6 @@ bien celui souhaité, aucun changement de code nécessaire.
 
 ### À réfléchir plus tard
 
-- **Conditionnement des AR** (idée de l'utilisateur du 2026-11-19, **rien de développé**) :
-  information « conditionnement » par AR — **Boîte**, **Sachet** ou **sans**. Pour un sachet,
-  saisir des **dimensions « hors sachet »** (la pièce elle-même), qui **priment** sur les
-  dimensions de l'article pour le calcul du volume. Pallierait le cas des pièces en sachet dont
-  on a relevé les dimensions du sachet (cf. « Accepter » de l'alerte « ligne plus volumineuse que
-  le carton », 2026-10-27). À trancher avant de coder : conditionnement porté par l'AR (comme le
-  contrôle dimensionnel, valable pour toutes les affaires) ou par la ligne d'une affaire ; saisi
-  où (Simulations, Contrôle dimensionnel) ; « Boîte » change-t-il quelque chose au calcul ; les
-  dimensions hors sachet valent-elles aussi pour l'alerte « ne rentre pas dans le carton » et
-  pour « Dim. max articles » / la suggestion de caisse, ou pour le volume seulement ; effet sur
-  l'acceptation de volume existante (`piece_acceptee_volume`).
 - **API de l'intranet** — **import des articles codé le 2026-10-07**, **connexion à Caisses par
   le compte intranet codée le 2026-10-08** (cf. journal). **Détails (adresse,
   champs, réponses, décisions) dans `docs/prive/intranet-api.md`, fichier local non versionné**

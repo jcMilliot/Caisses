@@ -3,14 +3,14 @@ projet: Caisses
 statut: en cours
 priorite: normale
 mis_a_jour: 2026-11-23
-prochaine_etape: Publier le brouillon 0.24.1 sur GitHub, puis cadrer le conditionnement des AR (sachets, axes)
+prochaine_etape: Publier les brouillons 0.24.1 et 0.25.0 sur GitHub, puis vérifier « Petits volumes » sur la version installée
 ---
 
 ## Résumé
-Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.24.1 préparée le 2026-11-23 (brouillon à publier).
+Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.25.0 préparée le 2026-11-23 (brouillon à publier).
 
 ## Reste à faire
-- [x] Demandes d'achats : affiche qui réapparaissait au-dessus du titre collant — corrigé et validé le 2026-11-19
+- [ ] Contrôle dimensionnel › Petits volumes (carton / sachet / sans emballage, dimensions hors sachet dans les calculs) — codé le 2026-11-23, à vérifier à l'écran
 - [ ] Contrôle dimensionnel : AR dont l'ERP change à l'actualisation → Validé ; retirer « Corriger » et l'onglet Dimensions corrigées (plus tard)
 - [ ] Point sur la documentation utilisateur avec l'utilisateur
 
@@ -49,7 +49,6 @@ Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier
 - 2026-10-28 : caisse d'un colis donnée par l'intranet imposée et prioritaire sur le choix à la main ; une seule caisse colisage → colis rangés d'office
 
 ## Idées plus tard
-- Conditionnement des AR (boîte / sachet / sans) : dimensions hors sachet prioritaires pour le volume
 - Lier une caisse de Simulations à une caisse pesée
 - Vue 3D d'une caisse
 - Droits par tâche
