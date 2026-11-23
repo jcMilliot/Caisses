@@ -33,6 +33,24 @@ export const LIBELLE_RUBRIQUE: Record<GenreRubrique, { titre: string; icone: str
 
 export const NOTES_MISE_A_JOUR: NoteVersion[] = [
   {
+    version: "0.24.1",
+    date: "23/11/2026",
+    resume: "Petite correction d'affichage dans Demandes d'achats.",
+    rubriques: [
+      {
+        genre: "corrige",
+        points: [
+          {
+            icone: "🖼️",
+            titre: "Demandes d'achats : titre bien lisible",
+            texte:
+              "Quand on fait défiler plusieurs affiches, elles ne réapparaissent plus en transparence au-dessus du titre de la page.",
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: "0.24.0",
     date: "17/11/2026",
     resume: "Le contrôle dimensionnel se met à jour tout seul depuis l'intranet, et l'export calcule les écarts.",

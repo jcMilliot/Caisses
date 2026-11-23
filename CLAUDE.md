@@ -2719,6 +2719,11 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   bandeau prolongé dessous par un `boxShadow`).
 - Idée notée le même jour : conditionnement des AR (cf. « À réfléchir plus tard »).
 - Validation : `npx tsc --noEmit`, `npx vite build`. Validé par l'utilisateur le même jour.
+- **Release 0.24.1** (2026-11-23, à la demande de l'utilisateur) : ce correctif seul, aucune
+  migration, note en tête de `notesMiseAJour.ts`. Validation avant tag : `cargo check`,
+  `cargo test --lib` (22), `npx tsc --noEmit`, `npx vite build`, `npm run tauri build -- --debug`
+  (installeurs produits ; signature de la mise à jour par le workflow GitHub). Soumission
+  Microsoft Defender à faire dès publication si l'installeur est bloqué.
 
 ## Prochaines étapes
 

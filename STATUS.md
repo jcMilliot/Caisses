@@ -2,12 +2,12 @@
 projet: Caisses
 statut: en cours
 priorite: normale
-mis_a_jour: 2026-11-19
-prochaine_etape: Point sur la documentation utilisateur, ou validation automatique du contrôle dimensionnel (plus tard)
+mis_a_jour: 2026-11-23
+prochaine_etape: Publier le brouillon 0.24.1 sur GitHub, puis cadrer le conditionnement des AR (sachets, axes)
 ---
 
 ## Résumé
-Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.24.0 publiée le 2026-11-17.
+Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.24.1 préparée le 2026-11-23 (brouillon à publier).
 
 ## Reste à faire
 - [x] Demandes d'achats : affiche qui réapparaissait au-dessus du titre collant — corrigé et validé le 2026-11-19
