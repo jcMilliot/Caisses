@@ -3473,6 +3473,10 @@ bien celui souhaité, aucun changement de code nécessaire.
   Caisses, plus de mot de passe propre à Caisses, mot de passe intranet gardé sur le poste dans
   le gestionnaire d'identifiants Windows, Admin redemandé seulement après « Verrouiller », pas de
   bouton « Se déconnecter » pour l'instant) ; adresse de l'API en réglage, jamais dans le code.
+- **Petits volumes : pièce mise en sachet seulement à la préparation** (idée du 2026-11-24, à voir
+  plus tard) : l'ERP donne déjà les dimensions de la pièce nue. Aujourd'hui on choisit « Sachet » en
+  retapant les dimensions de l'ERP (marge appliquée). Idée : bouton « Reprendre les dimensions de
+  l'ERP » dans la fenêtre « Sachet ».
 - **Lier une caisse de Simulations à une caisse pesée** (idée du 2026-10-08, à trancher plus tard,
   l'utilisateur penche pour oui) : la caisse simulée reprendrait la tare et les renforts de la
   caisse pesée au lieu de l'estimation et des valeurs par défaut des réglages.
@@ -3575,9 +3579,15 @@ bien celui souhaité, aucun changement de code nécessaire.
 
 ### Documentation utilisateur
 
-- **À faire plus tard avec l'utilisateur (2026-10-07)** : un point sur la documentation —
-  y ajouter l'import depuis l'intranet (« Importer » / « Vérifier mise à jour », lignes
-  supprimées, numéro de besoin), et revoir la section « Récupérer les articles » (export Excel).
+- **Revue complète le 2026-11-24** (point prévu depuis le 2026-10-07) : « Récupérer les
+  articles » décrit le picking automatique (méthode Excel retirée, collage non mentionné —
+  décision de l'utilisateur), nouvelle section `colisage` (Colisage en cours), Simulations
+  (onglets, numéro de caisse, poids / charge, suggestion, Lier…), Consommable (onglets Poids /
+  Caisses en stock / Cartons, suivi des AR_CAISS_), verrouillage (« Prendre la main », Alertes et
+  Contrôle), base (dossier saisi, restauration). Points réordonnés librement : aucun texte n'avait
+  été modifié en base (confirmé par l'utilisateur). **L'Admin peut désormais être cité** là où un
+  réglage s'y fait (accord du même jour, lève la consigne du 2026-09-28 ; le journal reste exclu).
+  Validée par l'utilisateur le même jour. Pas encore publiée (prochaine release).
 - Page **Documentation** (`src/routes/Documentation.tsx`, bouton de la navbar et en bas à gauche de
   l'accueil). Texte **réécrit le 2026-09-28 d'après celui fourni par l'utilisateur** : Gestion des
   caisses (création / gestion), Simuler, Récupérer les articles, Assigner, Passer la commande, Caisses en

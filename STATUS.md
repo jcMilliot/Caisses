@@ -2,8 +2,8 @@
 projet: Caisses
 statut: en cours
 priorite: normale
-mis_a_jour: 2026-11-23
-prochaine_etape: Publier les brouillons 0.24.1 et 0.25.0 sur GitHub, puis vérifier « Petits volumes » sur la version installée
+mis_a_jour: 2026-11-24
+prochaine_etape: Vérifier « Petits volumes » sur la version installée ; documentation revue à inclure dans la prochaine release
 ---
 
 ## Résumé
@@ -12,7 +12,6 @@ Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier
 ## Reste à faire
 - [ ] Contrôle dimensionnel › Petits volumes (carton / sachet / sans emballage, dimensions hors sachet dans les calculs) — codé le 2026-11-23, à vérifier à l'écran
 - [ ] Contrôle dimensionnel : AR dont l'ERP change à l'actualisation → Validé ; retirer « Corriger » et l'onglet Dimensions corrigées (plus tard)
-- [ ] Point sur la documentation utilisateur avec l'utilisateur
 
 ## Fait
 - [x] Simulations : affaires, articles, caisses, taux de remplissage et alertes
@@ -32,6 +31,7 @@ Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier
 - [x] Envoi en partiel : caisse détaillée créée depuis Simulations quand la mère est livrée — validé le 2026-11-16
 - [x] Envoi en partiel : article livré modifié par le picking — cas non censé arriver, rien à faire (2026-11-16)
 - [x] Contrôle dimensionnel : « Dispo pour ctrl », export réordonné avec écarts, lecture du picking en direct (0.22.0-0.24.0) — validé le 2026-11-19
+- [x] Documentation utilisateur revue en entier (picking automatique, Colisage en cours, Consommable, verrouillage) — validée le 2026-11-24
 - [x] Caisse de stock / récup sans demande à S2C ; articles décolisés libérés dans Simulations (0.23.0-0.24.0) — validé le 2026-11-19
 
 ## Bloqué / points d'attention
@@ -49,6 +49,7 @@ Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier
 - 2026-10-28 : caisse d'un colis donnée par l'intranet imposée et prioritaire sur le choix à la main ; une seule caisse colisage → colis rangés d'office
 
 ## Idées plus tard
+- Petits volumes : reprendre les dimensions de l'ERP pour une pièce mise en sachet à la préparation
 - Lier une caisse de Simulations à une caisse pesée
 - Vue 3D d'une caisse
 - Droits par tâche

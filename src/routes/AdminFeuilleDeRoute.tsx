@@ -14,11 +14,6 @@ const A_FAIRE: Point[] = [
     detail:
       "Quand la page relit l'intranet et qu'un article à contrôler a de nouvelles dimensions ou un nouveau poids (corrigés directement dans l'ERP), le passer tout seul en « Validé ». Le bouton « Corriger… » et l'onglet « Dimensions corrigées » disparaîtraient.",
   },
-  {
-    titre: "Documentation",
-    detail:
-      "Faire le point ensemble : ajouter l'import du picking depuis l'intranet (mise à jour à l'ouverture d'une affaire, lignes supprimées, numéro de besoin), les onglets Picking / Colisage en cours, et revoir la section « Récupérer les articles ».",
-  },
 ];
 
 const A_VERIFIER: Point[] = [
@@ -60,6 +55,11 @@ const A_VERIFIER: Point[] = [
 ];
 
 const A_DECIDER: Point[] = [
+  {
+    titre: "Petits volumes : pièce mise en sachet à la préparation",
+    detail:
+      "Quand l'ERP donne déjà les vraies dimensions de la pièce, mais qu'on la met en sachet en la préparant : aujourd'hui on choisit « Sachet » et on retape les dimensions de l'ERP. Idée : un bouton « Reprendre les dimensions de l'ERP » dans la fenêtre « Sachet ».",
+  },
   {
     titre: "Aide au dimensionnement des caisses",
     detail:
