@@ -15,4 +15,7 @@ export const locksApi = {
   claimExpiredPen: (sectionKey: string, trigramme: string) =>
     call<SectionLock>("claim_expired_pen", { sectionKey, trigramme }),
   list: () => call<SectionLock[]>("list_locks"),
+  /** Admin : retire la main à `titulaire` (faux si elle a changé entre-temps). */
+  adminRetirer: (sectionKey: string, titulaire: string, trigramme: string) =>
+    call<boolean>("admin_retirer_verrou", { sectionKey, titulaire, trigramme }),
 };

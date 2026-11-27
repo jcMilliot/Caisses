@@ -8,49 +8,42 @@ interface Point {
   detail: string;
 }
 
-const A_FAIRE: Point[] = [
-  {
-    titre: "Contrôle dimensionnel : validation automatique",
-    detail:
-      "Quand la page relit l'intranet et qu'un article à contrôler a de nouvelles dimensions ou un nouveau poids (corrigés directement dans l'ERP), le passer tout seul en « Validé ». Le bouton « Corriger… » et l'onglet « Dimensions corrigées » disparaîtraient.",
-  },
-];
+const A_FAIRE: Point[] = [];
 
 const A_VERIFIER: Point[] = [
   {
-    titre: "Dossier de la base",
+    titre: "Droits par écran",
     detail:
-      "Admin › Paramètres › « Dossier de la base » : noter le chemin pour les nouveaux postes. Sur un nouveau poste, coller ce chemin au premier démarrage. Un changement de dossier se fait app fermée sur les autres postes ; ils suivent à leur prochain démarrage.",
+      "Admin › Utilisateurs : une colonne par écran, Lecture ou Écriture. Après la mise à jour, chacun garde ses droits (les anciens « Lecteurs » sont en lecture partout). Mettre la personne concernée en Lecture sur le Contrôle dimensionnel : sur son poste, l'écran passe en lecture seule au prochain changement d'écran, et elle écrit toujours ailleurs. Une nouvelle personne est en lecture partout.",
+  },
+  {
+    titre: "Contrôle dimensionnel : validation automatique",
+    detail:
+      "Corriger dans l'ERP un article « À contrôler », puis « Actualiser depuis l'intranet » : il passe dans « Validés » avec « ERP » comme contrôleur, et le journal de l'Admin garde l'ancienne et la nouvelle valeur. « Corriger… » n'existe plus ; « Dimensions corrigées » disparaît quand il n'y a plus rien à reporter. Rien ne change dans « Petits volumes ».",
   },
   {
     titre: "Verrouillage à la fermeture",
     detail:
-      "Fermer l'application sur un poste qui a la main : l'autre poste doit pouvoir écrire tout de suite. Sur un écran resté ouvert en lecture seule, « Prendre la main » doit apparaître dans le bandeau quand le verrou se libère, et recharger l'écran.",
+      "Fonctionnement prévu : après la fermeture de l'application sur un poste, l'autre poste voit « Prendre la main » en 7 secondes au plus, et doit cliquer dessus. Si l'attente dépasse une dizaine de secondes, la main n'a pas été libérée (fermeture forcée, PC éteint) : il faut alors attendre 5 minutes, ou la retirer depuis l'Admin.",
   },
   {
-    titre: "Commande sur affaire / sur stock",
+    titre: "Admin : retirer la main",
     detail:
-      "Choisir une caisse en stock sur une ligne existante (menu « Stock » ou suggestion de Simulations) coche « Cde passée sur achat stock » ; la retirer recoche « Cde passée sur affaire ».",
+      "Admin › Utilisateurs › « Qui a la main » : retirer la main à un poste ; sur ce poste, l'écran passe en lecture seule en quelques secondes, et l'autre poste peut « Prendre la main ». Une ligne « Main retirée » apparaît dans le journal.",
   },
   {
-    titre: "Accueil : caisses à rapatrier",
+    titre: "Simulations : dimensions remises dans l'ordre",
     detail:
-      "Une caisse passée sur une caisse en stock dans Gestion des caisses passe du bloc « à commander » au bloc « à rapatrier » de l'accueil.",
+      "Une pièce mesurée dans le désordre (diamètre × diamètre × longueur) ne doit plus être signalée « plus grande que la caisse » ; « Calcul : … » s'affiche sous la dimension.",
+  },
+  {
+    titre: "Petits volumes : colonne « Sortie »",
+    detail: "Vérifier sur une affaire en cours que « Oui » et le nom de l'affaire apparaissent quand la pièce est sortie.",
   },
   {
     titre: "Gestion des caisses : colonne Affaire",
     detail:
-      "La colonne se réduit jusqu'à la largeur d'un nom normal ; un nom d'affaire groupé (« XXX/YYY ») passe à la ligne après les « / ». Plus de cases de sélection en début de ligne.",
-  },
-  {
-    titre: "Affichage compact",
-    detail:
-      "Options › « Affichage compact » : le tableau Gestion des caisses occupe exactement la largeur de l'écran, sans défilement horizontal. Hors compact, il peut dépasser.",
-  },
-  {
-    titre: "Contrôle dimensionnel : petits volumes",
-    detail:
-      "Dans la partie « Petits volumes », indiquer carton, sachet ou sans emballage pour quelques articles. Pour un sachet, saisir les dimensions de la pièce hors sachet, puis ouvrir une affaire qui l'utilise : « Hors sachet : … mm » apparaît sous les dimensions, et le volume et le remplissage des caisses baissent en conséquence.",
+      "Un nom d'affaire groupé (« XXX/YYY ») doit passer à la ligne après les « / ». Pas encore eu de cas.",
   },
 ];
 
@@ -66,28 +59,19 @@ const A_DECIDER: Point[] = [
       "Idée : proposer des dimensions de caisse à partir des plus grands articles, avec une marge. Marge à définir (en cm ou en %, différente pour les caisses 4C ?).",
   },
   {
-    titre: "Caisses enfants à la création",
-    detail: "Idée : pouvoir créer directement les caisses enfants dans la fenêtre « Créer une nouvelle caisse ».",
-  },
-  {
     titre: "Vue 3D des caisses",
     detail:
       "Idée : après le colisage, une vue 3D d'une caisse où l'on place les colis et les pièces de sa lettre, qu'on déplace et tourne à la main, pour affiner les dimensions de la caisse. Plus tard peut-être, un placement automatique.",
   },
   {
-    titre: "Droits plus fins",
+    titre: "Droits par action",
     detail:
-      "Définir qui a accès à quoi au-delà des rôles actuels — par exemple la documentation technique, réservée pour l'instant aux administrateurs.",
+      "Les droits se règlent par écran. Des droits plus fins sur certaines actions (« Livré », « OK pour être commandée »…) seulement si des erreurs fréquentes surviennent.",
   },
   {
     titre: "Base de données partagée sur le réseau",
     detail:
       "Le partage réseau reste fragile si deux postes écrivent en même temps, malgré le verrouillage. À terme, un serveur central serait plus sûr ; en attendant, la sauvegarde automatique limite le risque.",
-  },
-  {
-    titre: "Alerte Windows Defender à chaque mise à jour",
-    detail:
-      "L'installeur n'est pas signé, d'où le blocage possible par Defender. Un certificat de signature payant n'est pas prévu, à revoir si le nombre de postes augmente.",
   },
 ];
 

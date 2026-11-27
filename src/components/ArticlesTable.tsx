@@ -1,11 +1,11 @@
 import PastilleColis from "./PastilleColis";
 import { useEffect, useMemo, useRef, useState } from "react";
 import IconeFiltre from "./IconeFiltre";
-import { volumeUnitaireM3, formaterVolumeM3, champsManquants, type ChampArticleManquant } from "../domain/calculs";
+import { dimsCalcul, volumeUnitaireM3, formaterVolumeM3, champsManquants, type ChampArticleManquant } from "../domain/calculs";
 import type { Article, Caisse, NewArticle } from "../domain/types";
 import ColumnFilterMenu from "./ColumnFilterMenu";
 import EditableCellInput from "./EditableCellInput";
-import { avecHorsSachet, styleHorsSachet, volumeErp } from "./HorsSachet";
+import { avecDimCalcul, styleHorsSachet, volumeErp } from "./HorsSachet";
 
 interface Props {
   affaireId: number;
@@ -241,9 +241,9 @@ export default function ArticlesTable({
     for (const champ of champs) {
       let meilleur: Article | null = null;
       for (const a of articles) {
-        if (!meilleur || a[champ] > meilleur[champ]) meilleur = a;
+        if (!meilleur || dimsCalcul(a)[champ] > dimsCalcul(meilleur)[champ]) meilleur = a;
       }
-      if (meilleur && meilleur[champ] > 0) result[champ] = meilleur.id;
+      if (meilleur && dimsCalcul(meilleur)[champ] > 0) result[champ] = meilleur.id;
     }
     return result;
   }, [articles]);
@@ -579,9 +579,9 @@ export default function ArticlesTable({
                 )}
                 {cell(a, "reference", a.reference)}
                 {cell(a, "designation", a.designation)}
-                {cell(a, "dim1_mm", avecHorsSachet(a.dim1_mm, a.hors_sachet?.dim1_mm), "right")}
-                {cell(a, "dim2_mm", avecHorsSachet(a.dim2_mm, a.hors_sachet?.dim2_mm), "right")}
-                {cell(a, "dim3_mm", avecHorsSachet(a.dim3_mm, a.hors_sachet?.dim3_mm), "right")}
+                {cell(a, "dim1_mm", avecDimCalcul(a, "dim1_mm"), "right")}
+                {cell(a, "dim2_mm", avecDimCalcul(a, "dim2_mm"), "right")}
+                {cell(a, "dim3_mm", avecDimCalcul(a, "dim3_mm"), "right")}
                 {cell(a, "poids_unitaire_kg", a.poids_unitaire_kg.toFixed(3), "right")}
                 {cell(a, "quantite", a.quantite, "right")}
                 <td style={{ ...tdStyle, textAlign: "right" }} className="mono">

@@ -112,6 +112,10 @@ mod tests {
         )
         .unwrap();
         assert!(enregistrer(&conn, 1, "2026-11-02", "", "AJC").is_err());
+        // FBA a la main mais pas le droit d'écrire sur Alertes (lecture par défaut) → refusé ;
+        // avec le droit, accepté.
+        assert!(enregistrer(&conn, 1, "2026-11-02", "", "FBA").is_err());
+        crate::commands::admin::changer_droit(&conn, "FBA", "alertes", true).unwrap();
         enregistrer(&conn, 1, "2026-11-02", "", "FBA").unwrap();
 
         // Demande supprimée → alerte supprimée avec elle.

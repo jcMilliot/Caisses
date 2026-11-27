@@ -3,14 +3,18 @@ use rusqlite::{Connection, OptionalExtension};
 use std::sync::Mutex;
 use tauri::State;
 
-// Rôles (décision 2026-09-30, `utilisateur.role`) : 'admin' ouvre la page Admin ; 'lecteur' ne
-// peut rien modifier (cf. `refuser_lecteur`, appelé par `require_lock`) ; 'utilisateur' = défaut.
+// Rôles (décision 2026-09-30, `utilisateur.role`) : 'admin' ouvre la page Admin et écrit partout ;
+// 'utilisateur' = défaut. Depuis le 2026-11-25 (ADR 0005), les droits d'un utilisateur se règlent
+// par écran (table `droit_ecran`, lecture ou écriture ; pas de ligne = lecture), vérifiés par
+// `refuser_sans_ecriture`, appelé par `require_lock` ; l'ancien rôle 'lecteur' est remplacé par
+// « lecture partout » (migration 0054).
 // Depuis le 2026-10-08, plus de mot de passe propre à Caisses : l'identité vient du compte
 // intranet (commands/intranet.rs), qui ouvre aussi la session admin.
 pub const ROLE_ADMIN: &str = "admin";
-pub const ROLE_LECTEUR: &str = "lecteur";
 pub const ROLE_UTILISATEUR: &str = "utilisateur";
-const ROLES: [&str; 3] = [ROLE_UTILISATEUR, ROLE_LECTEUR, ROLE_ADMIN];
+const ROLES: [&str; 2] = [ROLE_UTILISATEUR, ROLE_ADMIN];
+/// Écrans dont l'écriture se règle par personne (clés de `section_lock`, Simulations = `affaire:{id}`).
+pub const ECRANS: [&str; 6] = ["demandes", "simulations", "stock", "achats", "alertes", "controle"];
 /// Administrateur permanent (demande de l'utilisateur, 2026-09-30) : son rôle ne peut pas changer.
 pub const ADMIN_PERMANENT: &str = "AJC";
 
@@ -23,12 +27,107 @@ pub fn role_de(conn: &Connection, trigramme: &str) -> Result<String, String> {
         .unwrap_or_else(|| ROLE_UTILISATEUR.to_string()))
 }
 
-/// Refuse toute modification à un trigramme au rôle Lecteur.
-pub fn refuser_lecteur(conn: &Connection, trigramme: &str) -> Result<(), String> {
-    if role_de(conn, trigramme)? == ROLE_LECTEUR {
-        return Err("Accès en lecture seule : le rôle Lecteur ne permet pas de modifier.".to_string());
+/// Écran d'une clé de verrou (`affaire:12` → `simulations`).
+pub fn ecran_de(section_key: &str) -> &str {
+    if section_key.starts_with("affaire:") {
+        "simulations"
+    } else {
+        section_key
+    }
+}
+
+fn libelle_ecran(ecran: &str) -> &str {
+    match ecran {
+        "demandes" => "Gestion des caisses",
+        "simulations" => "Simulations",
+        "stock" => "Consommable",
+        "achats" => "Demandes d'achats",
+        "alertes" => "Alertes",
+        "controle" => "Contrôle dimensionnel",
+        autre => autre,
+    }
+}
+
+/// Droit d'écriture de `trigramme` sur `ecran` : toujours pour un administrateur ; sinon selon
+/// `droit_ecran` (pas de ligne = lecture).
+pub fn peut_ecrire(conn: &Connection, trigramme: &str, ecran: &str) -> Result<bool, String> {
+    if role_de(conn, trigramme)? == ROLE_ADMIN {
+        return Ok(true);
+    }
+    Ok(conn
+        .query_row(
+            "SELECT ecriture FROM droit_ecran WHERE trigramme = ?1 AND ecran = ?2",
+            [trigramme, ecran],
+            |r| r.get::<_, bool>(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .unwrap_or(false))
+}
+
+/// Refuse une modification sur `ecran` sans droit d'écriture.
+pub fn refuser_sans_ecriture(conn: &Connection, trigramme: &str, ecran: &str) -> Result<(), String> {
+    if !peut_ecrire(conn, trigramme, ecran)? {
+        return Err(format!(
+            "Accès en lecture seule à « {} » : vos droits ne permettent pas de le modifier.",
+            libelle_ecran(ecran)
+        ));
     }
     Ok(())
+}
+
+/// Écrans où `trigramme` peut écrire.
+pub fn ecrans_en_ecriture(conn: &Connection, trigramme: &str) -> Result<Vec<String>, String> {
+    let mut r = Vec::new();
+    for e in ECRANS {
+        if peut_ecrire(conn, trigramme, e)? {
+            r.push(e.to_string());
+        }
+    }
+    Ok(r)
+}
+
+#[derive(serde::Serialize)]
+pub struct Droits {
+    pub role: String,
+    /// Écrans en écriture (les autres : lecture).
+    pub ecriture: Vec<String>,
+}
+
+#[tauri::command]
+pub fn get_droits(db: State<Db>, trigramme: String) -> Result<Droits, String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    let t = trigramme.trim().to_uppercase();
+    Ok(Droits { role: role_de(conn, &t)?, ecriture: ecrans_en_ecriture(conn, &t)? })
+}
+
+/// Admin › Utilisateurs : lecture ou écriture sur un écran.
+pub fn changer_droit(conn: &Connection, trigramme: &str, ecran: &str, ecriture: bool) -> Result<(), String> {
+    if !ECRANS.contains(&ecran) {
+        return Err(format!("Écran inconnu : {ecran}"));
+    }
+    conn.execute(
+        "INSERT INTO droit_ecran (trigramme, ecran, ecriture) VALUES (?1, ?2, ?3)
+         ON CONFLICT(trigramme, ecran) DO UPDATE SET ecriture = excluded.ecriture",
+        rusqlite::params![trigramme, ecran, ecriture],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_droit_ecran(
+    db: State<Db>,
+    session: State<AdminSession>,
+    trigramme: String,
+    ecran: String,
+    ecriture: bool,
+) -> Result<(), String> {
+    require_admin(&session)?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    changer_droit(conn, &trigramme.trim().to_uppercase(), &ecran, ecriture)
 }
 
 /// Session admin du processus : `Some(trigramme)` une fois l'administrateur identifié par
@@ -99,8 +198,10 @@ pub struct Utilisateur {
     pub trigramme: String,
     pub premiere_connexion: String,
     pub derniere_connexion: String,
-    /// 'utilisateur' | 'lecteur' | 'admin'
+    /// 'utilisateur' | 'admin'
     pub role: String,
+    /// Écrans en écriture (tous pour un administrateur).
+    pub ecriture: Vec<String>,
 }
 
 #[tauri::command]
@@ -118,10 +219,15 @@ pub fn list_utilisateurs(db: State<Db>, session: State<AdminSession>) -> Result<
                 premiere_connexion: row.get(1)?,
                 derniere_connexion: row.get(2)?,
                 role: row.get(3)?,
+                ecriture: Vec::new(),
             })
         })
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    let mut liste = rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    for u in &mut liste {
+        u.ecriture = ecrans_en_ecriture(conn, &u.trigramme)?;
+    }
+    Ok(liste)
 }
 
 #[tauri::command]
@@ -205,6 +311,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn migration_0054_garde_les_droits_existants() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE utilisateur (trigramme TEXT PRIMARY KEY, role TEXT NOT NULL DEFAULT 'utilisateur');
+             INSERT INTO utilisateur VALUES ('AJC', 'admin'), ('BCD', 'utilisateur'), ('EFG', 'lecteur');",
+        )
+        .unwrap();
+        conn.execute_batch(include_str!("../../../migrations/0054_add_droit_ecran.sql")).unwrap();
+        assert_eq!(ecrans_en_ecriture(&conn, "BCD").unwrap().len(), ECRANS.len()); // utilisateur : écriture partout
+        assert!(ecrans_en_ecriture(&conn, "EFG").unwrap().is_empty()); // ex-lecteur : lecture partout
+        assert_eq!(role_de(&conn, "EFG").unwrap(), ROLE_UTILISATEUR);
+        assert_eq!(ecrans_en_ecriture(&conn, "AJC").unwrap().len(), ECRANS.len());
+        assert!(ecrans_en_ecriture(&conn, "NOUVEAU").unwrap().is_empty()); // nouvelle personne : lecture
+    }
+
+    #[test]
     fn roles_et_dernier_admin() {
         let dir = std::env::temp_dir().join(format!("caisses-test-roles-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -219,11 +341,20 @@ mod tests {
         assert!(require_admin(&session).is_ok());
         // AJC : administrateur permanent.
         assert!(changer_role(&conn, "AJC", ROLE_UTILISATEUR).is_err());
-        // Lecteur : modifications refusées.
-        changer_role(&conn, "BCD", ROLE_LECTEUR).unwrap();
-        assert!(refuser_lecteur(&conn, "BCD").is_err());
-        assert!(refuser_lecteur(&conn, "XYZ").is_ok());
+        // Droits par écran : lecture par défaut, écriture réglée par écran ; admin partout.
+        changer_role(&conn, "BCD", ROLE_UTILISATEUR).unwrap();
         assert!(crate::commands::locks::require_lock(&conn, "demandes", "BCD").is_err());
+        changer_droit(&conn, "BCD", "demandes", true).unwrap();
+        changer_droit(&conn, "BCD", "simulations", true).unwrap();
+        assert!(crate::commands::locks::require_lock(&conn, "demandes", "BCD").is_ok());
+        assert!(crate::commands::locks::require_lock(&conn, "affaire:7", "BCD").is_ok());
+        assert!(crate::commands::locks::require_lock(&conn, "controle", "BCD").is_err());
+        changer_droit(&conn, "BCD", "demandes", false).unwrap();
+        assert!(crate::commands::locks::require_lock(&conn, "demandes", "BCD").is_err());
+        assert_eq!(ecrans_en_ecriture(&conn, "BCD").unwrap(), ["simulations"]);
+        assert_eq!(ecrans_en_ecriture(&conn, "AJC").unwrap().len(), ECRANS.len());
+        assert!(changer_droit(&conn, "BCD", "admin", true).is_err());
+        assert!(changer_role(&conn, "BCD", "lecteur").is_err());
         assert!(changer_role(&conn, "BCD", "chef").is_err());
         // Dernier admin : BCD admin puis rétrogradable tant qu'AJC reste admin.
         changer_role(&conn, "BCD", ROLE_ADMIN).unwrap();

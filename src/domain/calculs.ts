@@ -13,9 +13,14 @@ export const POIDS_MAX_KG_M2_DEFAUT = 400;
 type DimsArticle = Pick<Article, "dim1_mm" | "dim2_mm" | "dim3_mm"> & Partial<Pick<Article, "hors_sachet">>;
 
 /** Dimensions qui servent aux calculs : celles de la pièce hors sachet si elle est en sachet
- *  (Contrôle dimensionnel › Petits volumes, 2026-11-23), sinon celles de l'ERP. */
+ *  (Contrôle dimensionnel › Petits volumes, 2026-11-23), sinon celles de l'ERP — **triées**
+ *  (2026-11-26, demande de l'utilisateur) : longueur = plus grande cote, largeur = cote moyenne,
+ *  hauteur = plus petite. C'est ainsi que la pièce est posée dans une caisse ou un colis ; une
+ *  mesure relevée dans le désordre (Ø × Ø × long) ne fausse plus la comparaison aux axes. */
 export function dimsCalcul(article: DimsArticle): Pick<Article, "dim1_mm" | "dim2_mm" | "dim3_mm"> {
-  return article.hors_sachet ?? article;
+  const d = article.hors_sachet ?? article;
+  const [dim1_mm, dim2_mm, dim3_mm] = [d.dim1_mm, d.dim2_mm, d.dim3_mm].sort((a, b) => b - a);
+  return { dim1_mm, dim2_mm, dim3_mm };
 }
 
 /** Volume d'une pièce ; en sachet : pièce hors sachet × (1 + marge sachet). */

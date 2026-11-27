@@ -1,28 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { SECTIONS_DOC, textesParDefaut, type BlocDoc } from "../domain/documentation";
-import { documentationApi } from "../data/documentation";
-import { confirmerAction } from "../data/confirm";
-import { useSessionAdmin } from "../hooks/useSessionAdmin";
+import { useEffect, useRef, useState } from "react";
+import { ENTETE_DOC, SECTIONS_DOC, type BlocDoc } from "../domain/documentation";
 import { rendreTexte } from "../components/texteDoc";
 import DocumentationTechnique from "./DocumentationTechnique";
 
-// Documentation du processus métier. Contenu par défaut dans domain/documentation.ts ; les
-// administrateurs peuvent en modifier les textes (titres, sommaire, points) via « Modifier »
-// (décision 2026-09-30, textes seulement — sections et points fixes). Seuls les textes modifiés
-// sont enregistrés en base. Ne pas y mentionner le journal ni la page Admin (demande de
-// l'utilisateur, 2026-09-28).
+// Documentation du processus métier, contenu dans domain/documentation.ts. Plus modifiable dans
+// l'app depuis le 2026-11-26 (demande de l'utilisateur) : le texte se change dans le code. Ne pas
+// y mentionner le journal.
 
 interface Props {
-  trigramme: string;
   estAdmin: boolean;
 }
 
 type Onglet = "utilisateur" | "technique";
 
 // Page Documentation : onglets « Documentation utilisateur » et « Documentation technique »
-// (2026-10-15). L'onglet technique n'est visible qu'avec le droit correspondant — pour l'instant
-// les administrateurs, en attendant l'affinement des droits (cf. CLAUDE.md › À réfléchir plus tard).
-export default function Documentation({ trigramme, estAdmin }: Props) {
+// (2026-10-15). L'onglet technique n'est visible que des administrateurs.
+export default function Documentation({ estAdmin }: Props) {
   const docTechniqueVisible = estAdmin;
   const [onglet, setOnglet] = useState<Onglet>("utilisateur");
   const vue = docTechniqueVisible ? onglet : "utilisateur";
@@ -39,54 +32,12 @@ export default function Documentation({ trigramme, estAdmin }: Props) {
           </button>
         </div>
       )}
-      {vue === "technique" ? <DocumentationTechnique /> : <DocumentationUtilisateur trigramme={trigramme} estAdmin={estAdmin} />}
+      {vue === "technique" ? <DocumentationTechnique /> : <DocumentationUtilisateur />}
     </div>
   );
 }
 
-function DocumentationUtilisateur({ trigramme, estAdmin }: Props) {
-  const defauts = useMemo(() => textesParDefaut(), []);
-  const [enregistres, setEnregistres] = useState<Record<string, string>>({});
-  const [brouillon, setBrouillon] = useState<Record<string, string> | null>(null);
-  const [erreur, setErreur] = useState<string | null>(null);
-  const { assurerSession, dialogue } = useSessionAdmin(trigramme);
-
-  useEffect(() => {
-    documentationApi.getTextes().then(setEnregistres).catch((e) => setErreur(String(e)));
-  }, []);
-
-  const edition = brouillon !== null;
-  const courants = brouillon ?? enregistres;
-  const texte = (cle: string) => courants[cle] ?? defauts[cle] ?? "";
-  const modifie = edition && JSON.stringify(nettoyer(brouillon, defauts)) !== JSON.stringify(nettoyer(enregistres, defauts));
-
-  function changer(cle: string, valeur: string) {
-    setBrouillon((prev) => ({ ...(prev ?? {}), [cle]: valeur }));
-  }
-
-  async function commencerEdition() {
-    if (!(await assurerSession())) return;
-    setErreur(null);
-    setBrouillon({ ...enregistres });
-  }
-
-  async function enregistrer() {
-    if (!brouillon) return;
-    try {
-      const aEnregistrer = nettoyer(brouillon, defauts);
-      await documentationApi.setTextes(aEnregistrer);
-      setEnregistres(aEnregistrer);
-      setBrouillon(null);
-    } catch (e) {
-      setErreur(String(e));
-    }
-  }
-
-  async function annuler() {
-    if (modifie && !(await confirmerAction("Abandonner les modifications de la documentation ?", "Annuler"))) return;
-    setBrouillon(null);
-  }
-
+function DocumentationUtilisateur() {
   const [actif, setActif] = useState(SECTIONS_DOC[0].id);
   // Le clic dans le sommaire déclenche un scroll fluide qui traverse d'autres sections en
   // chemin : on ignore l'observer le temps du scroll pour éviter que la surbrillance clignote
@@ -125,16 +76,6 @@ function DocumentationUtilisateur({ trigramme, estAdmin }: Props) {
     return () => observer.disconnect();
   }, []);
 
-  // Texte affiché ou champ de saisie selon le mode.
-  function champ(cle: string, multiligne = true, style?: React.CSSProperties) {
-    if (!edition) return rendreTexte(texte(cle));
-    return multiligne ? (
-      <TexteAuto valeur={texte(cle)} onChange={(v) => changer(cle, v)} />
-    ) : (
-      <input className="input" value={texte(cle)} onChange={(e) => changer(cle, e.target.value)} style={{ width: "100%", ...style }} />
-    );
-  }
-
   function rendreBlocs(sectionId: string, blocs: BlocDoc[]) {
     const elements: React.ReactNode[] = [];
     let items: React.ReactNode[] = [];
@@ -146,15 +87,15 @@ function DocumentationUtilisateur({ trigramme, estAdmin }: Props) {
       const cle = `${sectionId}.${i}`;
       if (b.type === "h3") {
         viderListe(cle);
-        elements.push(<h3 key={cle}>{champ(cle, false, { fontSize: 14, fontWeight: 700 })}</h3>);
+        elements.push(<h3 key={cle}>{rendreTexte(b.texte)}</h3>);
       } else {
         items.push(
           <li key={cle}>
-            {champ(cle)}
+            {rendreTexte(b.texte)}
             {b.sous && (
               <ul>
-                {b.sous.map((_, j) => (
-                  <li key={j}>{champ(`${cle}.${j}`)}</li>
+                {b.sous.map((x, j) => (
+                  <li key={j}>{rendreTexte(x)}</li>
                 ))}
               </ul>
             )}
@@ -181,123 +122,43 @@ function DocumentationUtilisateur({ trigramme, estAdmin }: Props) {
       >
         <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)", margin: "6px 0 10px" }}>Sommaire</h2>
         <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          {SECTIONS_DOC.map((s) =>
-            edition ? (
-              <input
-                key={s.id}
-                className="input"
-                value={texte(`${s.id}.sommaire`)}
-                onChange={(e) => changer(`${s.id}.sommaire`, e.target.value)}
-                style={{ fontSize: 13, padding: "5px 8px", marginBottom: 2 }}
-              />
-            ) : (
-              <button
-                key={s.id}
-                onClick={() => allerA(s.id)}
-                style={{
-                  textAlign: "left",
-                  padding: "6px 10px",
-                  borderRadius: "var(--radius)",
-                  border: "none",
-                  background: actif === s.id ? "var(--accent-soft)" : "transparent",
-                  color: actif === s.id ? "var(--accent)" : "var(--text)",
-                  fontWeight: actif === s.id ? 600 : 400,
-                  fontSize: 13,
-                  cursor: "pointer",
-                }}
-              >
-                {texte(`${s.id}.sommaire`)}
-              </button>
-            ),
-          )}
+          {SECTIONS_DOC.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => allerA(s.id)}
+              style={{
+                textAlign: "left",
+                padding: "6px 10px",
+                borderRadius: "var(--radius)",
+                border: "none",
+                background: actif === s.id ? "var(--accent-soft)" : "transparent",
+                color: actif === s.id ? "var(--accent)" : "var(--text)",
+                fontWeight: actif === s.id ? 600 : 400,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              {s.sommaire}
+            </button>
+          ))}
         </nav>
       </aside>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ marginBottom: 28, display: "flex", alignItems: "flex-start", gap: 16 }}>
-          <div style={{ flex: 1 }}>
-            <h1 className="page-title">
-              {champ("entete.titre", false, { fontSize: 22, fontWeight: 700 })}
-            </h1>
-            <div style={{ fontSize: 13.5, color: "var(--text-muted)", margin: "6px 0 0" }}>{champ("entete.intro")}</div>
-          </div>
-          {estAdmin && (
-            <div style={{ display: "flex", gap: 8, flexShrink: 0, position: "sticky", top: 70 }}>
-              {!edition && (
-                <button className="btn btn-sm" onClick={commencerEdition}>
-                  Modifier
-                </button>
-              )}
-              {edition && !modifie && (
-                <button className="btn btn-sm" onClick={() => setBrouillon(null)}>
-                  Terminer
-                </button>
-              )}
-              {modifie && (
-                <>
-                  <button className="btn btn-sm btn-pastel-orange" onClick={annuler}>
-                    Annuler
-                  </button>
-                  <button className="btn btn-sm btn-success-solid" onClick={enregistrer}>
-                    Enregistrer
-                  </button>
-                </>
-              )}
-            </div>
-          )}
+        <div style={{ marginBottom: 28 }}>
+          <h1 className="page-title">{ENTETE_DOC.titre}</h1>
+          <div style={{ fontSize: 13.5, color: "var(--text-muted)", margin: "6px 0 0" }}>{ENTETE_DOC.intro}</div>
         </div>
-
-        {edition && (
-          <p style={{ fontSize: 12.5, color: "var(--info-text)", background: "var(--info-bg)", padding: "8px 12px", borderRadius: "var(--radius)", margin: "-12px 0 20px" }}>
-            Mode modification : chaque texte est modifiable. Entourer un mot de **deux astérisques** pour le mettre en gras.
-            Vider un champ rétablit le texte d'origine.
-          </p>
-        )}
-        {erreur && <p style={{ fontSize: 13, color: "var(--danger-text)", margin: "0 0 16px" }}>{erreur}</p>}
 
         {SECTIONS_DOC.map((s) => (
           <section key={s.id} id={s.id} className="panel" style={{ padding: "20px 24px", marginBottom: 20, scrollMarginTop: 70 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 12px", letterSpacing: "-0.01em" }}>
-              {champ(`${s.id}.titre`, false, { fontSize: 16, fontWeight: 700 })}
-            </h2>
+            <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 12px", letterSpacing: "-0.01em" }}>{s.titre}</h2>
             <div style={{ fontSize: 13.5, lineHeight: 1.6, color: "var(--text)" }} className="doc-bloc">
               {rendreBlocs(s.id, s.blocs)}
             </div>
           </section>
         ))}
       </div>
-
-      {dialogue}
     </div>
-  );
-}
-
-// Ne garde que les textes différents du contenu par défaut (un champ vidé revient au défaut).
-function nettoyer(textes: Record<string, string>, defauts: Record<string, string>): Record<string, string> {
-  const r: Record<string, string> = {};
-  for (const [cle, valeur] of Object.entries(textes)) {
-    if (cle in defauts && valeur.trim() !== "" && valeur !== defauts[cle]) r[cle] = valeur;
-  }
-  return r;
-}
-
-// Zone de texte qui s'agrandit avec son contenu.
-function TexteAuto({ valeur, onChange }: { valeur: string; onChange: (v: string) => void }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight + 2}px`;
-  }, [valeur]);
-  return (
-    <textarea
-      ref={ref}
-      className="input"
-      value={valeur}
-      onChange={(e) => onChange(e.target.value)}
-      rows={1}
-      style={{ width: "100%", resize: "none", font: "inherit", lineHeight: 1.5, padding: "4px 8px", overflow: "hidden" }}
-    />
   );
 }

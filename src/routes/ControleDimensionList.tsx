@@ -61,9 +61,11 @@ function ecrireStockage(cle: string, v: string) {
 
 // Contrôle dimensionnel (2026-11-16, ADR 0004) : les AR des pickings dont 2 dimensions sur 3
 // dépassent le seuil de l'Admin sont à recontrôler à la main. Conforme → validé pour la durée de
-// l'Admin ; mesures différentes → « Dimensions corrigées », à reporter dans l'ERP (export Excel),
-// puis validées une à une ou par sélection. Ne modifie jamais les articles de Simulations : la
-// mise à jour du picking reprendra les valeurs corrigées dans l'ERP. Verrou « controle ».
+// l'Admin ; mesures différentes → on corrige directement l'ERP, et l'AR est validé tout seul quand
+// ses nouvelles valeurs arrivent (validation automatique, 2026-11-25, `valider_si_erp_change`).
+// « Corriger… » est retiré ; « Dimensions corrigées » reste affiché tant qu'il reste des
+// corrections saisies avant, à reporter. Ne modifie jamais les articles de Simulations : la mise
+// à jour du picking reprendra les valeurs corrigées dans l'ERP. Verrou « controle ».
 export default function ControleDimensionList({ trigramme }: Props) {
   const lock = useSectionLock("controle", trigramme);
   const readOnly = lock.status !== "held";
@@ -117,6 +119,9 @@ export default function ControleDimensionList({ trigramme }: Props) {
     [lignes, reglages],
   );
   const nbAReporter = listes.corriges.filter((c) => !c.erp_valide_le).length;
+  const ongletCorrigesVisible = nbAReporter > 0;
+  // Onglet mémorisé sur « Dimensions corrigées » alors qu'il n'y en a plus : retour à « À contrôler ».
+  const ongletActif: Onglet = onglet === "corriges" && lignes && !ongletCorrigesVisible ? "a_controler" : onglet;
 
   const filtrer = (l: ControleDimension[]) => {
     const r = recherche.trim().toUpperCase();
@@ -174,9 +179,13 @@ export default function ControleDimensionList({ trigramme }: Props) {
       if (!monteRef.current || erp.length === 0 || lock.lectureSeule) return;
       // Nouveaux AR et valeurs de l'ERP à jour, sans passer par Simulations.
       try {
-        const nouveaux = await controleDimensionApi.rafraichir(erp, trigramme);
+        const { nouveaux, valides_erp } = await controleDimensionApi.rafraichir(erp, trigramme);
         await reload();
-        if (nouveaux > 0) setMessage({ ok: true, texte: `${nouveaux} nouvel(s) article(s) ajouté(s) d'après les pickings de l'intranet.` });
+        const textes = [
+          nouveaux > 0 ? `${nouveaux} nouvel(s) article(s) ajouté(s) d'après les pickings de l'intranet.` : "",
+          valides_erp > 0 ? `${valides_erp} article(s) validé(s) : dimensions ou poids corrigés dans l'ERP.` : "",
+        ].filter(Boolean);
+        if (textes.length > 0) setMessage({ ok: true, texte: textes.join(" ") });
       } catch (e) {
         setMessage({ ok: false, texte: String(e) });
       }
@@ -341,7 +350,7 @@ export default function ControleDimensionList({ trigramme }: Props) {
   }
 
   // Listes qui montrent la dispo des pièces (et relisent les pickings).
-  const listeAvecDispo = (partie === "annuels" && onglet === "a_controler") || (partie === "petits" && ongletPv === "a_traiter");
+  const listeAvecDispo = (partie === "annuels" && ongletActif === "a_controler") || (partie === "petits" && ongletPv === "a_traiter");
 
   async function enregistrerConditionnement(c: ControleDimension, cond: Conditionnement, hors: [number, number, number] | null) {
     const texte =
@@ -349,10 +358,12 @@ export default function ControleDimensionList({ trigramme }: Props) {
     await action(() => controleDimensionApi.setConditionnement(c.ar, cond, hors, trigramme), texte);
   }
 
+  // « Dimensions corrigées » ne reste affiché que tant qu'une correction attend son report dans
+  // l'ERP (décision du 2026-11-25 : « Corriger… » retiré, l'onglet disparaît une fois vidé).
   const ONGLETS: { id: Onglet; label: string; n: number }[] = [
     { id: "a_controler", label: "À contrôler", n: listes.aControler.length },
     { id: "valides", label: "Validés", n: listes.valides.length },
-    { id: "corriges", label: "Dimensions corrigées", n: nbAReporter },
+    ...(ongletCorrigesVisible ? [{ id: "corriges" as const, label: "Dimensions corrigées", n: nbAReporter }] : []),
   ];
 
   return (
@@ -421,7 +432,7 @@ export default function ControleDimensionList({ trigramme }: Props) {
       <div className="segmented" style={{ marginBottom: 14 }}>
         {partie === "annuels"
           ? ONGLETS.map((o) => (
-              <button key={o.id} className={onglet === o.id ? "actif" : undefined} onClick={() => choisirOnglet(o.id)}>
+              <button key={o.id} className={ongletActif === o.id ? "actif" : undefined} onClick={() => choisirOnglet(o.id)}>
                 {o.label}
                 {o.n > 0 && ` (${o.n})`}
               </button>
@@ -447,7 +458,7 @@ export default function ControleDimensionList({ trigramme }: Props) {
           onChange={(e) => setRecherche(e.target.value)}
           style={{ width: 300 }}
         />
-        {partie === "annuels" && onglet === "corriges" && (
+        {partie === "annuels" && ongletActif === "corriges" && (
           <>
             <div className="segmented">
               {(
@@ -517,7 +528,7 @@ export default function ControleDimensionList({ trigramme }: Props) {
             </button>
           </>
         )}
-        {partie === "annuels" && onglet === "a_controler" && (
+        {partie === "annuels" && ongletActif === "a_controler" && (
           <button
             className="btn"
             style={{ marginLeft: "auto" }}
@@ -549,9 +560,10 @@ export default function ControleDimensionList({ trigramme }: Props) {
           vide={dispoSeulement ? "Aucun petit volume dispo à traiter." : "Aucun petit volume à traiter dans les pickings en cours."}
           affairesEnEvidence={(c) => dispos.get(c.ar)?.affaires ?? []}
           affairesDe={affairesAffichees}
-          colonnesFin={["Dispo pour ctrl", ""]}
+          colonnesFin={["Dispo pour ctrl", "Sortie", ""]}
           cellulesFin={(c) => [
             <PastilleDispo dispo={dispos.get(c.ar)} />,
+            <PastilleSortie dispo={dispos.get(c.ar)} />,
             <span style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
               <button
                 className="btn btn-sm btn-pastel-green"
@@ -613,7 +625,7 @@ export default function ControleDimensionList({ trigramme }: Props) {
             </span>,
           ]}
         />
-      ) : onglet === "a_controler" ? (
+      ) : ongletActif === "a_controler" ? (
         <TableauControle
           lignes={aControlerAffiches}
           vide={dispoSeulement ? "Aucun article dispo pour un contrôle." : "Aucun article à contrôler."}
@@ -640,19 +652,11 @@ export default function ControleDimensionList({ trigramme }: Props) {
                 >
                   Conforme
                 </button>
-                <button
-                  className="btn btn-sm btn-pastel-orange"
-                  disabled={readOnly || busy}
-                  title="Saisir les mesures relevées"
-                  onClick={() => setMesures(c)}
-                >
-                  Corriger…
-                </button>
               </span>,
             ];
           }}
         />
-      ) : onglet === "valides" ? (
+      ) : ongletActif === "valides" ? (
         <TableauControle
           lignes={filtrer(listes.valides)}
           vide="Aucun article validé."
@@ -767,6 +771,32 @@ function PastilleDispo({ dispo }: { dispo: DispoControle | undefined }) {
   return (
     <span className="badge badge-warn" title="Picking de l'intranet illisible">
       ?
+    </span>
+  );
+}
+
+// Sortie (petits volumes, 2026-11-27) : mouvement de sortie (`moved` du picking) sur une des
+// affaires listées, avec le nom des affaires concernées.
+function PastilleSortie({ dispo }: { dispo: DispoControle | undefined }) {
+  if (!dispo || dispo.etat === "chargement") return <span style={{ color: "var(--text-faint)" }}>…</span>;
+  if (dispo.sorties.length > 0)
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <span className="badge badge-ok" title={`Mouvement de sortie dans le picking : ${dispo.sorties.join(", ")}`}>
+          Oui
+        </span>
+        <span style={{ fontSize: 12.5, color: "var(--ok-text)", fontWeight: 600 }}>{dispo.sorties.join(", ")}</span>
+      </span>
+    );
+  if (dispo.etat === "inconnu")
+    return (
+      <span className="badge badge-warn" title="Picking de l'intranet illisible">
+        ?
+      </span>
+    );
+  return (
+    <span className="badge badge-muted" title="Aucun mouvement de sortie dans les affaires listées">
+      Non
     </span>
   );
 }

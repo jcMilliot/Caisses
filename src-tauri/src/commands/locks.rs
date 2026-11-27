@@ -7,8 +7,9 @@ use tauri::State;
 /// cohérent avec le fait qu'une ressource jamais ouverte par ce poste (ex: suppression d'une
 /// affaire depuis AffairesList, sans passer par AffaireDetail) n'a pas encore de verrou à elle.
 pub fn require_lock(conn: &rusqlite::Connection, section_key: &str, trigramme: &str) -> Result<(), String> {
-    // Point de passage de toutes les commandes d'écriture : on y refuse aussi le rôle Lecteur.
-    crate::commands::admin::refuser_lecteur(conn, trigramme)?;
+    // Point de passage de toutes les commandes d'écriture : on y vérifie aussi le droit d'écrire
+    // sur l'écran (droits par écran, 2026-11-25).
+    crate::commands::admin::refuser_sans_ecriture(conn, trigramme, crate::commands::admin::ecran_de(section_key))?;
     let sql = format!("SELECT {} FROM section_lock WHERE section_key = ?1", SELECT_COLS);
     let result = conn.query_row(&sql, [section_key], map_row);
     match result {
@@ -72,6 +73,45 @@ pub fn acquire_lock(db: State<Db>, section_key: String, trigramme: String) -> Re
 /// couvert par cette expiration.
 pub fn liberer_verrous(conn: &rusqlite::Connection, trigramme: &str) -> rusqlite::Result<usize> {
     conn.execute("DELETE FROM section_lock WHERE titulaire = ?1", [trigramme])
+}
+
+/// Admin › Utilisateurs › « Qui a la main » (2026-11-25) : retire la main à son titulaire, par exemple
+/// un collègue parti en laissant l'app ouverte. L'app reste ouverte sur son poste : à son prochain
+/// battement (7 s), l'écran passe en lecture seule avec « Prendre la main », comme les autres
+/// postes ; rien de ce qui est enregistré n'est perdu. `titulaire` attendu : refuse si la main a
+/// changé entre-temps. Entrée au journal.
+fn retirer_verrou(conn: &rusqlite::Connection, section_key: &str, titulaire: &str, admin: &str) -> Result<bool, String> {
+    let n = conn
+        .execute(
+            "DELETE FROM section_lock WHERE section_key = ?1 AND titulaire = ?2",
+            rusqlite::params![section_key, titulaire],
+        )
+        .map_err(|e| e.to_string())?;
+    if n > 0 {
+        crate::commands::journal::journaliser(
+            conn,
+            admin,
+            "verrou_retire",
+            "section_lock",
+            None,
+            &format!("{section_key} : main retirée à {titulaire}"),
+        );
+    }
+    Ok(n > 0)
+}
+
+#[tauri::command]
+pub fn admin_retirer_verrou(
+    db: State<Db>,
+    session: State<crate::commands::admin::AdminSession>,
+    section_key: String,
+    titulaire: String,
+    trigramme: String,
+) -> Result<bool, String> {
+    crate::commands::admin::require_admin(&session)?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = guard.as_ref().ok_or("base de données non initialisée")?;
+    retirer_verrou(conn, &section_key, &titulaire, &trigramme)
 }
 
 #[tauri::command]
@@ -193,4 +233,34 @@ pub fn list_locks(db: State<Db>) -> Result<Vec<SectionLock>, String> {
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt.query_map([], map_row).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn admin_retire_la_main_et_journalise() {
+        let dir = std::env::temp_dir().join(format!("caisses-test-locks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let conn = crate::db::open_at(&dir);
+        conn.execute(
+            "INSERT INTO section_lock (section_key, titulaire, acquis_le, dernier_battement)
+             VALUES ('demandes', 'FBA', datetime('now'), datetime('now'))",
+            [],
+        )
+        .unwrap();
+        // La main a changé entre-temps : rien.
+        assert!(!retirer_verrou(&conn, "demandes", "XYZ", "AJC").unwrap());
+        assert!(require_lock(&conn, "demandes", "AJC").is_err());
+        // Retirée : la section est libre, entrée au journal.
+        assert!(retirer_verrou(&conn, "demandes", "FBA", "AJC").unwrap());
+        assert!(require_lock(&conn, "demandes", "AJC").is_ok());
+        let (auteur, details): (String, String) = conn
+            .query_row("SELECT trigramme, details FROM journal WHERE action = 'verrou_retire'", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!((auteur.as_str(), details.as_str()), ("AJC", "demandes : main retirée à FBA"));
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

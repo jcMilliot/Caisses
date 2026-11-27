@@ -19,7 +19,7 @@ import DemandeFermetureDialog from "./components/DemandeFermetureDialog";
 import IconeNav from "./components/IconeNav";
 import { confirmerAction } from "./data/confirm";
 import { adminApi, type Role } from "./data/admin";
-import { definirLectureSeuleRole } from "./hooks/useSectionLock";
+import { definirDroitsEcriture } from "./hooks/useSectionLock";
 import { affairesApi } from "./data/affaires";
 import { caissesApi } from "./data/caisses";
 import { demandeCaisseApi } from "./data/demandeCaisse";
@@ -64,17 +64,18 @@ export default function App() {
     if (utilisateurPret) adminApi.enregistrerConnexion(utilisateurPret).catch(() => {});
   }, [utilisateurPret]);
   const [section, setSection] = useState<Section>("accueil");
-  // Rôle du trigramme, relu à chaque changement d'écran (un admin peut le changer depuis un autre
-  // poste). Les écrans ne s'affichent qu'une fois connu : un Lecteur ne doit jamais prendre de
-  // verrou, même brièvement.
+  // Rôle et droits par écran du trigramme, relus à chaque changement d'écran (un admin peut les
+  // changer depuis un autre poste). Les écrans ne s'affichent qu'une fois connus : un écran en
+  // lecture ne doit jamais prendre de verrou, même brièvement. En cas d'échec de lecture : droits
+  // précédents gardés (lecture partout au premier chargement).
   const [role, setRole] = useState<Role | null>(null);
   useEffect(() => {
     if (!utilisateurPret) return;
     adminApi
-      .getRole(utilisateurPret)
-      .then((r) => {
-        definirLectureSeuleRole(r === "lecteur");
-        setRole(r);
+      .getDroits(utilisateurPret)
+      .then((d) => {
+        definirDroitsEcriture(d.ecriture);
+        setRole(d.role);
       })
       .catch(() => setRole((prev) => prev ?? "utilisateur"));
   }, [utilisateurPret, section]);
@@ -342,7 +343,7 @@ export default function App() {
         {section === "alertes" && <AlertesList trigramme={trigramme} />}
         {section === "controle" && <ControleDimensionList trigramme={trigramme} />}
         {section === "admin" && estAdmin && <Admin trigramme={trigramme} />}
-        {section === "documentation" && <Documentation trigramme={trigramme} estAdmin={estAdmin} />}
+        {section === "documentation" && <Documentation estAdmin={estAdmin} />}
         {section === "notes" && <NotesMiseAJour />}
       </div>
 

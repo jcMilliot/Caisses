@@ -2,16 +2,20 @@
 projet: Caisses
 statut: en cours
 priorite: normale
-mis_a_jour: 2026-11-24
-prochaine_etape: Vérifier « Petits volumes » sur la version installée ; documentation revue à inclure dans la prochaine release
+mis_a_jour: 2026-11-27
+prochaine_etape: Publier le brouillon 0.26.0, régler les droits par écran, puis vérifier à l'écran les points de la 0.26.0
 ---
 
 ## Résumé
-Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.25.0 préparée le 2026-11-23 (brouillon à publier).
+Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier Excel pour dimensionner des caisses d'expédition en bois : gestion des caisses, simulations, consommables, demandes d'achats, alertes. Usage quotidien multi-poste ; version 0.26.0 préparée le 2026-11-27 (brouillon à publier).
 
 ## Reste à faire
-- [ ] Contrôle dimensionnel › Petits volumes (carton / sachet / sans emballage, dimensions hors sachet dans les calculs) — codé le 2026-11-23, à vérifier à l'écran
-- [ ] Contrôle dimensionnel : AR dont l'ERP change à l'actualisation → Validé ; retirer « Corriger » et l'onglet Dimensions corrigées (plus tard)
+- [ ] Contrôle dimensionnel : validation automatique d'après l'ERP — codée le 2026-11-25, à vérifier à l'écran
+- [ ] Droits par écran (lecture / écriture, ADR 0005, migration 0054) — codés le 2026-11-25, à vérifier à l'écran
+- [ ] Verrouillage à la fermeture pas instantané (retour du 2026-11-25) — délai normal ≤ 7 s + clic « Prendre la main », à refaire tester
+- [ ] Admin : « Qui a la main » / « Retirer la main » — codé le 2026-11-25, à tester à deux postes
+- [ ] Dimensions des pièces remises dans l'ordre (longueur = plus grande, hauteur = plus petite) pour les calculs — codé le 2026-11-26, à vérifier à l'écran
+- [ ] Petits volumes : colonne « Sortie » (mouvement de sortie par affaire) — codé le 2026-11-27, à vérifier à l'écran
 
 ## Fait
 - [x] Simulations : affaires, articles, caisses, taux de remplissage et alertes
@@ -31,6 +35,7 @@ Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier
 - [x] Envoi en partiel : caisse détaillée créée depuis Simulations quand la mère est livrée — validé le 2026-11-16
 - [x] Envoi en partiel : article livré modifié par le picking — cas non censé arriver, rien à faire (2026-11-16)
 - [x] Contrôle dimensionnel : « Dispo pour ctrl », export réordonné avec écarts, lecture du picking en direct (0.22.0-0.24.0) — validé le 2026-11-19
+- [x] Contrôle dimensionnel › Petits volumes (0.25.0) — validé le 2026-11-25
 - [x] Documentation utilisateur revue en entier (picking automatique, Colisage en cours, Consommable, verrouillage) — validée le 2026-11-24
 - [x] Caisse de stock / récup sans demande à S2C ; articles décolisés libérés dans Simulations (0.23.0-0.24.0) — validé le 2026-11-19
 
@@ -46,13 +51,13 @@ Application de bureau Windows (Tauri 2 + React + SQLite) qui remplace un fichier
 - 2026-09-09 : pas de signature Authenticode de l'installeur (ADR 0002)
 - 2026-09-28 : compte admin en base, session en mémoire, sauvegarde par n'importe quel poste (ADR 0003)
 - 2026-11-16 : contrôle dimensionnel — référentiel par AR, listes calculées, Simulations jamais modifié par l'outil (ADR 0004)
+- 2026-11-25 : droits par écran (lecture / écriture) par personne, lecture par défaut, plus de rôle Lecteur (ADR 0005)
 - 2026-10-28 : caisse d'un colis donnée par l'intranet imposée et prioritaire sur le choix à la main ; une seule caisse colisage → colis rangés d'office
 
 ## Idées plus tard
 - Petits volumes : reprendre les dimensions de l'ERP pour une pièce mise en sachet à la préparation
 - Lier une caisse de Simulations à une caisse pesée
 - Vue 3D d'une caisse
-- Droits par tâche
+- Droits par action (si erreurs fréquentes)
 - Aide de dimensions / dimensions conseillées
-- Créer une caisse enfant depuis « + Créer une nouvelle caisse »
 - Rapprochement avec les cartons standards existants

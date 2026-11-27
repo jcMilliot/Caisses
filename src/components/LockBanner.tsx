@@ -1,5 +1,5 @@
 interface Props {
-  // Rôle Lecteur : bandeau de lecture seule, sans demande d'écriture possible.
+  // Pas de droit d'écriture sur l'écran : bandeau de lecture seule, sans demande d'écriture possible.
   lectureSeule?: boolean;
   holderTrigramme: string | null;
   incomingRequest: string | null;
@@ -27,7 +27,7 @@ export default function LockBanner({
     return (
       <div style={bannerStyle("var(--border-strong)")}>
         <span>
-          Accès en <strong>lecture seule</strong> (rôle Lecteur) — aucune modification possible.
+          Accès en <strong>lecture seule</strong> sur cet écran (vos droits) — aucune modification possible.
         </span>
       </div>
     );

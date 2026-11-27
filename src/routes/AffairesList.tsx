@@ -1,4 +1,4 @@
-import { estLectureSeuleRole } from "../hooks/useSectionLock";
+import { peutEcrire } from "../hooks/useSectionLock";
 import TauxRemplissage from "../components/TauxRemplissage";
 import { tauxParAffaire, type TauxCaisse } from "../domain/remplissage";
 import { useEffect, useState } from "react";
@@ -14,7 +14,7 @@ interface Props {
 }
 
 export default function AffairesList({ onOpen, trigramme }: Props) {
-  const lectureSeule = estLectureSeuleRole();
+  const lectureSeule = !peutEcrire("simulations");
   const [affaires, setAffaires] = useState<Affaire[]>([]);
   const [verrous, setVerrous] = useState<Map<number, SectionLock>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -88,7 +88,7 @@ export default function AffairesList({ onOpen, trigramme }: Props) {
           className="btn btn-primary"
           onClick={() => setCreating((v) => !v)}
           disabled={lectureSeule}
-          title={lectureSeule ? "Rôle Lecteur : lecture seule" : undefined}
+          title={lectureSeule ? "Lecture seule sur Simulations (vos droits)" : undefined}
         >
           + Nouvelle affaire
         </button>

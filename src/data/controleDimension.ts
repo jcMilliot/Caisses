@@ -16,8 +16,9 @@ export const controleDimensionApi = {
   list: () => call<ControleDimension[]>("list_controle_dimension"),
   /** Affaires de Simulations pas entièrement expédiées (picking lu en direct par la page). */
   listAffaires: () => call<string[]>("list_affaires_controle"),
-  /** AR lus dans les pickings en direct → référentiel ; renvoie le nombre de nouveaux AR. */
-  rafraichir: (articles: ArticleErp[], trigramme: string) => call<number>("rafraichir_controle_dimension", { articles, trigramme }),
+  /** AR lus dans les pickings en direct → référentiel ; nouveaux AR et AR validés d'après l'ERP. */
+  rafraichir: (articles: ArticleErp[], trigramme: string) =>
+    call<{ nouveaux: number; valides_erp: number }>("rafraichir_controle_dimension", { articles, trigramme }),
   getReglages: () => call<ReglagesControle>("get_reglages_controle"),
   setReglages: (reglages: ReglagesControle) => call<void>("set_reglages_controle", { reglages }),
   valider: (ar: string, trigramme: string) => call<void>("valider_controle_dimension", { ar, trigramme }),

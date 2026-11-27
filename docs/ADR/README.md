@@ -20,3 +20,4 @@ remplaçant référence l'ancien plutôt que de réutiliser son numéro).
 - [0002 — Pas de signature Authenticode de l'installeur](0002-pas-de-signature-authenticode.md)
 - [0003 — Compte admin en base, session en mémoire, sauvegarde par n'importe quel poste](0003-compte-admin-et-sauvegarde.md)
 - [0004 — Contrôle dimensionnel : référentiel par AR, listes calculées, Simulations non modifié](0004-controle-dimensionnel.md)
+- [0005 — Droits par écran (lecture / écriture), par personne](0005-droits-par-ecran.md)

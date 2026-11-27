@@ -485,6 +485,9 @@ table {
   align-items: stretch;
   gap: 2px;
   height: var(--nav-h);
+  /* Dans la zone qui défile (colonne flex d'App) : sans ça, une page plus haute que la fenêtre
+     tassait la barre (flex-shrink par défaut) — cf. Bugs.md. */
+  flex-shrink: 0;
   padding: 0 20px;
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: saturate(1.4) blur(8px);

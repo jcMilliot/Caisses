@@ -33,6 +33,72 @@ export const LIBELLE_RUBRIQUE: Record<GenreRubrique, { titre: string; icone: str
 
 export const NOTES_MISE_A_JOUR: NoteVersion[] = [
   {
+    version: "0.26.0",
+    date: "27/11/2026",
+    resume: "Des droits par écran, des contrôles validés tout seuls quand l'ERP est corrigé, et des pièces toujours posées dans le bon sens.",
+    rubriques: [
+      {
+        genre: "nouveau",
+        points: [
+          {
+            icone: "🔐",
+            titre: "Droits par écran",
+            texte:
+              "Un administrateur choisit pour chaque personne et chaque écran si elle peut **modifier** ou seulement **consulter**. Tout le monde voit tout ; une nouvelle personne arrive en consultation seule.",
+            details: [
+              "Le bandeau en haut de l'écran indique « lecture seule (vos droits) » quand on ne peut pas modifier.",
+              "Le rôle « Lecteur » disparaît : les lecteurs passent en consultation sur tous les écrans.",
+            ],
+          },
+          {
+            icone: "✋",
+            titre: "Administration : qui a la main",
+            texte:
+              "Une liste montre qui modifie quel écran en ce moment. Un administrateur peut **retirer la main** d'un poste resté ouvert, sans rien perdre : la personne peut la reprendre ensuite.",
+          },
+          {
+            icone: "✅",
+            titre: "Contrôle dimensionnel : validation d'après l'ERP",
+            texte:
+              "Quand les dimensions ou le poids d'un article à contrôler sont **corrigés directement dans l'ERP**, l'article passe tout seul en « Validé », avec « ERP » comme contrôleur. Le bouton « Corriger… » disparaît.",
+          },
+          {
+            icone: "📤",
+            titre: "Petits volumes : colonne « Sortie »",
+            texte:
+              "Dans « À traiter », une colonne indique s'il y a eu une **sortie** de la pièce, avec le nom des affaires concernées.",
+          },
+        ],
+      },
+      {
+        genre: "ameliore",
+        points: [
+          {
+            icone: "📐",
+            titre: "Dimensions des pièces remises dans l'ordre",
+            texte:
+              "Pour les calculs, la **longueur** d'une pièce est toujours sa plus grande cote, la **largeur** la moyenne et la **hauteur** la plus petite : c'est ainsi qu'elle est posée dans la caisse ou le colis. Une mesure prise dans un autre ordre ne déclenche plus d'alerte à tort. Le tableau rappelle « Calcul : … » sous la dimension quand l'ordre change.",
+          },
+          {
+            icone: "📖",
+            titre: "Documentation revue",
+            texte: "La documentation a été relue en entier et décrit le fonctionnement actuel. Elle n'est plus modifiable depuis l'application.",
+          },
+        ],
+      },
+      {
+        genre: "corrige",
+        points: [
+          {
+            icone: "📏",
+            titre: "Barre de menu",
+            texte: "La barre de menu en haut garde la même hauteur sur tous les écrans.",
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: "0.25.0",
     date: "23/11/2026",
     resume: "Les pièces livrées en sachet sont comptées à leur vraie taille, et le tableau des articles tient dans l'écran.",

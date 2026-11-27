@@ -10,6 +10,18 @@ racine, le fix, et un lien vers l'entrée de journal correspondante pour le dét
 
 ---
 
+## Barre de navigation plus fine sur certains écrans
+
+- **Symptôme** (2026-11-25) : la barre du haut a la bonne hauteur sur Gestion des caisses, mais elle
+  est plus fine sur les autres sections.
+- **Cause** : depuis la barre de mise à jour (2026-10-02), la barre de navigation est dans une
+  colonne flex qui défile (`App.tsx`). Un élément flex peut rétrécir par défaut (`flex-shrink: 1`) :
+  quand la page est plus haute que la fenêtre, la barre était tassée jusqu'à la hauteur de son
+  texte. Gestion des caisses défile dans son propre tableau, sa page ne dépasse pas : pas de tassement.
+- **Fix** (2026-11-25) : `flex-shrink: 0` sur `.app-nav` (`index.css`).
+- **Piège** : tout élément de hauteur fixe placé dans cette colonne (bandeau, barre) doit avoir
+  `flex-shrink: 0`.
+
 ## Demandes d'achats : une affiche qui défile réapparaît au-dessus du titre collant
 
 - **Symptôme** (2026-11-19) : avec plusieurs affiches, le titre « Affiche(s) à envoyer » reste bien

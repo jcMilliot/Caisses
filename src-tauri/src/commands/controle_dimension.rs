@@ -1,8 +1,9 @@
 use crate::commands::admin::{require_admin, AdminSession};
 use crate::commands::backup::{ecrire, lire};
+use crate::commands::journal::journaliser;
 use crate::commands::locks::require_lock;
 use crate::db::Db;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
@@ -73,10 +74,89 @@ pub(crate) struct ArticleVu<'a> {
     pub poids_kg: f64,
 }
 
+/// Trigramme noté pour une validation faite d'après l'ERP, sans contrôle manuel.
+pub(crate) const PAR_ERP: &str = "ERP";
+
+fn texte_valeurs(v: &[f64; 4]) -> String {
+    format!(
+        "{} × {} × {} mm, {} kg",
+        nombre_avec_point(v[0]),
+        nombre_avec_point(v[1]),
+        nombre_avec_point(v[2]),
+        nombre_avec_point(v[3])
+    )
+}
+
+/// Validation automatique (2026-11-25, décisions de l'utilisateur) : quand l'ERP change les
+/// dimensions ou le poids d'un AR (correction faite directement dans l'ERP), on considère le
+/// contrôle fait.
+/// - AR **à contrôler** juste avant le changement (2 dimensions sur 3 ≥ seuil avec les anciennes
+///   valeurs, jamais contrôlé ou contrôle expiré) → validé ce jour, par « ERP » ;
+/// - correction en attente de report (`corrige` sans `erp_valide_le`) → reportée ce jour, par « ERP » ;
+/// - tout le reste (contrôle encore valable, Petits volumes sous le seuil) : rien, le
+///   conditionnement et les dimensions hors sachet ne sont jamais touchés.
+/// Entrée au journal avec l'ancien → nouveau. Appelée avant l'écriture des nouvelles valeurs, par
+/// tous les chemins (import du picking, actualisation de la page, collage) : sinon une affaire
+/// ouverte d'abord écrirait la nouvelle valeur et la page ne verrait plus de différence.
+/// L'échéance est calculée en SQL (UTC) ; le frontend la calcule à minuit locale, écart d'un jour
+/// au plus, sans conséquence.
+/// Renvoie vrai si l'AR a été validé ou sa correction reportée.
+fn valider_si_erp_change(conn: &Connection, ar: &str, nouveau: [f64; 4], r: &ReglagesControle) -> Result<bool, String> {
+    if !nouveau[..3].iter().all(|d| *d > 0.0) {
+        return Ok(false); // ligne sans mesures : les valeurs enregistrées ne changent pas
+    }
+    let echeance = format!("+{} months", r.duree_mois);
+    let ancien: Option<([f64; 4], bool, bool)> = conn
+        .query_row(
+            "SELECT dim1_mm, dim2_mm, dim3_mm, poids_kg,
+                    corrige = 1 AND erp_valide_le IS NULL,
+                    CASE WHEN corrige = 1 THEN erp_valide_le IS NOT NULL AND datetime(erp_valide_le, ?2) <= datetime('now')
+                         ELSE controle_le IS NULL OR datetime(controle_le, ?2) <= datetime('now') END
+             FROM controle_dimension WHERE ar = ?1",
+            params![ar, echeance],
+            |row| Ok(([row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?], row.get(4)?, row.get(5)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some((ancien, correction_en_attente, controle_du)) = ancien else {
+        return Ok(false); // AR jamais vu : il entre « à contrôler »
+    };
+    if ancien.iter().zip(nouveau.iter()).all(|(a, b)| proche(*a, *b)) {
+        return Ok(false);
+    }
+    let details = format!("{ar} : {} → {}", texte_valeurs(&ancien), texte_valeurs(&nouveau));
+    if correction_en_attente {
+        conn.execute(
+            "UPDATE controle_dimension SET erp_valide_le = datetime('now'), erp_valide_par = ?2 WHERE ar = ?1",
+            params![ar, PAR_ERP],
+        )
+        .map_err(|e| e.to_string())?;
+        journaliser(conn, PAR_ERP, "controle_erp_auto", "controle_dimension", None, &details);
+        return Ok(true);
+    }
+    let au_dessus_seuil = ancien[..3].iter().filter(|d| **d >= r.seuil_mm).count() >= 2;
+    if au_dessus_seuil && controle_du {
+        conn.execute(
+            "UPDATE controle_dimension SET controle_le = datetime('now'), controle_par = ?2, corrige = 0,
+                 corr_dim1_mm = NULL, corr_dim2_mm = NULL, corr_dim3_mm = NULL, corr_poids_kg = NULL,
+                 erp_valide_le = NULL, erp_valide_par = ''
+             WHERE ar = ?1",
+            params![ar, PAR_ERP],
+        )
+        .map_err(|e| e.to_string())?;
+        journaliser(conn, PAR_ERP, "controle_auto", "controle_dimension", None, &details);
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 /// Ajoute au référentiel les AR jamais vus ; pour un AR connu, rafraîchit les valeurs de l'ERP
-/// si les trois dimensions sont saisies (une ligne sans mesures n'efface pas les bonnes). Le
-/// résultat du contrôle n'est jamais touché. Lignes « AR… » seulement.
-pub(crate) fn enregistrer_articles(conn: &Connection, articles: &[ArticleVu]) -> Result<(), String> {
+/// si les trois dimensions sont saisies (une ligne sans mesures n'efface pas les bonnes), après la
+/// validation automatique (`valider_si_erp_change`). Lignes « AR… » seulement. Renvoie le nombre
+/// d'AR validés d'après l'ERP.
+pub(crate) fn enregistrer_articles(conn: &Connection, articles: &[ArticleVu]) -> Result<usize, String> {
+    let r = reglages(conn)?;
+    let mut valides = 0;
     let mut stmt = conn
         .prepare_cached(
             "INSERT INTO controle_dimension (ar, dim1_mm, dim2_mm, dim3_mm, poids_kg) VALUES (?1, ?2, ?3, ?4, ?5)
@@ -90,10 +170,13 @@ pub(crate) fn enregistrer_articles(conn: &Connection, articles: &[ArticleVu]) ->
         if !ar.starts_with("AR") {
             continue;
         }
+        if valider_si_erp_change(conn, &ar, [a.dim1_mm, a.dim2_mm, a.dim3_mm, a.poids_kg], &r)? {
+            valides += 1;
+        }
         stmt.execute(params![ar, a.dim1_mm, a.dim2_mm, a.dim3_mm, a.poids_kg])
             .map_err(|e| e.to_string())?;
     }
-    Ok(())
+    Ok(valides)
 }
 
 // Ligne livrée / rapatriée (même règle que `estDemandeValidee` / `estDemandeCaisseValidee` :
@@ -196,10 +279,18 @@ pub struct ArticleErp {
     pub poids_kg: f64,
 }
 
+#[derive(Debug, Serialize)]
+pub struct Rafraichissement {
+    /// AR jamais vus, ajoutés au référentiel.
+    pub nouveaux: usize,
+    /// AR validés (ou correction reportée) parce que l'ERP a changé.
+    pub valides_erp: usize,
+}
+
 /// Ajoute au référentiel les AR lus en direct et rafraîchit les valeurs de l'ERP (même règle qu'à
-/// l'import du picking). Pas de verrou : c'est une copie de l'ERP, pas une saisie. Renvoie le
-/// nombre d'AR nouveaux.
-fn rafraichir(conn: &mut Connection, articles: &[ArticleErp]) -> Result<usize, String> {
+/// l'import du picking, validation automatique comprise). Pas de verrou : c'est une copie de
+/// l'ERP, pas une saisie.
+fn rafraichir(conn: &mut Connection, articles: &[ArticleErp]) -> Result<Rafraichissement, String> {
     let compter = |c: &Connection| -> Result<i64, String> {
         c.query_row("SELECT COUNT(*) FROM controle_dimension", [], |r| r.get(0)).map_err(|e| e.to_string())
     };
@@ -209,16 +300,20 @@ fn rafraichir(conn: &mut Connection, articles: &[ArticleErp]) -> Result<usize, S
         .iter()
         .map(|a| ArticleVu { ar: &a.ar, dim1_mm: a.dim1_mm, dim2_mm: a.dim2_mm, dim3_mm: a.dim3_mm, poids_kg: a.poids_kg })
         .collect();
-    enregistrer_articles(&tx, &vus)?;
+    let valides_erp = enregistrer_articles(&tx, &vus)?;
     tx.commit().map_err(|e| e.to_string())?;
-    Ok((compter(conn)? - avant).max(0) as usize)
+    Ok(Rafraichissement { nouveaux: (compter(conn)? - avant).max(0) as usize, valides_erp })
 }
 
 #[tauri::command]
-pub fn rafraichir_controle_dimension(db: State<Db>, articles: Vec<ArticleErp>, trigramme: String) -> Result<usize, String> {
+pub fn rafraichir_controle_dimension(
+    db: State<Db>,
+    articles: Vec<ArticleErp>,
+    trigramme: String,
+) -> Result<Rafraichissement, String> {
     let mut guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_mut().ok_or("base de données non initialisée")?;
-    crate::commands::admin::refuser_lecteur(conn, &trigramme)?;
+    crate::commands::admin::refuser_sans_ecriture(conn, &trigramme, SECTION)?;
     rafraichir(conn, &articles)
 }
 
@@ -688,6 +783,66 @@ mod tests {
     }
 
     #[test]
+    fn validation_automatique_quand_l_erp_change() {
+        let dir = std::env::temp_dir().join(format!("caisses-test-controle-auto-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let conn = crate::db::open_at(&dir);
+        enregistrer_articles(
+            &conn,
+            &[
+                vu("AR_NEUF", [400.0, 380.0, 10.0, 2.0]),    // à contrôler (jamais contrôlé)
+                vu("AR_VALIDE", [400.0, 380.0, 10.0, 2.0]),  // contrôle encore valable
+                vu("AR_EXPIRE", [400.0, 380.0, 10.0, 2.0]),  // contrôle expiré
+                vu("AR_CORR", [400.0, 380.0, 10.0, 2.0]),    // correction en attente de l'ERP
+                vu("AR_PETIT", [100.0, 80.0, 10.0, 0.5]),    // Petits volumes, en sachet
+            ],
+        )
+        .unwrap();
+        valider(&conn, "AR_VALIDE", "AJC").unwrap();
+        valider(&conn, "AR_EXPIRE", "AJC").unwrap();
+        conn.execute("UPDATE controle_dimension SET controle_le = datetime('now', '-13 months') WHERE ar = 'AR_EXPIRE'", []).unwrap();
+        corriger(&conn, "AR_CORR", [410.0, 380.0, 10.0, 2.0], "AJC").unwrap();
+        definir_conditionnement(&conn, "AR_PETIT", "sachet", Some([20.0, 10.0, 5.0]), "AJC").unwrap();
+
+        // Même valeurs, ou ligne sans mesures : rien.
+        enregistrer_articles(&conn, &[vu("AR_NEUF", [400.0, 380.0, 10.0, 2.0]), vu("AR_NEUF", [0.0, 0.0, 0.0, 3.0])]).unwrap();
+        assert!(lister(&conn).unwrap().iter().find(|c| c.ar == "AR_NEUF").unwrap().controle_le.is_none());
+
+        // L'ERP change pour tous.
+        let nouveau = [410.0, 380.0, 10.0, 2.0];
+        let n = enregistrer_articles(
+            &conn,
+            &[vu("AR_NEUF", nouveau), vu("AR_VALIDE", nouveau), vu("AR_EXPIRE", nouveau), vu("AR_CORR", nouveau), vu("AR_PETIT", [100.0, 80.0, 10.0, 0.6])],
+        )
+        .unwrap();
+        assert_eq!(n, 3);
+        let l = lister(&conn).unwrap();
+        let ligne = |ar: &str| l.iter().find(|c| c.ar == ar).unwrap();
+        assert!(ligne("AR_NEUF").controle_le.is_some() && ligne("AR_NEUF").controle_par == PAR_ERP);
+        assert_eq!(ligne("AR_NEUF").dim1_mm, 410.0);
+        assert_eq!(ligne("AR_VALIDE").controle_par, "AJC"); // encore valable : inchangé
+        assert_eq!(ligne("AR_EXPIRE").controle_par, PAR_ERP);
+        let corr = ligne("AR_CORR");
+        assert!(corr.corrige && corr.erp_valide_le.is_some() && corr.erp_valide_par == PAR_ERP && corr.controle_par == "AJC");
+        let petit = ligne("AR_PETIT");
+        assert!(petit.controle_le.is_none() && petit.conditionnement == "sachet" && petit.hs_dim1_mm == Some(20.0));
+
+        let journal: Vec<(String, String)> = conn
+            .prepare("SELECT action, details FROM journal WHERE entite = 'controle_dimension' ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(journal.len(), 3);
+        assert_eq!(journal[0], ("controle_auto".to_string(), "AR_NEUF : 400 × 380 × 10 mm, 2 kg → 410 × 380 × 10 mm, 2 kg".to_string()));
+        assert!(journal.iter().any(|(a, d)| a == "controle_erp_auto" && d.starts_with("AR_CORR")));
+
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn affaires_expediees_masquees_et_lecture_directe() {
         let dir = std::env::temp_dir().join(format!("caisses-test-controle-aff-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -737,7 +892,7 @@ mod tests {
             ],
         )
         .unwrap();
-        assert_eq!(n, 1);
+        assert_eq!(n.nouveaux, 1);
         assert_eq!(lister(&conn).unwrap().iter().find(|c| c.ar == "AR_A").unwrap().dim1_mm, 410.0);
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);

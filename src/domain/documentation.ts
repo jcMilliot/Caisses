@@ -1,12 +1,8 @@
-// Contenu par défaut de la page Documentation (réécrit le 2026-09-28 d'après le texte de
-// l'utilisateur, revu entièrement le 2026-11-24). Les administrateurs peuvent modifier chaque
-// texte depuis la page (textes seulement : la liste des sections et des points est fixe) ; seules
-// les modifications sont enregistrées en base, par clé (`cleTexte`), le reste vient d'ici.
-// **gras** : mise en gras. Ne pas y mentionner le journal. La page Admin peut être citée là où un
-// réglage s'y fait (accord de l'utilisateur du 2026-11-24).
-// ⚠ Insérer / supprimer / déplacer un point décale les clés des textes modifiés en base : ajouter
-// en fin de section ou créer une nouvelle section. Refonte du 2026-11-24 faite alors qu'aucun texte
-// n'avait été modifié (confirmé par l'utilisateur).
+// Contenu de la page Documentation (réécrit le 2026-09-28 d'après le texte de l'utilisateur, revu
+// entièrement le 2026-11-24). Plus modifiable dans l'app depuis le 2026-11-26 (demande de
+// l'utilisateur) : sections et points se changent librement ici. **gras** : mise en gras. Ne pas
+// y mentionner le journal. La page Admin peut être citée là où un réglage s'y fait (accord de
+// l'utilisateur du 2026-11-24).
 
 export type BlocDoc = { type: "h3"; texte: string } | { type: "li"; texte: string; sous?: string[] };
 
@@ -126,7 +122,7 @@ export const SECTIONS_DOC: SectionDoc[] = [
         "Avec un filtre actif, la case « tout sélectionner » ne coche que les lignes affichées, et le compteur du titre « Articles » indique le nombre de lignes affichées sur le total. Les colonnes du tableau se redimensionnent par le bord droit de leur en-tête (double-clic : largeur par défaut).",
       ),
       li(
-        "Deux alertes à surveiller : un article dont une dimension dépasse celle de sa caisse, et un volume total d'affaire supérieur à la capacité cumulée des caisses. Le bouton « Manque d'informations » (actif par défaut) repère les articles dont une dimension ou le poids manque.",
+        "Deux alertes à surveiller : un article dont une dimension dépasse celle de sa caisse, et un volume total d'affaire supérieur à la capacité cumulée des caisses. Pour les calculs, les dimensions d'une pièce sont toujours remises dans l'ordre : **longueur = plus grande cote, largeur = cote moyenne, hauteur = plus petite**, c'est ainsi qu'elle est posée dans la caisse ou le colis. Quand l'ordre saisi est différent, « Calcul : N mm » s'affiche sous la dimension. Le bouton « Manque d'informations » (actif par défaut) repère les articles dont une dimension ou le poids manque.",
       ),
       li(
         "Une caisse livrée ne reçoit plus d'articles : les articles colisés qui sont partis avec elle sont verrouillés (🔒). Un article qui n'est pas dans un colis reste libre, pour pouvoir le déplacer vers la caisse qui part ensuite.",
@@ -213,7 +209,7 @@ export const SECTIONS_DOC: SectionDoc[] = [
         "Les mesures des articles sont prises à la main et peuvent être fausses. Chaque article importé dans Simulations est retenu avec ses dimensions et son poids. Ceux dont **2 dimensions sur 3 atteignent ou dépassent le seuil** (350 mm par défaut, réglé dans l'Admin) sont à recontrôler : c'est la partie **Contrôles annuels**.",
       ),
       li(
-        "Onglet **À contrôler** : quand on a l'article sous la main, on le mesure. « Conforme » si les mesures correspondent ; sinon « Corriger… » et saisir les mesures relevées. À l'ouverture de la page (et par « Actualiser depuis l'intranet »), l'application relit le picking de toutes les affaires en cours de Simulations : les nouveaux articles entrent dans la liste et les colonnes « Affaires » et « Dispo pour ctrl » sont à jour, sans avoir à ouvrir chaque affaire. La colonne « Affaires » liste les affaires où trouver la pièce (pas celles où elle est déjà dans un colis, ni les affaires expédiées). Tant qu'il y a des articles à contrôler, la carte de l'accueil est entourée d'un halo rouge.",
+        "Onglet **À contrôler** : quand on a l'article sous la main, on le mesure. « Conforme » si les mesures correspondent ; sinon on corrige directement l'ERP : dès que l'application lit les nouvelles valeurs (ouverture d'une affaire qui contient la pièce, ou « Actualiser depuis l'intranet »), l'article passe tout seul en « Validé », avec « ERP » comme contrôleur. À l'ouverture de la page (et par « Actualiser depuis l'intranet »), l'application relit le picking de toutes les affaires en cours de Simulations : les nouveaux articles entrent dans la liste et les colonnes « Affaires » et « Dispo pour ctrl » sont à jour, sans avoir à ouvrir chaque affaire. La colonne « Affaires » liste les affaires où trouver la pièce (pas celles où elle est déjà dans un colis, ni les affaires expédiées). Tant qu'il y a des articles à contrôler, la carte de l'accueil est entourée d'un halo rouge.",
       ),
       li(
         "« Dispo pour ctrl » indique si la pièce est en stock ou a été mouvementée — l'affaire concernée ressort en vert. « Dispo pour ctrl seulement » filtre la liste ; le menu des affaires n'affiche que les pièces dispo dans l'affaire choisie, pour faire les contrôles affaire par affaire.",
@@ -225,13 +221,13 @@ export const SECTIONS_DOC: SectionDoc[] = [
         "Onglet **Validés** : un contrôle reste valable 12 mois (durée réglée dans l'Admin), puis l'article revient dans « À contrôler ».",
       ),
       li(
-        "Onglet **Dimensions corrigées** : les articles dont les mesures ont été corrigées, à reporter dans l'ERP. « Exporter en Excel » donne la liste affichée (à reporter, déjà reportées ou toutes). Une fois l'ERP corrigé, « Reporté dans l'ERP » sur une ligne, ou cocher plusieurs lignes (ou toutes) pour les valider ensemble.",
+        "Onglet **Dimensions corrigées** : n'apparaît que tant qu'il reste des corrections saisies avant la validation automatique, à reporter dans l'ERP. Une fois l'ERP corrigé, elles se valident toutes seules à la lecture des nouvelles valeurs, ou à la main avec « Reporté dans l'ERP ». L'onglet disparaît quand il n'en reste plus.",
       ),
       li(
         "Les articles de Simulations ne sont pas modifiés par les contrôles annuels : ils prennent les bonnes mesures à la mise à jour du picking, une fois l'ERP corrigé.",
       ),
       li(
-        "Partie **Petits volumes** : les articles sous le seuil des contrôles annuels. On indique une seule fois, sans rappel, comment chaque pièce est livrée : **Carton** (carton ou boîte, les dimensions de l'ERP sont justes), **Sachet** ou **Sans emballage** (les dimensions de l'ERP sont justes). Pour un sachet, on saisit les dimensions d'une pièce hors sachet : dans Simulations, le volume de la ligne est alors calculé avec ces dimensions et la quantité, majoré d'une petite marge pour le sachet (10 % par défaut, réglée dans l'Admin). Le tableau du Picking garde les dimensions de l'ERP et rappelle en dessous « Hors sachet : … mm ». « À traiter » ne montre que les pièces des pickings en cours ; « Traités » permet de modifier un choix.",
+        "Partie **Petits volumes** : les articles sous le seuil des contrôles annuels. On indique une seule fois, sans rappel, comment chaque pièce est livrée : **Carton** (carton ou boîte, les dimensions de l'ERP sont justes), **Sachet** ou **Sans emballage** (les dimensions de l'ERP sont justes). Pour un sachet, on saisit les dimensions d'une pièce hors sachet : dans Simulations, le volume de la ligne est alors calculé avec ces dimensions et la quantité, majoré d'une petite marge pour le sachet (10 % par défaut, réglée dans l'Admin). Le tableau du Picking garde les dimensions de l'ERP et rappelle en dessous « Hors sachet : … mm ». « À traiter » ne montre que les pièces des pickings en cours ; la colonne « Sortie » indique s'il y a eu un mouvement de sortie de la pièce, avec le nom des affaires concernées ; « Traités » permet de modifier un choix.",
       ),
     ],
   },
@@ -301,9 +297,14 @@ export const SECTIONS_DOC: SectionDoc[] = [
       li(
         "Le bouton « Demande d'écriture » du bandeau envoie une demande au titulaire actuel, qui voit apparaître une bannière lui permettant d'approuver ou de refuser. Si le titulaire ne répond pas et que son poste ne donne plus signe d'activité, le demandeur reprend automatiquement la main après 90 secondes — sans attendre les 5 minutes d'expiration classique du verrou.",
       ),
-      li("Une personne au rôle « Lecteur » consulte tous les écrans en lecture seule, sans jamais bloquer les autres."),
+      li(
+        "Chaque personne a, pour chaque écran, un droit de **lecture** ou d'**écriture**, réglé par un administrateur dans l'Admin › Utilisateurs (une nouvelle personne est en lecture partout). Sur un écran en lecture, on consulte tout sans jamais bloquer les autres.",
+      ),
       li(
         "Quand plus personne n'a la main, le bandeau affiche « Prendre la main » : un clic suffit pour repasser en écriture, et l'écran est rechargé avec les dernières données.",
+      ),
+      li(
+        "Si quelqu'un est parti en laissant l'application ouverte, un administrateur peut lui **retirer la main** depuis l'Admin › Utilisateurs (« Qui a la main ») : l'application reste ouverte sur son poste mais passe en lecture seule, et les autres postes peuvent « Prendre la main ».",
       ),
     ],
   },
@@ -325,18 +326,3 @@ export const SECTIONS_DOC: SectionDoc[] = [
     ],
   },
 ];
-
-// Clés des textes modifiables : "entete.titre", "entete.intro", "<section>.sommaire",
-// "<section>.titre", "<section>.<n° de bloc>", "<section>.<n° de bloc>.<n° de sous-point>".
-export function textesParDefaut(): Record<string, string> {
-  const t: Record<string, string> = { "entete.titre": ENTETE_DOC.titre, "entete.intro": ENTETE_DOC.intro };
-  for (const s of SECTIONS_DOC) {
-    t[`${s.id}.sommaire`] = s.sommaire;
-    t[`${s.id}.titre`] = s.titre;
-    s.blocs.forEach((b, i) => {
-      t[`${s.id}.${i}`] = b.texte;
-      if (b.type === "li") b.sous?.forEach((x, j) => (t[`${s.id}.${i}.${j}`] = x));
-    });
-  }
-  return t;
-}

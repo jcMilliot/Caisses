@@ -218,6 +218,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0053_add_controle_conditionnement",
         include_str!("../../migrations/0053_add_controle_conditionnement.sql"),
     ),
+    ("0054_add_droit_ecran", include_str!("../../migrations/0054_add_droit_ecran.sql")),
 ];
 
 pub fn open_at(db_folder: &Path) -> Connection {

@@ -2,10 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import Journal from "./Journal";
 import AdminFeuilleDeRoute from "./AdminFeuilleDeRoute";
 import AdminCaisses from "./AdminCaisses";
-import { adminApi, ADMIN_PERMANENT, LIBELLE_ROLE, type Role, type Utilisateur } from "../data/admin";
+import { adminApi, ADMIN_PERMANENT, ECRANS, LIBELLE_ROLE, type Ecran, type Role, type Utilisateur } from "../data/admin";
 import { affairesApi } from "../data/affaires";
 import { controleDimensionApi } from "../data/controleDimension";
-import type { ReglagesControle } from "../domain/types";
+import type { ReglagesControle, SectionLock } from "../domain/types";
+import { locksApi } from "../data/locks";
 import { intranetApi } from "../data/intranet";
 import { setupApi, type DossierBase } from "../data/setup";
 import { backupApi, type BackupConfig, type FichierSauvegarde, type FrequenceBackup } from "../data/backup";
@@ -72,7 +73,12 @@ export default function Admin({ trigramme }: Props) {
         ))}
       </div>
 
-      {onglet === "utilisateurs" && <UtilisateursOnglet />}
+      {onglet === "utilisateurs" && (
+        <>
+          <UtilisateursOnglet />
+          <QuiALaMain trigramme={trigramme} />
+        </>
+      )}
       {onglet === "parametres" && <ParametresOnglet trigramme={trigramme} />}
       {onglet === "caisses" && <AdminCaisses trigramme={trigramme} />}
       {onglet === "sauvegarde" && <SauvegardeOnglet trigramme={trigramme} />}
@@ -151,14 +157,23 @@ function UtilisateursOnglet() {
     if (role === u.role) return;
     const message =
       u.role === "admin"
-        ? `${u.trigramme} ne sera plus administrateur. Continuer ?`
-        : role === "admin"
-          ? `${u.trigramme} deviendra administrateur (accès à la page Admin à sa prochaine connexion). Continuer ?`
-          : `Passer ${u.trigramme} en « ${LIBELLE_ROLE[role]} » ? (pris en compte sur son poste au prochain changement d'écran)`;
+        ? `${u.trigramme} ne sera plus administrateur : ses droits par écran s'appliqueront (lecture sur les écrans non réglés). Continuer ?`
+        : `${u.trigramme} deviendra administrateur : écriture partout et accès à la page Admin à sa prochaine connexion. Continuer ?`;
     if (!(await confirmerAction(message, "Changer le rôle"))) return;
     setErreur(null);
     try {
       await adminApi.setRole(u.trigramme, role);
+      recharger();
+    } catch (e) {
+      setErreur(String(e));
+    }
+  }
+
+  // Droits par écran (2026-11-25) : pris en compte sur son poste au prochain changement d'écran.
+  async function changerDroit(u: Utilisateur, ecran: Ecran, ecriture: boolean) {
+    setErreur(null);
+    try {
+      await adminApi.setDroit(u.trigramme, ecran, ecriture);
       recharger();
     } catch (e) {
       setErreur(String(e));
@@ -183,12 +198,22 @@ function UtilisateursOnglet() {
     <div>
       <p style={introOngletStyle}>Gestion des utilisateurs</p>
       {erreur && <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--danger-text)" }}>{erreur}</p>}
-      <div className="panel" style={{ padding: 0, overflow: "auto", maxWidth: 820 }}>
+      <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 10px", maxWidth: 820 }}>
+        Tout le monde voit tous les écrans. Pour chaque écran, <strong>Lecture</strong> ou <strong>Écriture</strong> ; une
+        nouvelle personne est en lecture partout. Un administrateur écrit partout. Un changement s'applique sur son poste
+        au prochain changement d'écran.
+      </p>
+      <div className="panel" style={{ padding: 0, overflow: "auto" }}>
         <table className="table-donnees">
           <thead>
             <tr>
               <th style={thStyle}>Trigramme</th>
               <th style={thStyle}>Rôle</th>
+              {ECRANS.map((e) => (
+                <th key={e.id} style={{ ...thStyle, whiteSpace: "normal", minWidth: 96 }}>
+                  {e.libelle}
+                </th>
+              ))}
               <th style={thStyle}>Première connexion</th>
               <th style={thStyle}>Dernière connexion</th>
             </tr>
@@ -205,7 +230,7 @@ function UtilisateursOnglet() {
                     onChange={(e) => changerRole(u, e.target.value as Role)}
                     disabled={u.trigramme === ADMIN_PERMANENT}
                     title={u.trigramme === ADMIN_PERMANENT ? `${ADMIN_PERMANENT} reste toujours administrateur` : undefined}
-                    style={{ ...selectStyle, width: 190 }}
+                    style={{ ...selectStyle, width: 160 }}
                   >
                     {(Object.keys(LIBELLE_ROLE) as Role[]).map((r) => (
                       <option key={r} value={r}>
@@ -214,6 +239,30 @@ function UtilisateursOnglet() {
                     ))}
                   </select>
                 </td>
+                {ECRANS.map((e) => {
+                  const ecriture = u.ecriture.includes(e.id);
+                  return (
+                    <td key={e.id} style={tdStyle}>
+                      {u.role === "admin" ? (
+                        <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Écriture</span>
+                      ) : (
+                        <select
+                          value={ecriture ? "ecriture" : "lecture"}
+                          onChange={(ev) => changerDroit(u, e.id, ev.target.value === "ecriture")}
+                          style={{
+                            ...selectStyle,
+                            width: 104,
+                            background: ecriture ? "var(--ok-bg)" : undefined,
+                            color: ecriture ? "var(--ok-text)" : undefined,
+                          }}
+                        >
+                          <option value="lecture">Lecture</option>
+                          <option value="ecriture">Écriture</option>
+                        </select>
+                      )}
+                    </td>
+                  );
+                })}
                 <td style={tdStyle} className="mono">
                   {formaterHorodatage(u.premiere_connexion)}
                 </td>
@@ -252,6 +301,120 @@ function UtilisateursOnglet() {
         Pour déclarer quelqu'un avant sa première connexion (par exemple un nouvel administrateur).
       </p>
       </div>
+    </div>
+  );
+}
+
+const LIBELLE_SECTION: Record<string, string> = {
+  demandes: "Gestion des caisses",
+  stock: "Consommable",
+  achats: "Demandes d'achats",
+  alertes: "Alertes",
+  controle: "Contrôle dimensionnel",
+};
+
+// « Qui a la main » (2026-11-25) : sections tenues en écriture, et « Retirer la main » pour un
+// poste resté ouvert (collègue parti). L'app reste ouverte là-bas, son écran passe en lecture
+// seule au prochain battement ; les autres postes peuvent alors « Prendre la main ».
+function QuiALaMain({ trigramme }: { trigramme: string }) {
+  const [verrous, setVerrous] = useState<SectionLock[] | null>(null);
+  const [affaires, setAffaires] = useState<Map<number, string>>(new Map());
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  const recharger = useCallback(() => {
+    locksApi.list().then(setVerrous).catch((e) => setErreur(String(e)));
+  }, []);
+
+  useEffect(() => {
+    recharger();
+    affairesApi
+      .list()
+      .then((l) => setAffaires(new Map(l.map((a) => [a.id, a.nom]))))
+      .catch(() => {});
+    const t = setInterval(recharger, 7_000);
+    return () => clearInterval(t);
+  }, [recharger]);
+
+  function libelle(cle: string): string {
+    if (cle.startsWith("affaire:")) {
+      const nom = affaires.get(Number(cle.slice("affaire:".length)));
+      return `Simulations · ${nom ?? "affaire supprimée"}`;
+    }
+    return LIBELLE_SECTION[cle] ?? cle;
+  }
+
+  async function retirer(v: SectionLock) {
+    const ok = await confirmerAction(
+      `Retirer la main à ${v.titulaire} sur « ${libelle(v.section_key)} » ? L'application reste ouverte sur son poste, mais passe en lecture seule ; ce qui est déjà enregistré n'est pas perdu.`,
+      "Retirer la main",
+    );
+    if (!ok) return;
+    setErreur(null);
+    try {
+      if (!(await locksApi.adminRetirer(v.section_key, v.titulaire, trigramme))) {
+        setErreur("La main a changé entre-temps : liste actualisée.");
+      }
+      recharger();
+    } catch (e) {
+      setErreur(String(e));
+    }
+  }
+
+  const actifs = (verrous ?? []).slice().sort((a, b) => libelle(a.section_key).localeCompare(libelle(b.section_key)));
+
+  return (
+    <div className="panel" style={{ maxWidth: 820, marginTop: 16, padding: "14px 16px" }}>
+      <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>Qui a la main</div>
+      <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 10px" }}>
+        Écrans tenus en écriture. « Retirer la main » libère un écran resté ouvert sur un poste (par exemple quand
+        quelqu'un est parti sans fermer l'application) : les autres postes peuvent alors « Prendre la main ».
+      </p>
+      {erreur && <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--danger-text)" }}>{erreur}</p>}
+      {verrous === null ? (
+        <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Chargement…</p>
+      ) : actifs.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Personne n'a la main en ce moment.</p>
+      ) : (
+        <table className="table-donnees">
+          <thead>
+            <tr>
+              <th style={thStyle}>Écran</th>
+              <th style={thStyle}>Tenu par</th>
+              <th style={thStyle}>Depuis</th>
+              <th style={thStyle}>Dernière activité</th>
+              <th style={thStyle} />
+            </tr>
+          </thead>
+          <tbody>
+            {actifs.map((v) => (
+              <tr key={v.section_key}>
+                <td style={tdStyle}>{libelle(v.section_key)}</td>
+                <td style={tdStyle}>
+                  <span style={avatarStyle}>{v.titulaire}</span>
+                </td>
+                <td style={tdStyle} className="mono">
+                  {formaterHorodatage(v.acquis_le)}
+                </td>
+                <td style={tdStyle} className="mono">
+                  {formaterHorodatage(v.dernier_battement)}
+                  {v.expire && (
+                    <span className="badge badge-muted" style={{ marginLeft: 6 }} title="Plus d'activité depuis 5 minutes : la main est déjà reprenable">
+                      inactif
+                    </span>
+                  )}
+                </td>
+                <td style={{ ...tdStyle, textAlign: "right" }}>
+                  {v.titulaire !== trigramme && (
+                    <button className="btn btn-sm btn-pastel-orange" onClick={() => retirer(v)}>
+                      Retirer la main
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

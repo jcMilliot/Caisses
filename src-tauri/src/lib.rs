@@ -46,11 +46,10 @@ use commands::demandes::{
 };
 use commands::alerte::set_alerte_barre_taches;
 use commands::admin::{
-    admin_lock, admin_session_active, ajouter_utilisateur, enregistrer_connexion, get_role, list_utilisateurs,
+    admin_lock, admin_session_active, ajouter_utilisateur, enregistrer_connexion, get_droits, get_role, list_utilisateurs, set_droit_ecran,
     set_role_utilisateur, AdminSession,
 };
 use commands::backup::{backup_if_due, backup_now, choose_backup_folder, get_backup_config, set_backup_config};
-use commands::documentation::{get_documentation_textes, set_documentation_textes};
 use commands::poids_caisse::{
     create_caisse_pesee, delete_caisse_pesee, get_reglages_poids_caisse, list_caisses_pesees, set_reglages_poids_caisse,
     update_caisse_pesee,
@@ -62,7 +61,7 @@ use commands::intranet::{
 };
 use commands::journal::list_journal;
 use commands::locks::{
-    acquire_lock, claim_expired_pen, heartbeat, list_locks, release_lock, request_pen, respond_pen_request,
+    acquire_lock, admin_retirer_verrou, claim_expired_pen, heartbeat, list_locks, release_lock, request_pen, respond_pen_request,
 };
 use commands::options_liste::{
     count_option_liste_usage, create_option_liste, delete_option_liste, list_options_liste, rename_option_liste,
@@ -205,19 +204,20 @@ pub fn run() {
             respond_pen_request,
             claim_expired_pen,
             list_locks,
+            admin_retirer_verrou,
             list_options_liste,
             create_option_liste,
             rename_option_liste,
             count_option_liste_usage,
             delete_option_liste,
             list_journal,
-            get_documentation_textes,
-            set_documentation_textes,
             admin_session_active,
             admin_lock,
             enregistrer_connexion,
             list_utilisateurs,
             get_role,
+            get_droits,
+            set_droit_ecran,
             set_role_utilisateur,
             ajouter_utilisateur,
             get_backup_config,

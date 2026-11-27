@@ -118,8 +118,6 @@ src-tauri/src/
                         get/set_seuil_general (admin, appliqué aux affaires non livrées)
     articles_non_colles.rs → lignes écartées au collage (AR ni « AR » ni « ZR ») : list/create
                         (tout utilisateur) + update/delete/integrer (admin)
-    documentation.rs  → get/set_documentation_textes (textes modifiés de la page Documentation,
-                        JSON en `parametre`, écriture admin)
     caisses.rs        → CRUD caisse (+ type_envoi_caisse, contre_plaque, link_caisse_demande_caisse,
                         set_caisse_caisse_stock : caisse en stock suggérée / désélectionnée)
     articles.rs       → CRUD article + bulk_create_articles (collage Excel) + assign_articles
@@ -145,8 +143,9 @@ src-tauri/src/
                         liées (+ count_caisse_stock_lignes_liees pour la confirmation)
     alerte.rs         → set_alerte_barre_taches : pastille rouge (overlay icon Windows) sur
                         l'icône de la barre des tâches, dessinée en Rust
-    admin.rs          → rôles (`utilisateur.role`, role_de / refuser_lecteur / changer_role,
-                        AJC admin permanent) + session admin en mémoire (AdminSession,
+    admin.rs          → rôles (`utilisateur.role`, role_de / changer_role, AJC admin permanent) +
+                        droits par écran (ADR 0005 : peut_ecrire / refuser_sans_ecriture /
+                        get_droits / set_droit_ecran) + session admin en mémoire (AdminSession,
                         require_admin, ouvrir_session_si_admin) : admin_session_active / admin_lock /
                         enregistrer_connexion / list_utilisateurs / get_role / set_role_utilisateur /
                         ajouter_utilisateur. Plus de mot de passe propre à Caisses depuis 0039.
@@ -188,7 +187,7 @@ migration déjà publiée) et l'ajouter à la liste `MIGRATIONS` dans `db.rs`.**
 remplacé un premier jet en `CREATE TABLE IF NOT EXISTS` qui ne migrait pas les bases
 existantes lors d'un changement de schéma (voir journal du 2026-07-21).
 
-État au 2026-11-23 : migrations `0001` à `0046` et `0048` à `0053` publiées (0.25.0, `0053` = petits volumes) —
+État au 2026-11-27 : migrations `0001` à `0046` et `0048` à `0054` publiées (0.26.0, `0054` = droits par écran) —
 **`0047` est réservé** à la branche `vue-3d`
 (`0047_add_placement_3d.sql`), pas de trou à combler. Pas de `0019_reorder` — supprimé avant
 publication, cf. journal des listes.
@@ -372,11 +371,16 @@ compte (…)  -- 0022, mots de passe des administrateurs (Argon2) + code de seco
          -- **supprimée par 0039** (connexion par le compte intranet, 2026-10-08).
 
 utilisateur (trigramme PK, premiere_connexion, derniere_connexion,  -- 0022
-             role DEFAULT 'utilisateur')  -- 0028 : 'utilisateur' | 'lecteur' | 'admin'
+             role DEFAULT 'utilisateur')  -- 0028 : 'utilisateur' | 'admin' ('lecteur' converti par 0054)
          -- identités des postes : trigramme repris du compte intranet (à défaut son identifiant,
          -- ex. « X12345 »), ou ajoutées à l'avance par un admin ; rafraîchi à chaque connexion ;
          -- seedé à 0022 depuis `journal` et `section_lock`.
          -- AJC = admin permanent (non modifiable) ; au moins un admin toujours.
+
+droit_ecran (trigramme, ecran, ecriture BOOL, PK (trigramme, ecran))  -- 0054, ADR 0005
+         -- lecture / écriture par personne et par écran ('demandes' | 'simulations' | 'stock' |
+         -- 'achats' | 'alertes' | 'controle') ; pas de ligne = lecture ; admin = écriture partout.
+         -- Vérifié par require_lock (admin::refuser_sans_ecriture, `affaire:*` = simulations).
 
 article_non_colle (id, affaire_id REFERENCES affaire ON DELETE CASCADE, ar, reference,  -- 0029
          designation, dim1_mm, dim2_mm, dim3_mm, poids_unitaire_kg, quantite,
@@ -390,7 +394,8 @@ parametre (cle PK, valeur)  -- 0022, paramètres partagés clé/valeur
          -- poids_max_kg_m2_total (défaut 400, caisse comprise, alerte « Charge trop lourde » de
          -- Simulations ; l'ancienne clé poids_max_kg_m2, 320 hors caisse, n'est plus lue) ;
          -- estimation_poids_caisse (JSON des réglages de l'estimation, cf. domain/poidsCaisse.ts) ;
-         -- documentation_textes (JSON { clé: texte } des textes modifiés de la Documentation) ;
+         -- documentation_textes (textes modifiés de la Documentation — plus lu depuis le
+         -- 2026-11-26, documentation non modifiable dans l'app) ;
          -- dossier_base (dossier de la base réglé par un admin, suivi par les postes au démarrage,
          -- jamais écrit automatiquement).
 
@@ -2795,6 +2800,139 @@ Traite en 4 lots les demandes notées le même jour (décisions de l'utilisateur
   (installeurs produits ; signature de la mise à jour par le workflow GitHub). Soumission Microsoft
   Defender à faire dès publication si l'installeur est bloqué.
 
+### 2026-11-25 — Contrôle dimensionnel : validation automatique d'après l'ERP
+
+- **Décisions de l'utilisateur** : un AR **à contrôler** dont l'ERP change (dimensions ou poids,
+  corrigés directement dans l'ERP) est **validé ce jour**, même sans contrôle physique ;
+  contrôleur noté **« ERP »** ; **trace au journal** (ancien → nouveau) ; une **correction en
+  attente** est marquée reportée dans l'ERP de la même façon ; **« Corriger… » retiré** ;
+  l'onglet **« Dimensions corrigées » reste tant qu'il en reste à reporter**, puis disparaît ;
+  **Petits volumes non touchés**.
+- **Choix de l'assistant** : détection dans `controle_dimension.rs::valider_si_erp_change`, appelée
+  par `enregistrer_articles` **avant** l'écriture des nouvelles valeurs — donc par tous les
+  chemins (import du picking dans Simulations, « Actualiser depuis l'intranet », collage) : une
+  affaire ouverte d'abord aurait sinon écrit la nouvelle valeur, et la page n'aurait plus vu de
+  différence. « À contrôler » jugé sur les **anciennes** valeurs (2 dimensions sur 3 ≥ seuil, jamais
+  contrôlé ou contrôle expiré) ; changement = écart > 0,0005 sur une des 4 valeurs, ligne sans
+  mesures ignorée ; échéance calculée en SQL (UTC, écart d'un jour au plus avec le frontend).
+  Une correction qui fait passer la pièce sous le seuil la fait basculer dans Petits volumes ›
+  À traiter (comme avant). Journal : actions `controle_auto` / `controle_erp_auto`, entité
+  `controle_dimension`, auteur « ERP ». `rafraichir_controle_dimension` renvoie `{ nouveaux,
+  valides_erp }` (message « N article(s) validé(s) : … corrigés dans l'ERP »). Commandes
+  `corriger_controle_dimension` / `valider_erp_controle_dimension` gardées (onglet restant).
+  Documentation utilisateur et technique mises à jour.
+- Validation : `cargo test --lib` (24, + validation automatique : à contrôler / expiré validés,
+  valable inchangé, correction reportée, petit volume en sachet intact, journal), `cargo check`
+  (aucun avertissement), `npx tsc --noEmit`, `npx vite build`. **Non vu à l'écran, non testé contre
+  le vrai intranet.**
+
+### 2026-11-25 — Admin : « Qui a la main » et « Retirer la main »
+
+- **Demande de l'utilisateur** : pouvoir libérer depuis l'Admin un poste resté ouvert. Deux options
+  présentées (fermer l'app à distance avec fermeture d'office après un délai, ou retirer seulement
+  la main) : **retirer la main** choisi (rien n'est perdu, marche sans personne devant le poste).
+- Admin › Utilisateurs, bloc **« Qui a la main »** (`Admin.tsx::QuiALaMain`, relu toutes les 7 s) :
+  écran (section, ou « Simulations · affaire »), titulaire, depuis, dernière activité (+ « inactif »
+  après 5 min), bouton **« Retirer la main »** (pas sur ses propres verrous) avec confirmation.
+  Commande `locks.rs::admin_retirer_verrou` (`require_admin`) : supprime la ligne `section_lock`
+  seulement si le titulaire est toujours celui affiché ; journal `verrou_retire` / `section_lock`.
+  Sur le poste concerné, l'écran passe en lecture seule au battement suivant (≤ 7 s, cas « pas de
+  ligne » de `useSectionLock`) avec « Prendre la main » ; il peut donc la reprendre (voulu : outil
+  pour un poste abandonné, pas une sanction). Documentation utilisateur : point ajouté en fin de
+  section Verrouillage.
+- **Verrouillage à la fermeture « pas instantané »** (retour du même jour) — lecture du code : à la
+  fermeture, le verrou est bien supprimé (`lib.rs::liberer_verrous_du_poste`), mais l'autre poste ne
+  le voit qu'à son battement suivant (≤ 7 s) et doit ensuite cliquer « Prendre la main » (pas de
+  reprise automatique, décision du 2026-10-13). Si l'attente dépasse ~10 s, la libération à la
+  fermeture n'a pas eu lieu (fermeture forcée, PC éteint) → 5 min. À confirmer par de nouveaux essais.
+- Validation : `cargo test --lib` (25, + retrait de la main : titulaire changé refusé, section libérée,
+  journal), `cargo check`, `npx tsc --noEmit`, `npx vite build`. **Non vu à l'écran, non testé à
+  deux postes.**
+
+### 2026-11-25 — Droits par écran (lecture / écriture)
+
+- **Besoin et décisions de l'utilisateur** (détail : [ADR 0005](docs/ADR/0005-droits-par-ecran.md)) :
+  limiter une personne à la lecture du Contrôle dimensionnel ; 3 personnes du même service, équipe
+  stable → **par personne**, pas de profils ; **tout le monde voit tout** (hors Admin) ; **nouvelle
+  personne en lecture** ; pas de droits par action pour l'instant.
+- Migration `0054` : table `droit_ecran` ; Utilisateurs existants → écriture partout (rien ne
+  change) ; Lecteurs → lecture partout et rôle « utilisateur » (le rôle Lecteur disparaît).
+- Rust : `admin.rs` (`ECRANS`, `ecran_de`, `peut_ecrire`, `refuser_sans_ecriture` remplace
+  `refuser_lecteur`, `get_droits`, `set_droit_ecran`, `list_utilisateurs` renvoie les écrans en
+  écriture) ; `require_lock` vérifie le droit sur l'écran de la clé ; `create_affaire` →
+  simulations ; rafraîchissement du contrôle → controle ; restauration : droits actuels gardés.
+- Frontend : `useSectionLock` (`definirDroitsEcriture`, `peutEcrire(sectionKey)`) remplace
+  `definirLectureSeuleRole` ; `App` lit `get_droits` à chaque changement d'écran ; bandeau « lecture
+  seule sur cet écran (vos droits) » ; Admin › Utilisateurs : une colonne par écran (Lecture /
+  Écriture, « Écriture » fixe pour un admin), rôle Utilisateur / Administrateur.
+- **Mise en service** : après la mise à jour, régler pour la personne concernée Contrôle
+  dimensionnel → Lecture (elle garde l'écriture ailleurs). Toute personne qui se connecte pour la
+  première fois ensuite est en lecture partout jusqu'à réglage.
+- Validation : `cargo test --lib` (26, + droits par écran dans require_lock, migration 0054 sur
+  utilisateur / lecteur / admin / inconnu), `cargo check`, `npx tsc --noEmit`, `npx vite build`.
+  **Non vu à l'écran, non testé à deux postes.**
+- **Même jour — barre de navigation plus fine hors Gestion des caisses** (retour de l'utilisateur,
+  défaut présent depuis le 2026-10-02) : tassée par `flex-shrink` dans la colonne qui défile, cf.
+  [Bugs.md](Bugs.md). `flex-shrink: 0` sur `.app-nav`.
+
+
+### 2026-11-26 — Dimensions des pièces remises dans l'ordre L ≥ l ≥ H pour les calculs
+
+- **Constat de l'utilisateur** : une mesure relevée « Ø × Ø × long » mettait la longueur de la pièce
+  en Dim3. Comparée à la hauteur de la caisse (axes stricts : dim1↔longueur…), la pièce était
+  signalée « ne rentre pas ». **Règle de l'utilisateur** : longueur = plus grande cote, largeur =
+  cote moyenne, hauteur = plus petite. C'est ainsi que la pièce est posée dans une caisse ou un colis.
+- `domain/calculs.ts::dimsCalcul` trie maintenant les dimensions (hors sachet compris). Elles
+  servent partout aux calculs :
+  - l'alerte « article plus grand que la caisse » ;
+  - la « Dim. max articles » de la carte et du bandeau, le surlignage du max dans le Picking ;
+  - la suggestion de caisse en stock ;
+  - le colisage, déjà trié des deux côtés.
+- **Choix de l'assistant** : les dimensions ne sont pas modifiées en base. Le tableau affiche
+  toujours celles de l'ERP (ce qu'on modifie), avec un repère « Calcul : N mm » dessous quand
+  l'ordre change (`HorsSachet.tsx::avecDimCalcul`, qui remplace `avecHorsSachet` ; le repère
+  « Hors sachet » est gardé).
+- Inchangés : les caisses (L / l / H tels que saisis) et le contrôle dimensionnel (seuil « 2 cotes
+  sur 3 », indépendant de l'ordre).
+- Validation : `npx tsc --noEmit`, `npx vite build`. **Non vu à l'écran.**
+
+
+### 2026-11-27 — Contrôle dimensionnel › Petits volumes : colonne « Sortie »
+
+- **Demande de l'utilisateur** : une colonne « Sortie » dans Petits volumes › À traiter, qui
+  indique s'il y a eu un mouvement de sortie sur une affaire.
+- **Lecture de l'assistant, à confirmer** : mouvement de sortie = `moved` > 0 dans le picking en
+  direct (le même champ que « Dispo pour ctrl », sans le stock `QTSTL`). On regarde seulement les
+  lignes présentes et pas colisées, comme pour « Affaires ». La cellule affiche « Oui » avec les
+  noms des affaires concernées, « Non », ou « ? » si le picking est illisible.
+- Code : `domain/controleDimension.ts` (`PickingLu.sorties`, `DispoControle.sorties`),
+  `ControleDimensionList.tsx::PastilleSortie`. Rien n'est stocké en base. Documentation
+  utilisateur complétée.
+- Validation : `npx tsc --noEmit`, `npx vite build`. **Non vu à l'écran, non testé contre le vrai
+  intranet.**
+
+
+### 2026-11-27 — Release 0.26.0
+
+- Contenu :
+  - validation automatique du contrôle dimensionnel d'après l'ERP (« Corriger… » retiré) ;
+  - Admin « Qui a la main » / « Retirer la main » ;
+  - droits par écran (migration `0054`, rôle Lecteur supprimé) ;
+  - dimensions des pièces remises dans l'ordre L ≥ l ≥ H pour les calculs ;
+  - colonne « Sortie » des petits volumes ;
+  - documentation revue et non modifiable dans l'app ;
+  - barre de navigation de hauteur constante.
+  Note en tête de `notesMiseAJour.ts`.
+- **Mise en service** : la migration `0054` s'applique sur la base partagée au premier lancement.
+  Les utilisateurs existants gardent l'écriture partout. Ensuite, dans Admin › Utilisateurs :
+  - passer en Lecture le Contrôle dimensionnel de la personne concernée ;
+  - régler les droits de toute nouvelle personne, qui arrive en lecture partout.
+- Préparée à la demande de l'utilisateur. **Rien de cette version n'a été vu à l'écran avant le
+  tag.**
+- Validation avant tag : `npx tsc --noEmit`, `npx vite build`, `cargo check`, `cargo test --lib`
+  (26), `npm run tauri build -- --debug` (dossier de compilation à part). Soumission Microsoft
+  Defender à faire dès publication si l'installeur est bloqué.
+
 ## Prochaines étapes
 
 ### Fait
@@ -3341,16 +3479,18 @@ du picking : **cas qui n'est pas censé arriver** (utilisateur, 2026-11-16) — 
 la modification continue de s'appliquer. Caisse détaillée créée depuis Simulations quand la mère
 est livrée : **codée le 2026-11-16** (cf. journal).
 
+*Retours de la feuille de route (2026-11-25)* — validés à l'usage : dossier de la base, Cde
+affaire / stock, accueil (à rapatrier), affichage compact, petits volumes. Restent à vérifier :
+**verrouillage à la fermeture « pas instantané »** (à analyser : délai réel, « Prendre la main »
+affiché ou non) et le retour à la ligne d'un nom d'affaire groupé (pas encore eu de cas). Plus
+d'alerte Defender ces dernières versions (procédure gardée). **Ordre décidé** : validation
+automatique du contrôle dimensionnel, puis droits plus fins par utilisateur.
+
 *Contrôle dimensionnel (2026-11-16)* — **validé par l'utilisateur le même jour** sur ses essais.
 
-- **À faire plus tard (demande du 2026-11-17, « quand on aura des tokens »)** : simplifier le
-  circuit de correction. Quand la page s'actualise depuis l'intranet et qu'un AR **à contrôler**
-  a des dimensions ou un poids ERP **différents** de ceux enregistrés (correction faite
-  directement dans l'ERP), le **passer directement en « Validé »** (validité comptée depuis ce
-  jour). Supprimer alors le bouton **« Corriger… »** et l'onglet **« Dimensions corrigées »**
-  (export des corrections compris). À trancher au moment de coder : un changement d'ERP sans
-  contrôle physique doit-il aussi valider ? que deviennent les corrections en attente déjà
-  saisies ? garder une trace de l'ancien → nouveau (journal) ?
+- **Validation automatique d'après l'ERP** (demande du 2026-11-17) — **codée le 2026-11-25** (cf.
+  journal), à vérifier à l'écran. Reste : supprimer le code de l'onglet « Dimensions corrigées »
+  quand plus aucune base n'a de correction en attente.
 
 *Retours utilisateur 2026-10-27 — Simulations : import du picking et colisage* — mise à jour
 automatique, bouton, onglets, repère d'étapes et cote égale **faits le même jour** (cf. journal).
@@ -3515,12 +3655,9 @@ bien celui souhaité, aucun changement de code nécessaire.
     - placement automatique (plus tard) : heuristique de rangement 3D (« bin packing », ex.
       remplissage par couches ou « extreme points »), écrite en TypeScript dans `domain/` ou
       en Rust si le calcul devient lourd.
-- **Droits par tâche** — (2026-10-15 : la **documentation technique** de la page Documentation
-  doit être visible selon un droit dédié ; en attendant, **réservée aux administrateurs**,
-  `Documentation.tsx::docTechniqueVisible`.) Les rôles Utilisateur / Lecteur / Administrateur existent depuis le
-  2026-09-30 (`utilisateur.role`, cf. journal). Si des droits plus fins deviennent utiles
-  (par section ou par action), les porter par ce même rôle ou une table dédiée ; seuls les
-  administrateurs ont un mot de passe, les autres trigrammes restent déclaratifs.
+- **Droits par action** (« Livré », « OK pour être commandée »…) — **droits par écran faits le
+  2026-11-25** (ADR 0005). Par action : seulement si des erreurs fréquentes surviennent
+  (utilisateur). La documentation technique reste réservée aux administrateurs.
 - **« Aide de dimensions » / dimensions conseillées** (idée notée le 2026-09-03, **jamais
   implémentée**) — un bouton (sur la `CaisseCard` en édition, et/ou dans le dialogue « Créer une
   nouvelle caisse » côté Demandes) qui pré-remplit L/l/H à partir des plus grandes dimensions
@@ -3529,11 +3666,6 @@ bien celui souhaité, aucun changement de code nécessaire.
   éventuellement différente selon STANDARD / 4B / 4C (4C = mousse → marge plus grande, cf.
   `AVERTISSEMENT_MOUSSE_4C` qui parle de +5 cm) ; le bouton pré-remplit à vide ou écrase la
   saisie. Ne rien coder tant que la règle métier n'est pas tranchée.
-- **Créer une caisse enfant depuis « + Créer une nouvelle caisse »** (idée 2026-09-03) —
-  aujourd'hui les sous-caisses d'une demande se créent uniquement par clic droit sur une ligne
-  du tableau (« Créer une nouvelle caisse »). Voir si on ajoute la possibilité de créer
-  directement une ou plusieurs caisses enfants dans le dialogue « + Créer une nouvelle caisse »
-  (une case « ajouter des caisses détaillées » qui déplie des sous-lignes).
 - **Rapprochement avec les cartons standards existants** (idée notée le 2026-09-11) — certaines
   références de carton ont des dimensions toujours identiques ; on y range des références qui
   seraient sinon comptées comme des articles à caser dans une caisse bois. Il existe un outil
@@ -3588,6 +3720,11 @@ bien celui souhaité, aucun changement de code nécessaire.
   été modifié en base (confirmé par l'utilisateur). **L'Admin peut désormais être cité** là où un
   réglage s'y fait (accord du même jour, lève la consigne du 2026-09-28 ; le journal reste exclu).
   Validée par l'utilisateur le même jour. Pas encore publiée (prochaine release).
+- **2026-11-26 — documentation plus modifiable dans l'app** (demande de l'utilisateur) : bouton
+  « Modifier » et enregistrement retirés (`Documentation.tsx` lit directement
+  `domain/documentation.ts`), commandes `get/set_documentation_textes` et `data/documentation.ts`
+  supprimés. La clé `parametre.documentation_textes` reste en base sans être lue. Les sections et
+  points se changent désormais librement dans le code (plus de contrainte de clés).
 - Page **Documentation** (`src/routes/Documentation.tsx`, bouton de la navbar et en bas à gauche de
   l'accueil). Texte **réécrit le 2026-09-28 d'après celui fourni par l'utilisateur** : Gestion des
   caisses (création / gestion), Simuler, Récupérer les articles, Assigner, Passer la commande, Caisses en
@@ -3599,6 +3736,9 @@ bien celui souhaité, aucun changement de code nécessaire.
   et les entrées historiques de ce fichier gardent l'ancien terme.
 
 ### Annulé pour le moment
+
+- **Créer des caisses enfants dans « + Créer une nouvelle caisse »** (idée du 2026-09-03) —
+  abandonné par l'utilisateur le 2026-11-25 (« + Caisse » sur la ligne suffit).
 
 - **Alias de caisse affiché dans le tableau Gestion des caisses** (nom donné à une caisse dans
   Simulations, affiché sous le nom de l'affaire) — abandonné pour l'instant (2026-10-13).

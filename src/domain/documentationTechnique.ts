@@ -1,8 +1,8 @@
 import type { BlocDoc } from "./documentation";
 
 // Documentation technique (onglet de la page Documentation, 2026-10-15) : explication technique du
-// projet pour qui doit le maintenir. Contenu fixe (pas modifiable dans l'app, contrairement à la
-// documentation utilisateur) — à tenir à jour avec le code. Le dépôt est public : n'y mettre ni
+// projet pour qui doit le maintenir. Contenu fixe (pas modifiable dans l'app, comme la
+// documentation utilisateur depuis le 2026-11-26) — à tenir à jour avec le code. Le dépôt est public : n'y mettre ni
 // adresse d'API, ni nom d'entreprise, ni identifiant. `**gras**` comme dans la documentation
 // utilisateur. Référence complète pour le développement : CLAUDE.md à la racine du dépôt.
 
@@ -73,7 +73,7 @@ export const SECTIONS_DOC_TECHNIQUE: SectionDocTechnique[] = [
         "`affaire`, `caisse`, `article` : Simulations (articles importés de l'intranet ou collés depuis Excel) ;",
         "`demande`, `demande_caisse` : Gestion des caisses (indépendantes des affaires, liées par le nom et par des liens explicites) ;",
         "`demande_alerte` : page Alertes (date d'expédition anticipée, qui remplace le picking dans le calcul des alertes, et commentaire) — table à part pour que l'enregistrement de Gestion des caisses, qui réécrit toute la ligne `demande`, ne l'écrase pas ;",
-        "`controle_dimension` : Contrôle dimensionnel — un AR par ligne (dimensions et poids de l'ERP, rafraîchis à chaque import du picking ou collage) et le résultat de son dernier contrôle ; les listes (à contrôler, validés, corrigés) sont calculées à l'affichage d'après le seuil et la durée de validité de l'Admin (`domain/controleDimension.ts`). Pour les AR sous le seuil (partie Petits volumes, 0053) : `conditionnement` (carton, sachet, sans emballage — valeur `gros_volume`) et dimensions hors sachet `hs_*` ; `useAffaire` les pose sur les articles en sachet (`calculs.ts::appliquerHorsSachet`), et `dimsCalcul` / `volumeUnitaireM3` s'en servent partout dans Simulations (volume × (1 + `marge_sachet_pct`), carton, dim. max, suggestion) ; le taux de remplissage calculé en Rust suit la même règle (`VOLUME_ARTICLE_SQL`) ;",
+        "`controle_dimension` : Contrôle dimensionnel — un AR par ligne (dimensions et poids de l'ERP, rafraîchis à chaque import du picking ou collage) et le résultat de son dernier contrôle ; les listes (à contrôler, validés, corrigés) sont calculées à l'affichage d'après le seuil et la durée de validité de l'Admin (`domain/controleDimension.ts`). Validation automatique (2026-11-25, `valider_si_erp_change`, appelée par `enregistrer_articles` avant d'écrire les nouvelles valeurs, donc par tous les chemins) : un AR à contrôler dont l'ERP change est validé par « ERP », une correction en attente est marquée reportée, avec l'ancien → nouveau au journal ; contrôle encore valable et Petits volumes non touchés. Pour les AR sous le seuil (partie Petits volumes, 0053) : `conditionnement` (carton, sachet, sans emballage — valeur `gros_volume`) et dimensions hors sachet `hs_*` ; `useAffaire` les pose sur les articles en sachet (`calculs.ts::appliquerHorsSachet`), et `dimsCalcul` / `volumeUnitaireM3` s'en servent partout dans Simulations (volume × (1 + `marge_sachet_pct`), carton, dim. max, suggestion) ; le taux de remplissage calculé en Rust suit la même règle (`VOLUME_ARTICLE_SQL`) ;",
         "`caisse_stock`, `carton_conso` : Consommable ;",
         "`colis_affaire`, `caisse_colisage`, `colis_rangement` : onglet Colisage d'une affaire ; `colis_caisse_intranet` : caisse (lettre) de chaque colis d'après l'intranet ;",
         "`section_lock`, `poste_actif` : verrous et postes ouverts ;",
@@ -106,7 +106,9 @@ export const SECTIONS_DOC_TECHNIQUE: SectionDocTechnique[] = [
     titre: "Comptes et droits",
     blocs: [
       li("Connexion avec le **compte intranet** : l'identité (trigramme) vient de l'intranet ; le mot de passe est gardé dans le gestionnaire d'identifiants Windows du poste, jamais en base."),
-      li("Rôles gérés dans l'application : Utilisateur, Lecteur (lecture seule partout), Administrateur. Un administrateur permanent ne peut pas être rétrogradé."),
+      li(
+        "Rôles gérés dans l'application : Utilisateur, Administrateur (écriture partout + page Admin). Un administrateur permanent ne peut pas être rétrogradé. Droits par écran (2026-11-25, ADR 0005, table `droit_ecran`, migration 0054) : lecture ou écriture par personne et par écran (Gestion des caisses, Simulations, Consommable, Demandes d'achats, Alertes, Contrôle dimensionnel) ; pas de ligne = lecture. Vérifiés par `require_lock` (`admin::refuser_sans_ecriture`, Simulations = clés `affaire:*`) ; côté interface, `useSectionLock` ne prend jamais le verrou d'un écran en lecture. L'ancien rôle Lecteur a été converti en « lecture partout ».",
+      ),
       li("La session administrateur vit en mémoire sur le poste ; les commandes réservées la vérifient côté Rust."),
       li("Intranet injoignable : l'application démarre avec le dernier compte connu du poste, sans accès Admin."),
     ],

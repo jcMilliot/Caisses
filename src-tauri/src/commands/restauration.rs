@@ -231,6 +231,17 @@ fn lire_roles(conn: &Connection) -> Result<Vec<(String, String)>, String> {
     Ok(lignes)
 }
 
+/// Droits par écran actuels (0054), conservés comme les rôles.
+fn lire_droits(conn: &Connection) -> Result<Vec<(String, String, bool)>, String> {
+    let mut stmt = conn.prepare("SELECT trigramme, ecran, ecriture FROM droit_ecran").map_err(|e| e.to_string())?;
+    let lignes = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<(String, String, bool)>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(lignes)
+}
+
 fn lire_parametres_sauvegarde(conn: &Connection) -> Result<Vec<(String, String)>, String> {
     let mut stmt = conn
         .prepare("SELECT cle, valeur FROM parametre WHERE cle LIKE 'backup\\_%' ESCAPE '\\' OR cle IN ('seuil_alerte_general', 'poids_max_kg_m2', 'intranet_api_url', 'collage_excel_visible', 'poids_max_kg_m2_total', 'estimation_poids_caisse', 'dossier_base', 'controle_seuil_mm', 'controle_duree_mois', 'marge_sachet_pct')")
@@ -262,6 +273,7 @@ fn restaurer(conn: &mut Connection, poste_id: &str, chemin: &str, trigramme: &st
 
     let parametres = lire_parametres_sauvegarde(conn)?;
     let roles = lire_roles(conn)?;
+    let droits = lire_droits(conn)?;
 
     // Copie de sécurité de la base actuelle, à côté d'elle. Son nom ne suit pas le format des
     // sauvegardes : jamais supprimée par la rétention, jamais listée comme sauvegarde.
@@ -299,6 +311,16 @@ fn restaurer(conn: &mut Connection, poste_id: &str, chemin: &str, trigramme: &st
             "INSERT INTO utilisateur (trigramme, role) VALUES (?1, ?2)
              ON CONFLICT(trigramme) DO UPDATE SET role = excluded.role",
             [tri, role],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    // Droits par écran actuels, à la place de ceux de la sauvegarde (ou de ceux que 0054 vient d'y
+    // déduire des rôles, pour une sauvegarde plus ancienne).
+    tx.execute("DELETE FROM droit_ecran", []).map_err(|e| e.to_string())?;
+    for (tri, ecran, ecriture) in &droits {
+        tx.execute(
+            "INSERT INTO droit_ecran (trigramme, ecran, ecriture) VALUES (?1, ?2, ?3)",
+            rusqlite::params![tri, ecran, ecriture],
         )
         .map_err(|e| e.to_string())?;
     }

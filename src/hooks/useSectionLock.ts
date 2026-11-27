@@ -7,19 +7,24 @@ const INACTIVITY_TIMEOUT_MS = 5 * 60_000;
 
 type Status = "acquiring" | "held" | "readonly" | "error";
 
-// Rôle Lecteur du poste (défini par App au démarrage, avant l'affichage des écrans) : les écrans
-// restent en lecture seule et ne prennent jamais le verrou — un lecteur ne bloque personne.
-let lectureSeuleRole = false;
-export function definirLectureSeuleRole(valeur: boolean) {
-  lectureSeuleRole = valeur;
+// Droits par écran du poste (2026-11-25, définis par App avant l'affichage des écrans, relus à
+// chaque changement d'écran) : sur un écran sans droit d'écriture, l'écran reste en lecture seule
+// et ne prend jamais le verrou — il ne bloque personne. Garde réelle côté Rust (`require_lock`).
+let ecransEcriture = new Set<string>();
+export function definirDroitsEcriture(ecrans: string[]) {
+  ecransEcriture = new Set(ecrans);
 }
-export function estLectureSeuleRole(): boolean {
-  return lectureSeuleRole;
+/** Écran d'une clé de verrou (`affaire:12` → `simulations`), comme `admin.rs::ecran_de`. */
+export function ecranDe(sectionKey: string): string {
+  return sectionKey.startsWith("affaire:") ? "simulations" : sectionKey;
+}
+export function peutEcrire(sectionKey: string): boolean {
+  return ecransEcriture.has(ecranDe(sectionKey));
 }
 type OutgoingRequestStatus = "none" | "pending" | "denied";
 
 export function useSectionLock(sectionKey: string, trigramme: string) {
-  const lectureSeule = lectureSeuleRole;
+  const lectureSeule = !peutEcrire(sectionKey);
   const [status, setStatus] = useState<Status>(lectureSeule ? "readonly" : "acquiring");
   const [holderTrigramme, setHolderTrigramme] = useState<string | null>(null);
   const [incomingRequest, setIncomingRequest] = useState<string | null>(null);

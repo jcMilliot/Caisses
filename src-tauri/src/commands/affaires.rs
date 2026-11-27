@@ -93,7 +93,7 @@ pub fn list_affaires(db: State<Db>) -> Result<Vec<Affaire>, String> {
 pub fn create_affaire(db: State<Db>, nom: String, trigramme: String) -> Result<Affaire, String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("base de données non initialisée")?;
-    crate::commands::admin::refuser_lecteur(conn, &trigramme)?;
+    crate::commands::admin::refuser_sans_ecriture(conn, &trigramme, "simulations")?;
     // Seuil d'alerte = seuil général réglé dans l'Admin (plus de saisie à la création).
     let seuil = seuil_general(conn)?;
     conn.execute(

@@ -1,4 +1,4 @@
-import { avecHorsSachet, texteDimsCalcul } from "./HorsSachet";
+import { avecDimCalcul, texteDimsCalcul } from "./HorsSachet";
 import { useState } from "react";
 import type { CartonConso } from "../domain/types";
 import {
@@ -383,9 +383,9 @@ function BlocColis({
                     </td>
                     <td style={tdStyle}>{a.reference}</td>
                     <td style={tdStyle}>{a.designation}</td>
-                    <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{avecHorsSachet(a.dim1_mm, a.hors_sachet?.dim1_mm)}</td>
-                    <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{avecHorsSachet(a.dim2_mm, a.hors_sachet?.dim2_mm)}</td>
-                    <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{avecHorsSachet(a.dim3_mm, a.hors_sachet?.dim3_mm)}</td>
+                    <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{avecDimCalcul(a, "dim1_mm")}</td>
+                    <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{avecDimCalcul(a, "dim2_mm")}</td>
+                    <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{avecDimCalcul(a, "dim3_mm")}</td>
                     <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{a.poids_unitaire_kg.toFixed(3)}</td>
                     <td style={{ ...tdStyle, textAlign: "right" }} className="mono">{a.quantite}</td>
                   </tr>

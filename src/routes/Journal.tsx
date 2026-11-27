@@ -15,6 +15,9 @@ const LIBELLE_ACTION: Record<string, string> = {
   stock_retrait: "Sortie de stock",
   stock_remise: "Remise en stock",
   stock_reception: "Réception en stock",
+  controle_auto: "Validé d'après l'ERP",
+  controle_erp_auto: "Correction reportée (ERP)",
+  verrou_retire: "Main retirée",
 };
 
 const LIBELLE_ENTITE: Record<string, string> = {
@@ -23,6 +26,8 @@ const LIBELLE_ENTITE: Record<string, string> = {
   option_liste: "Référence",
   base: "Base de données",
   caisse_stock: "Caisse en stock",
+  controle_dimension: "Contrôle dimensionnel",
+  section_lock: "Verrou",
 };
 
 const COULEUR_ACTION: Record<string, string> = {
@@ -37,6 +42,9 @@ const COULEUR_ACTION: Record<string, string> = {
   stock_retrait: "var(--warn-text)",
   stock_remise: "var(--ok-text)",
   stock_reception: "var(--ok-text)",
+  controle_auto: "var(--ok-text)",
+  controle_erp_auto: "var(--ok-text)",
+  verrou_retire: "var(--warn-text)",
 };
 
 // Onglet « Journal » de la page Admin (session admin requise côté backend).

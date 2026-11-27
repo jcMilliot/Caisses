@@ -143,12 +143,14 @@ export interface PickingLu {
   presents: Set<string>;
   /** Parmi eux, en stock ou mouvementés. */
   dispos: Set<string>;
+  /** Parmi eux, avec un mouvement de sortie (`moved` > 0, 2026-11-27). */
+  sorties: Set<string>;
   /** Lignes « AR… » non supprimées, pour le référentiel. */
   erp: ArticleErp[];
 }
 
 export function lirePickingControle(picking: LigneStockPicking[]): PickingLu {
-  const r: PickingLu = { presents: new Set(), dispos: new Set(), erp: [] };
+  const r: PickingLu = { presents: new Set(), dispos: new Set(), sorties: new Set(), erp: [] };
   for (const l of picking) {
     if (l.quantite === null) continue; // ligne supprimée dans l'intranet
     const ar = l.ar.trim().toUpperCase();
@@ -157,6 +159,7 @@ export function lirePickingControle(picking: LigneStockPicking[]): PickingLu {
     if (l.colis.trim() !== "") continue;
     r.presents.add(ar);
     if (l.qte_stock > 0 || l.qte_mouvementee > 0) r.dispos.add(ar);
+    if (l.qte_mouvementee > 0) r.sorties.add(ar);
   }
   return r;
 }
@@ -179,6 +182,8 @@ export interface DispoControle {
   affaires: string[];
   /** Affaires à afficher : picking lisible → pièce présente et pas colisée ; sinon d'après la base. */
   affairesAffichees: string[];
+  /** Affaires où la pièce a un mouvement de sortie (`moved` > 0) — colonne « Sortie » des petits volumes. */
+  sorties: string[];
 }
 
 /** Index AR → affaires (nom d'origine) où l'AR est présent d'après un picking lisible. */
@@ -203,6 +208,7 @@ export function dispoControle(
   for (const a of [...affairesDe(c), ...(presences.get(ar) ?? [])]) candidates.set(a.toUpperCase(), a);
   const affichees: string[] = [];
   const dispo: string[] = [];
+  const sorties: string[] = [];
   let enCours = false;
   let erreur = false;
   for (const [cle, nom] of candidates) {
@@ -211,6 +217,7 @@ export function dispoControle(
       if (!p.presents.has(ar)) continue; // plus dans ce picking, ou colisée
       affichees.push(nom);
       if (p.dispos.has(ar)) dispo.push(nom);
+      if (p.sorties.has(ar)) sorties.push(nom);
     } else {
       affichees.push(nom); // pas de lecture exploitable : on garde la base
       if (!p || p.etat === "chargement") enCours = true;
@@ -218,10 +225,11 @@ export function dispoControle(
     }
   }
   affichees.sort();
-  if (dispo.length > 0) return { etat: "oui", affaires: dispo, affairesAffichees: affichees };
-  if (affichees.length === 0) return { etat: "non", affaires: [], affairesAffichees: [] };
-  if (enCours) return { etat: "chargement", affaires: [], affairesAffichees: affichees };
-  return { etat: erreur ? "inconnu" : "non", affaires: [], affairesAffichees: affichees };
+  sorties.sort();
+  if (dispo.length > 0) return { etat: "oui", affaires: dispo, affairesAffichees: affichees, sorties };
+  if (affichees.length === 0) return { etat: "non", affaires: [], affairesAffichees: [], sorties };
+  if (enCours) return { etat: "chargement", affaires: [], affairesAffichees: affichees, sorties };
+  return { etat: erreur ? "inconnu" : "non", affaires: [], affairesAffichees: affichees, sorties };
 }
 
 // --- Export « À contrôler » : écart relevé − ERP (2026-11-17) --------------------------------
